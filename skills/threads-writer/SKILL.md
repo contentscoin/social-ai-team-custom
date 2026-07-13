@@ -34,6 +34,12 @@ Save client-provided content to:
 | Tool | When to use | What it unlocks |
 |---|---|---|
 | **Firecrawl** (`mcp__firecrawl__firecrawl_scrape`) | Competitor Threads handles provided | Scrape competitor Threads profiles for tone, structure, and engagement patterns. Note: Threads is less reliably scrapable than other platforms — state limitations if scraping fails. |
+| **OpenCrab** (`opencrab_run_workflow`, `opencrab_search_documents`) | Korean evidence-based drafts | Run `Threads Evidence Writing Workflow` on project `threads_top_exposure_research_ko`. Treat retrieval as observation-only — never claim algorithm causality or copy source posts. Clean JSON/CDN noise before drafting. |
+
+OpenCrab constants (repo `opencrab/opencrab.constants.yaml`):
+- Project: `threads_top_exposure_research_ko` (`f4aef485-ee91-44a0-85ef-a9a96dfa04c2`)
+- Workflow: `Threads Evidence Writing Workflow` (`d3a71109-a469-4217-80ff-03e423e24dbc`)
+- Packs: golf / development / IT (`threads-top-*-ko-v1`)
 
 ### Baseline mode
 All phases work without MCPs. Competitor research is skipped when tools are unavailable — state this as an assumption in the output.

@@ -20,6 +20,9 @@ const proc = require('./lib/proc');
 const secrets = require('./lib/secrets');
 const render = require('./lib/render');
 const pubdirect = require('./lib/pubdirect');
+const opencrabBindings = require('./lib/opencrab-bindings');
+const visualAssets = require('./lib/visual-assets');
+const orchestrator = require('./lib/orchestrator');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -502,6 +505,27 @@ ipcMain.handle('packs:list', safe(() => promptlab.listPacks().map(({ name, file,
 ipcMain.handle('packs:delete', safe((_e, file) => promptlab.deletePack(file)));
 ipcMain.handle('oc:search', safe((_e, query) => opencrab.search(query)));
 ipcMain.handle('oc:load', safe((_e, pack) => opencrab.load(pack)));
+ipcMain.handle('oc:constants', safe(() => opencrabBindings.loadConstants()));
+ipcMain.handle('oc:projects', safe(() => opencrabBindings.listProjects()));
+ipcMain.handle('oc:runWorkflow', safe((_e, key, args) => opencrabBindings.runWorkflow(key, args || {})));
+ipcMain.handle('oc:route', safe((_e, channel) => opencrabBindings.routeForChannel(channel)));
+
+ipcMain.handle('vassets:list', safe((_e, dir) => visualAssets.listAssets(dir)));
+ipcMain.handle('vassets:ensure', safe((_e, dir) => { visualAssets.ensureDirs(dir); return { ok: true, dir: visualAssets.assetsDir(dir) }; }));
+ipcMain.handle('vassets:ingest', safe((_e, dir, projectName) => visualAssets.ingestVisualAssets(dir, projectName)));
+
+ipcMain.handle('orch:tasks', safe(() => orchestrator.listTasks()));
+ipcMain.handle('orch:run', async (_e, dir, taskName, extra) => {
+  const lock = locks.acquire(dir, 'stage');
+  if (!lock.ok) return { ok: false, error: locks.busyMessage(dir) };
+  try {
+    const env = await setup.checkEnvironment();
+    return await orchestrator.runTask(taskName, dir, {
+      env, extra,
+      onLine: (line) => send('log', { source: 'orch', line, dir }),
+    });
+  } finally { locks.release(dir, 'stage'); }
+});
 
 // ---- 전략 추출 + OpenCrab 인제스트 -------------------------------------------------
 const strategy = require('./lib/strategy');

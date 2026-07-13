@@ -1,0 +1,45 @@
+# Social AI Team — pumasi 병렬 오케스트레이션 (Codex/Claude CLI 외주)
+# Cursor Auto 모드가 단계별로 적재적소에 CLI를 스폰할 때 참조합니다.
+
+pumasi:
+  defaults:
+    command: "codex exec --sandbox workspace-write"
+    emoji: "📡"
+
+  routes:
+    # 단계 → 엔진 우선순위 (첫 번째 사용 가능한 CLI)
+    calendar: [claude]
+    copy_threads: [claude, codex]
+    copy_naver: [claude]
+    copy_instagram: [claude]
+    visual_compile: [claude]
+    visual_render: [codex, ima2]
+    compliance: [claude]
+    strategy_extract: [claude]
+    opencrab_ingest: [mcp]
+
+  tasks:
+    - name: calendar-index
+      route: calendar
+      instruction: |
+        context/content-calendar.md를 읽고 context/calendar-index.json을 생성하라.
+        각 post에 week, day, scheduledDate(YYYY-MM-DD), scheduledTime(HH:mm), platform, topic을 포함.
+        메인 채널: Instagram, Threads, Naver Blog, Naver Clip, Kakao Channel.
+      gates:
+        - name: index exists
+          command: "[ -f context/calendar-index.json ]"
+
+    - name: threads-evidence-write
+      route: copy_threads
+      instruction: |
+        OpenCrab MCP로 Threads Evidence Writing Workflow를 실행하거나 threads 팩을 검색한 뒤
+        outputs/threads/에 근거 기반 한국어 초안을 작성하라. 알고리즘 인과 주장 금지.
+      gates:
+        - name: output exists
+          command: "ls outputs/threads/*.md 2>/dev/null | head -1 | grep -q ."
+
+    - name: visual-asset-ingest
+      route: opencrab_ingest
+      instruction: |
+        context/visual-assets/ 의 master_sheet, character_sheet, content_base 문서를
+        OpenCrab MCP ingest 도구로 클라이언트 비주얼 팩에 올리라.

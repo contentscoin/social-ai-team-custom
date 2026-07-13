@@ -1,7 +1,7 @@
 {
   "name": "social-ai-team-desktop",
   "productName": "Social AI Team",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Desktop control tower for the Social AI Team — installs the skills, authenticates Codex, and drives the content pipeline per client.",
   "main": "main.js",
   "author": "contentscoin",
@@ -32,7 +32,9 @@
       { "from": "../skills", "to": "payload/skills" },
       { "from": "../.claude/agents", "to": "payload/agents" },
       { "from": "../sop", "to": "payload/sop" },
-      { "from": "../TEAM.md", "to": "payload/TEAM.md" }
+      { "from": "../TEAM.md", "to": "payload/TEAM.md" },
+      { "from": "../opencrab", "to": "payload/opencrab" },
+      { "from": "../pumasi.config.yaml", "to": "payload/pumasi.config.yaml" }
     ],
     "win": { "target": "nsis", "icon": "assets/icon.png" },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },

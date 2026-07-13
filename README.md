@@ -8,6 +8,8 @@ Built to run inside [Claude Code](https://claude.ai/code).
 
 > **🇰🇷 Team Mode (v3):** This fork adds a Korean-speaking delegating team on top of the original 10 skills — a `/content-director` orchestrator, 4 subagents (copywriter, creative-designer, video-producer, compliance-reviewer), and 5 new skills (`/reels-script`, `/ad-storyboard`, `/kr-guardrail-check`, `/kr-voice-localizer`, `/naver-blog-writer`) plus an image-QA SOP and render lanes for [ima2-gen](https://github.com/lidge-jun/ima2-gen) (OAuth image/video generation, `/ima2` skill vendored) and Codex. The original 10 skills run unmodified underneath. See [TEAM.md](TEAM.md) (Korean) for the full team manual.
 
+> **📅 Desktop v0.17:** The Electron control tower adds a **month calendar** (multi-channel posts per day), **5 primary KR channels** (Instagram, Threads, Naver Blog, Naver Clip, Kakao Channel), **OpenCrab** project/workflow bindings, **visual asset ingest** (master/character/content sheets), and **pumasi** CLI orchestration (Claude/Codex/MCP). See `desktop/` and `opencrab/opencrab.constants.yaml`.
+
 ---
 
 ## How the Skills Work Together
