@@ -1,0 +1,48 @@
+name: Build desktop installers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # electron-builder publishes GitHub Releases (auto-update feed)
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            flags: --win
+            artifact: 'desktop/dist/*.exe'
+          - os: macos-latest
+            flags: --mac
+            artifact: 'desktop/dist/*.dmg'
+          - os: ubuntu-latest
+            flags: --linux
+            artifact: 'desktop/dist/*.AppImage'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+      - name: Build installer and publish release (auto-update feed)
+        working-directory: desktop
+        run: npx electron-builder ${{ matrix.flags }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: social-ai-team-${{ matrix.os }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error

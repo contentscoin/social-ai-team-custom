@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: sat:; media-src sat:; style-src 'self' 'unsafe-inline'" />
+  <title>Social AI Team — 온에어 데스크</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ══ SVG sprite ══ -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7a4 4 0 018 0v3" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.8v3M12 18.2v3M21.2 12h-3M5.8 12h-3M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1M18.5 18.5l-2.1-2.1M7.6 7.6L5.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 9l3 3-3 3M12 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-drawer" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 13h6l1.5 2h3L15 13h6" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5L22 20H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9.5v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 01-5 5 5 5 0 01-5-5V8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 16v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M12 3a3.5 3.5 0 013.5 3.5c0 2-1.4 3-1.4 4.5h-4.2c0-1.5-1.4-2.5-1.4-4.5A3.5 3.5 0 0112 3z" fill="currentColor"/><path d="M5 15a2 2 0 012-2h10a2 2 0 012 2v2H5v-2zM4 20h16" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-auto" viewBox="0 0 24 24"><path d="M12 3a9 9 0 108.5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 3v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <!-- ══ 좌측 레일 ══ -->
+  <nav id="rail">
+    <div id="rail-clients"></div>
+    <button id="rail-add" class="rail-btn" title="클라이언트 추가"><svg><use href="#i-plus"/></svg></button>
+    <div class="rail-spacer"></div>
+    <button id="rail-folder" class="rail-btn" title="폴더 열기" disabled><svg><use href="#i-folder"/></svg></button>
+    <button id="rail-term" class="rail-btn" title="외부 터미널" disabled><svg><use href="#i-term"/></svg></button>
+    <button id="rail-settings" class="rail-btn" title="설정"><svg><use href="#i-gear"/></svg><span id="health-dot" class="health"></span></button>
+  </nav>
+
+  <div id="workspace">
+    <!-- ══ 탑바 ══ -->
+    <header id="topbar">
+      <div id="tb-client"><b id="tb-name">클라이언트 없음</b><span id="tb-path" class="muted"></span><span id="tb-filter" class="chip hidden"></span></div>
+      <div class="seg" id="view-seg">
+        <button data-view="timeline" class="active">타임라인</button>
+        <button data-view="kanban">칸반</button>
+      </div>
+      <div id="tb-right">
+        <span id="tb-running" class="running hidden"><span class="pulse-dot"></span><span id="tb-running-label"></span></span>
+        <button id="tb-update" class="chip accent hidden">업데이트 준비됨 — 재시작</button>
+        <div class="seg mini" id="engine-seg">
+          <button data-engine="claude" class="active">Claude</button>
+          <button data-engine="codex">Codex</button>
+        </div>
+        <button id="tb-drawer" class="icon-btn" title="산출물 서랍"><svg><use href="#i-drawer"/></svg></button>
+      </div>
+    </header>
+
+    <!-- ══ 존 A: 채널 허브 ══ -->
+    <section id="zone-channels">
+      <div id="client-tile">
+        <div id="ct-count" class="big-num">–</div>
+        <div class="muted small">이번 달 포스트</div>
+        <div id="ct-donut"></div>
+        <div id="ct-ready" class="small"></div>
+      </div>
+      <div id="channel-scroll"></div>
+      <svg id="wire-layer" aria-hidden="true"></svg>
+    </section>
+
+    <!-- ══ 존 B: 보드 ══ -->
+    <main id="zone-board">
+      <div id="hero" class="hidden"></div>
+      <div id="timeline" class="board-view"></div>
+      <div id="kanban" class="board-view hidden"></div>
+    </main>
+
+    <!-- ══ 존 D: 게이트 바 ══ -->
+    <footer id="zone-gates">
+      <div id="gate-steps"></div>
+      <div id="gate-actions">
+        <button id="gate-checklist" class="chip">체크리스트</button>
+        <button id="gate-auto" class="chip" title="승인 게이트 앞까지 자동으로 진행합니다"><svg style="width:13px;height:13px;vertical-align:-2px"><use href="#i-auto"/></svg> 오토파일럿</button>
+        <button id="gate-cta" class="cta" disabled><svg><use href="#i-play"/></svg><span>—</span></button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ══ 존 C: 디렉터 독 ══ -->
+  <aside id="dock">
+    <div id="dock-head">
+      <div class="seg mini" id="dock-seg">
+        <button data-dock="chat" class="active">디렉터</button>
+        <button data-dock="log">로그</button>
+        <button data-dock="history">기록</button>
+      </div>
+      <span id="dock-engine" class="muted small">Claude</span>
+      <button id="chat-reset" class="chip">새 대화</button>
+    </div>
+    <div id="dock-chat" class="dock-body">
+      <div id="chat-log"></div>
+      <div id="chat-chips"></div>
+      <div id="chat-input-row">
+        <textarea id="chat-input" rows="2" placeholder="디렉터에게 지시… (카드를 여기로 드래그하면 컨텍스트가 붙습니다)"></textarea>
+        <button id="btn-chat-send">보내기</button>
+        <button id="chat-stop" class="hidden" title="디렉터 턴 중지">중지</button>
+      </div>
+    </div>
+    <div id="dock-log" class="dock-body hidden">
+      <div style="display:flex;gap:6px;padding:8px 14px 0">
+        <button id="btn-log-folder" class="chip">로그 폴더</button>
+        <button id="btn-log-copy" class="chip">로그 복사 (신고용)</button>
+      </div>
+      <pre id="log-pane"></pre>
+    </div>
+    <div id="dock-history" class="dock-body hidden"></div>
+    <div id="dock-inspector" class="dock-body hidden"></div>
+  </aside>
+
+  <!-- ══ 오버레이 ══ -->
+  <div id="overlay" class="hidden">
+    <div id="sheet-settings" class="sheet hidden"></div>
+    <div id="sheet-approve" class="sheet bottom hidden"></div>
+    <div id="sheet-drawer" class="sheet right hidden"></div>
+    <div id="sheet-onboard" class="sheet hidden"></div>
+    <div id="wizard" class="fullscreen hidden"></div>
+    <div id="lightbox" class="fullscreen hidden"></div>
+  </div>
+  <div id="toasts"></div>
+  <div id="popover" class="hidden"></div>
+
+  <!-- ══ 템플릿 ══ -->
+  <template id="tpl-post-card">
+    <article class="post-card" draggable="true">
+      <img class="pc-thumb hidden" alt="" loading="lazy">
+      <div class="pc-row1"><span class="mono-tile"></span><span class="pc-id"></span><span class="pc-when chip tiny"></span></div>
+      <div class="pc-topic"></div>
+      <div class="pc-row3"><span class="pc-format chip tiny"></span><span class="pc-verdict dot"></span><span class="pc-dots"></span></div>
+    </article>
+  </template>
+
+  <template id="tpl-channel-card">
+    <article class="channel-card">
+      <div class="cc-row1"><span class="mono-tile"></span><span class="cc-name"></span><span class="cc-badge chip tiny"></span></div>
+      <div class="cc-row2"><span class="cc-count big-num"></span><span class="cc-ready small"></span></div>
+      <div class="cc-meter"></div>
+      <div class="cc-row4"><span class="cc-spark"></span><span class="cc-dots"></span></div>
+      <div class="cc-row5 small muted"></div>
+    </article>
+  </template>
+
+  <template id="tpl-file-row">
+    <div class="file-row" draggable="true"><svg class="fi"><use href="#i-doc"/></svg><span class="fr-name"></span><span class="fr-time muted small"></span></div>
+  </template>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
