@@ -23,9 +23,10 @@
   "build": {
     "appId": "kr.contentscoin.socialaiteam",
     "productName": "Social AI Team",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": { "output": "dist" },
     "publish": [
-      { "provider": "github", "owner": "contentscoin", "repo": "social-ai-team", "releaseType": "release" }
+      { "provider": "github", "owner": "contentscoin", "repo": "social-ai-team-custom", "releaseType": "release" }
     ],
     "files": ["main.js", "preload.js", "lib/**", "src/**", "assets/**"],
     "extraResources": [
@@ -36,9 +37,28 @@
       { "from": "../opencrab", "to": "payload/opencrab" },
       { "from": "../pumasi.config.yaml", "to": "payload/pumasi.config.yaml" }
     ],
-    "win": { "target": "nsis", "icon": "assets/icon.png" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
-    "mac": { "target": "dmg", "icon": "assets/icon.png", "category": "public.app-category.productivity" },
-    "linux": { "target": "AppImage", "icon": "assets/icon.png", "category": "Office" }
+    "win": { "target": ["nsis"], "icon": "assets/icon.png" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Social-AI-Team-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "Social-AI-Team-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "assets/icon.png",
+      "category": "Office",
+      "artifactName": "Social-AI-Team-${version}.${ext}"
+    }
   }
 }

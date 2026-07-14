@@ -48,7 +48,12 @@ npm run dist:win      # Windows NSIS (Windows에서, 또는 CI)
 npm run dist:mac      # macOS DMG (macOS에서)
 ```
 
-권장: `desktop/**`가 바뀐 커밋이 `main`에 푸시되면 GitHub Actions(`.github/workflows/desktop-build.yml`)가 Windows/macOS/Linux 설치본을 빌드해 **GitHub Release로 자동 발행**합니다 — [Releases](https://github.com/contentscoin/social-ai-team/releases)가 공식 다운로드 위치입니다 (Actions 아티팩트에도 사본 업로드).
+권장: `desktop/**`가 바뀐 커밋이 `main`에 푸시되면 GitHub Actions(`.github/workflows/desktop-build.yml`)가 Windows/macOS/Linux 설치본을 빌드해 **GitHub Release로 자동 발행**합니다 — [Releases](https://github.com/contentscoin/social-ai-team-custom/releases)가 공식 다운로드 위치입니다 (Actions 아티팩트에도 사본 업로드).
+
+- **최신 릴리즈:** https://github.com/contentscoin/social-ai-team-custom/releases/latest
+- **v0.17.0 (빌드 완료 시):** https://github.com/contentscoin/social-ai-team-custom/releases/tag/v0.17.0
+- **Actions 빌드:** https://github.com/contentscoin/social-ai-team-custom/actions/workflows/desktop-build.yml
+- (참고) 이전 세대 upstream v0.16: https://github.com/contentscoin/social-ai-team/releases/tag/v0.16.0
 
 ## 자동 업데이트
 
