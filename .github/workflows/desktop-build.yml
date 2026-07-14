@@ -19,36 +19,36 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # Serialize publishes so release asset uploads don't race
+      max-parallel: 1
       matrix:
         include:
           - os: windows-latest
             flags: --win --x64
-            artifact: |
+            glob: |
               desktop/dist/*.exe
               desktop/dist/*.yml
               desktop/dist/*.blockmap
-            artifact_name: windows
-          - os: macos-latest
+          - os: macos-15
             flags: --mac --arm64
-            artifact: |
+            glob: |
               desktop/dist/*.dmg
               desktop/dist/*.yml
               desktop/dist/*.blockmap
               desktop/dist/*.zip
-            artifact_name: macos
           - os: ubuntu-latest
             flags: --linux --x64
-            artifact: |
+            glob: |
               desktop/dist/*.AppImage
               desktop/dist/*.yml
-            artifact_name: linux
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -61,60 +61,34 @@ jobs:
         shell: bash
         run: |
           mkdir -p assets
-          if [ ! -f assets/icon.png ]; then
-            echo "icon.png missing — create a placeholder before packaging"
-            exit 1
-          fi
+          test -f assets/icon.png
           ls -la assets/icon.png
 
       - name: Install dependencies
         working-directory: desktop
         run: npm install
 
-      - name: Build installer (no publish — avoid matrix race)
+      - name: Build installer (no Actions artifacts ??quota workaround)
         working-directory: desktop
         run: npx electron-builder ${{ matrix.flags }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # Electron download can flake; keep logs readable
-          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: 'true'
-
-      - name: List dist output
-        working-directory: desktop
-        shell: bash
-        run: ls -la dist || true
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: social-ai-team-${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact }}
-          if-no-files-found: error
-          compression-level: 0
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Read version
         id: ver
         working-directory: desktop
+        shell: bash
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          pattern: social-ai-team-*
-          merge-multiple: true
+      - name: List dist output
+        working-directory: desktop
+        shell: bash
+        run: ls -lah dist || true
 
-      - name: Show downloaded assets
-        run: find release-assets -type f | sort
-
-      - name: Publish GitHub Release
+      # Skip actions/upload-artifact (account hit Actions artifact storage quota).
+      # Upload straight to GitHub Releases instead.
+      - name: Upload assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
@@ -122,11 +96,6 @@ jobs:
           draft: false
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: |
-            release-assets/**/*.exe
-            release-assets/**/*.dmg
-            release-assets/**/*.AppImage
-            release-assets/**/*.yml
-            release-assets/**/*.blockmap
+          files: ${{ matrix.glob }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
