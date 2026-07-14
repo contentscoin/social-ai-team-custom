@@ -4,6 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const channelRegistry = require('./channels');
+const calendarDates = require('./calendar-dates');
 
 const STAGES = ['planned', 'copy', 'visual', 'review', 'ready'];
 // 경로 키 캐시 — 같은 파일의 재기록은 엔트리를 교체하므로 누적되지 않는다
@@ -105,7 +107,7 @@ function parsePostBlock(n, header, block) {
   // header-line fallbacks (demo format: POST 1 — Week 3, Monday — Instagram — 브랜드 스토리 — single image — brand awareness)
   const parts = header.split(/\s+—\s+|\s+-\s+/).map((s) => s.trim());
   if (!post.platform) {
-    const plat = parts.find((s) => /instagram|facebook|linkedin|threads|naver|x$|^x\b|tiktok/i.test(s));
+    const plat = parts.find((s) => /instagram|facebook|linkedin|threads|naver\s*clip|네이버\s*클립|naver\s*blog|네이버\s*블로그|카카오|kakao|naver|x$|^x\b|tiktok/i.test(s));
     if (plat) post.platform = plat;
   }
   if (!post.format) {
@@ -124,9 +126,10 @@ function parsePostBlock(n, header, block) {
   return post;
 }
 
-const ID_PLATFORM = { IG: 'Instagram', FB: 'Facebook', LI: 'LinkedIn', LN: 'LinkedIn', IN: 'LinkedIn', TH: 'Threads', X: 'X', NV: 'Naver Blog', NB: 'Naver Blog', TT: 'TikTok' };
-// 렌더 엔진의 파일명 프리픽스 (render.js와 계약: `${chId}-${n}.png` → 카드 자동 매칭)
-const CH_ID = { instagram: 'ig', facebook: 'fb', linkedin: 'li', threads: 'th', x: 'x', naver: 'nv', tiktok: 'tt', etc: 'etc' };
+const ID_PLATFORM = channelRegistry.ID_PLATFORM;
+const CH_ID = Object.fromEntries(Object.entries(channelRegistry.REGISTRY).map(([k, v]) => [k, v.chId]));
+function laneOf(platform) { return channelRegistry.laneOf(platform); }
+function channelKey(platform) { return channelRegistry.channelKey(platform); }
 function parseCalendar(md) {
   const posts = [];
   // 앵커 두 형태: "POST 12 …" 또는 채널-ID "IG-4 …" (헤딩/볼드 장식 허용)
@@ -190,28 +193,6 @@ function dedupe(posts) {
   return [...seen.values()].sort((a, b) => a.n - b.n);
 }
 
-// ---- platform → lane mapping -----------------------------------------------------
-function laneOf(platform) {
-  const p = String(platform).toLowerCase();
-  if (/instagram|facebook|tiktok/.test(p)) return 'captions';
-  if (/linkedin/.test(p)) return 'linkedin';
-  if (/threads/.test(p)) return 'threads';
-  if (/naver|네이버/.test(p)) return 'naver';
-  if (/^x\b|x\/|twitter|(^|\W)x(\W|$)/.test(p)) return 'x';
-  return 'captions';
-}
-function channelKey(platform) {
-  const p = String(platform).toLowerCase();
-  if (/instagram/.test(p)) return 'instagram';
-  if (/facebook/.test(p)) return 'facebook';
-  if (/linkedin/.test(p)) return 'linkedin';
-  if (/threads/.test(p)) return 'threads';
-  if (/naver|네이버/.test(p)) return 'naver';
-  if (/tiktok/.test(p)) return 'tiktok';
-  if (/twitter|^x\b|(^|\W)x(\W|$)/.test(p)) return 'x';
-  return 'etc';
-}
-
 // ---- verdict parsing ---------------------------------------------------------------
 const VERDICT_RANK = { PASS: 1, WARN: 2, BLOCK: 3 };
 function lineCitesPostNumber(line, n) {
@@ -260,6 +241,8 @@ function loadIndex(dir) {
         n: Number.isFinite(nRaw) && nRaw > 0 ? nRaw : i + 1,
         week: String(p.week || '').replace(/^W/i, ''),
         day: String(p.day || ''),
+        scheduledDate: p.scheduledDate || p.date || '',
+        scheduledTime: p.scheduledTime || p.time || '',
         platform: p.platform || p.channel || (idm && ID_PLATFORM[idm[1].toUpperCase()]) || '',
         pillar: p.pillar || '', format: p.format || '', objective: p.objective || '',
         topic: p.topic || '', angle: p.angle || '', visual: p.visual || '', notes: p.notes || '',
@@ -275,7 +258,7 @@ function buildBoard(dir) {
   const posts = indexPosts || (calMd ? parseCalendar(calMd) : []);
 
   const lanes = {};
-  for (const lane of ['captions', 'linkedin', 'threads', 'x', 'naver', 'videos', 'storyboards', 'creatives', 'compliance', 'reviews']) {
+  for (const lane of ['captions', 'linkedin', 'threads', 'x', 'naver', 'naver_clip', 'kakao', 'videos', 'storyboards', 'creatives', 'compliance', 'reviews']) {
     lanes[lane] = readLane(dir, lane);
     lanes[lane].norm = norm(lanes[lane].text);
   }
@@ -283,7 +266,8 @@ function buildBoard(dir) {
   const publishedLane = /Published via Blotato[^\n]*\[x\]|\[x\][^\n]*Published via Blotato/i.test(statusRaw)
     || /^- \[x\].*Blotato.*scheduled/im.test(statusRaw);
 
-  const cards = posts.map((post) => {
+  const meta = calendarDates.loadCalendarMeta(dir);
+  const cards = calendarDates.enrichPostsWithDates(posts, dir).map((post) => {
     const lane = laneOf(post.platform);
     const isReel = /reel|video|영상|릴스|shorts|tiktok/i.test(post.format + ' ' + (post.headerRaw || ''));
     const copyDone = topicIn(lanes[lane].norm, post.topic);
@@ -345,22 +329,22 @@ function buildBoard(dir) {
   }
 
   // channel aggregates
-  const channels = {};
+  const channelMap = {};
   for (const c of cards) {
     const k = c.channel;
-    channels[k] = channels[k] || {
+    channelMap[k] = channelMap[k] || {
       key: k, posts: 0, byStage: { planned: 0, copy: 0, visual: 0, review: 0, ready: 0 },
       warn: 0, block: 0, lane: c.lane,
-      // 발행 경로: 네이버/인스타그램은 API 제약으로 수동, 나머지는 직접 API(토큰 연결 시) — 렌더러가 pub2 status와 조합
-      publishRoute: (k === 'naver' || k === 'instagram') ? 'manual' : 'api',
+      publishRoute: channelRegistry.publishRouteOf(k),
       files: [],
+      primary: channelRegistry.PRIMARY_CHANNELS.includes(k),
     };
-    channels[k].posts += 1;
-    channels[k].byStage[c.stage] += 1;
-    if (c.verdict === 'WARN') channels[k].warn += 1;
-    if (c.verdict === 'BLOCK') channels[k].block += 1;
+    channelMap[k].posts += 1;
+    channelMap[k].byStage[c.stage] += 1;
+    if (c.verdict === 'WARN') channelMap[k].warn += 1;
+    if (c.verdict === 'BLOCK') channelMap[k].block += 1;
   }
-  for (const ch of Object.values(channels)) {
+  for (const ch of Object.values(channelMap)) {
     ch.files = (lanes[ch.lane] ? lanes[ch.lane].files : []).slice(0, 5);
   }
 
@@ -370,12 +354,14 @@ function buildBoard(dir) {
   return {
     hasCalendar: !!calMd || !!indexPosts,
     fromIndex: !!indexPosts,
+    calendarMeta: meta,
+    postsByDate: Object.fromEntries([...calendarDates.groupPostsByDate(cards, meta)]),
     calendarHash: calMd
       ? crypto.createHash('sha1').update(calMd).digest('hex').slice(0, 12)
       : (indexPosts ? crypto.createHash('sha1').update(JSON.stringify(indexPosts)).digest('hex').slice(0, 12) : null),
     posts: cards,
     stages: STAGES,
-    channels: Object.values(channels).sort((a, b) => b.posts - a.posts),
+    channels: channelRegistry.sortChannels(Object.values(channelMap)),
     lanes: laneFiles,
     foundation: {
       brand: fs.existsSync(path.join(dir, 'context', 'brand-style.md')),

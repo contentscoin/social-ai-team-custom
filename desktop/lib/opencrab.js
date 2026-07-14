@@ -183,4 +183,4 @@ async function load(pack) {
   return { ok: true, file: saved.file, via };
 }
 
-module.exports = { search, load, createProject, ingest };
+module.exports = { search, load, createProject, ingest, init, endpointOrThrow, listTools, callTool, textOf };

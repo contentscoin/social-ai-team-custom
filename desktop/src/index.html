@@ -43,7 +43,8 @@
     <header id="topbar">
       <div id="tb-client"><b id="tb-name">클라이언트 없음</b><span id="tb-path" class="muted"></span><span id="tb-filter" class="chip hidden"></span></div>
       <div class="seg" id="view-seg">
-        <button data-view="timeline" class="active">타임라인</button>
+        <button data-view="month" class="active">월간</button>
+        <button data-view="timeline">타임라인</button>
         <button data-view="kanban">칸반</button>
       </div>
       <div id="tb-right">
@@ -72,7 +73,8 @@
     <!-- ══ 존 B: 보드 ══ -->
     <main id="zone-board">
       <div id="hero" class="hidden"></div>
-      <div id="timeline" class="board-view"></div>
+      <div id="month-cal" class="board-view"></div>
+      <div id="timeline" class="board-view hidden"></div>
       <div id="kanban" class="board-view hidden"></div>
     </main>
 

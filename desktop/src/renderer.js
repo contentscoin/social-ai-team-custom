@@ -86,15 +86,17 @@ function pressable(el) {
 // ---- state --------------------------------------------------------------------
 const S = {
   clients: [], client: null, board: null, prevStages: new Map(),
-  gates: null, engine: 'claude', view: 'timeline',
+  gates: null, engine: 'claude', view: 'month',
   running: null, runStart: 0, lastRunStart: {}, runTimer: null,
   filter: null, chips: [], chatBusy: false, env: null, blotato: false,
-  viewDirty: { timeline: false, kanban: false }, auto: false, monthCost: 0, selectSeq: 0,
+  viewDirty: { timeline: false, kanban: false, month: false }, viewMonth: null, auto: false, monthCost: 0, selectSeq: 0,
 };
 const STAGE_LABEL = { planned: '기획', copy: '카피', visual: '비주얼/영상', review: '검수', ready: '발행준비' };
 const STAGE2COL = { calendar: 'planned', copy: 'copy', shortform: 'visual', visuals: 'visual', 'visuals-generate': 'visual', compliance: 'review', review: 'ready' };
-const CH_NAME = { instagram: '인스타그램', facebook: '페이스북', linkedin: '링크드인', threads: '스레드', x: 'X', naver: '네이버 블로그', tiktok: '틱톡', etc: '기타' };
-const CH_MONO = { instagram: 'IG', facebook: 'FB', linkedin: 'IN', threads: 'TH', x: 'X', naver: 'N', tiktok: 'TT', etc: '?' };
+const CH_NAME = { instagram: '인스타그램', threads: '스레드', naver: '네이버 블로그', naver_clip: '네이버 클립', kakao_channel: '카카오채널', facebook: '페이스북', linkedin: '링크드인', x: 'X', tiktok: '틱톡', etc: '기타' };
+const CH_MONO = { instagram: 'IG', threads: 'TH', naver: 'NB', naver_clip: 'NC', kakao_channel: 'KK', facebook: 'FB', linkedin: 'IN', x: 'X', tiktok: 'TT', etc: '?' };
+const PRIMARY_CHANNELS = ['instagram', 'threads', 'naver', 'naver_clip', 'kakao_channel'];
+const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
 // ---- toast / popover -------------------------------------------------------------
 function toast(msg) {
@@ -250,9 +252,9 @@ async function selectClient(c) {
 // ---- topbar -------------------------------------------------------------------------
 for (const b of $$('#view-seg button')) b.onclick = () => {
   S.view = b.dataset.view;
-  $$('#view-seg button').forEach((x) => x.classList.toggle('active', x === b));
-  if (S.board && S.viewDirty[S.view]) renderBoardViews(false); // 숨어 있던 뷰가 낡았으면 재빌드
-  renderHero(); // 뷰 표시/숨김의 단일 진실 공급원 (히어로 상태 존중)
+  applyViewSeg();
+  if (S.board && S.viewDirty[S.view]) renderBoardViews(false);
+  renderHero();
 };
 for (const b of $$('#engine-seg button')) b.onclick = async () => {
   if (S.running) { toast('실행 중에는 엔진을 바꿀 수 없습니다'); return; }
@@ -312,7 +314,12 @@ function renderChannels() {
   $('#client-tile').onclick = () => setFilter(null);
 
   const box = $('#channel-scroll'); box.innerHTML = '';
-  for (const ch of b.channels) {
+  const sorted = [...b.channels].sort((a, c) => {
+    const ai = PRIMARY_CHANNELS.indexOf(a.key), ci = PRIMARY_CHANNELS.indexOf(c.key);
+    const ao = ai >= 0 ? ai : 99, co = ci >= 0 ? ci : 99;
+    return ao - co || c.posts - a.posts;
+  });
+  for (const ch of sorted) {
     const el = $('#tpl-channel-card').content.firstElementChild.cloneNode(true);
     const color = `var(--ch-${ch.key})`;
     el.dataset.ch = ch.key;
@@ -428,7 +435,9 @@ function makeCard(p) {
   const tile = $('.mono-tile', el);
   tile.textContent = CH_MONO[p.channel]; tile.style.background = `color-mix(in srgb, ${color} 16%, transparent)`; tile.style.color = color;
   $('.pc-id', el).textContent = cardId(p);
-  $('.pc-when', el).textContent = `${p.week || '?'}주 ${p.day || ''}`;
+  $('.pc-when', el).textContent = p.scheduledDate
+    ? `${p.scheduledDate.slice(5).replace('-', '/')} ${p.scheduledTime || ''}`.trim()
+    : `${p.week || '?'}주 ${p.day || ''}`;
   $('.pc-topic', el).textContent = p.topic || '(제목 없음)';
   // 렌더된 실제 이미지 — 여러 장이면 썸네일 스트립, 한 장이면 단일 (프롬프트 md가 아니라 결과물)
   const renders = (p.files || []).filter((f) => f.kind === 'render').map((f) => f.rel);
@@ -469,6 +478,91 @@ function makeCard(p) {
   pressable(el);
   el.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/sat-card', JSON.stringify({ uid: p.uid, id: cardId(p), topic: p.topic, stage: p.stage })));
   return el;
+}
+function renderMonthCalendar() {
+  const b = S.board;
+  const root = $('#month-cal');
+  root.innerHTML = '';
+  const meta = b.calendarMeta || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+  if (!S.viewMonth) S.viewMonth = { year: meta.year, month: meta.month };
+  const { year, month } = S.viewMonth;
+  const weekStartsOn = meta.weekStartsOn === 0 ? 0 : 1;
+  const grid = monthGridClient(year, month, weekStartsOn);
+  const byDate = b.postsByDate || {};
+  const today = new Date().toISOString().slice(0, 10);
+
+  const bar = document.createElement('div');
+  bar.className = 'month-toolbar';
+  bar.innerHTML = `<button id="mc-prev" class="chip">◀</button><h3>${year}년 ${month}월</h3><button id="mc-next" class="chip">▶</button>
+    <span class="muted small">메인 채널: ${PRIMARY_CHANNELS.map((k) => CH_NAME[k]).join(' · ')}</span>
+    <button id="mc-today" class="chip" style="margin-left:auto">오늘</button>`;
+  root.appendChild(bar);
+  $('#mc-prev', bar).onclick = () => { shiftMonth(-1); renderMonthCalendar(); };
+  $('#mc-next', bar).onclick = () => { shiftMonth(1); renderMonthCalendar(); };
+  $('#mc-today', bar).onclick = () => { const n = new Date(); S.viewMonth = { year: n.getFullYear(), month: n.getMonth() + 1 }; renderMonthCalendar(); };
+
+  const g = document.createElement('div');
+  g.className = 'month-grid';
+  const dows = weekStartsOn === 1 ? ['월', '화', '수', '목', '금', '토', '일'] : DOW_KO;
+  for (const d of dows) { const h = document.createElement('div'); h.className = 'month-dow'; h.textContent = d; g.appendChild(h); }
+
+  for (const cell of grid.cells) {
+    const el = document.createElement('div');
+    el.className = 'month-cell' + (cell.inMonth ? '' : ' out') + (cell.date === today ? ' today' : '');
+    const posts = (byDate[cell.date] || []).filter((p) => !S.filter || p.channel === S.filter);
+    el.innerHTML = `<div class="month-cell-head"><b>${cell.dayNum}</b><span>${posts.length ? posts.length + '건' : ''}</span></div>`;
+    const stack = document.createElement('div');
+    stack.className = 'month-stack';
+    const show = posts.slice(0, 5);
+    for (const p of show) {
+      const chip = document.createElement('div');
+      chip.className = 'month-chip' + (S.filter && p.channel !== S.filter ? ' dim' : '');
+      const color = `var(--ch-${p.channel})`;
+      chip.style.borderLeftColor = color;
+      chip.title = `${CH_NAME[p.channel] || p.channel}: ${p.topic}`;
+      chip.innerHTML = `<span class="time">${p.scheduledTime ? esc(p.scheduledTime) + ' ' : ''}</span><b>${esc(CH_MONO[p.channel] || '?')}</b> ${esc((p.topic || '').slice(0, 28))}`;
+      chip.onclick = () => openInspector(p);
+      pressable(chip);
+      stack.appendChild(chip);
+    }
+    if (posts.length > 5) {
+      const more = document.createElement('div');
+      more.className = 'month-more';
+      more.textContent = `+${posts.length - 5} 더보기`;
+      more.onclick = () => { S.view = 'timeline'; applyViewSeg(); renderBoardViews(false); };
+      stack.appendChild(more);
+    }
+    el.appendChild(stack);
+    g.appendChild(el);
+  }
+  root.appendChild(g);
+}
+function monthGridClient(year, month, weekStartsOn) {
+  const first = new Date(year, month - 1, 1);
+  const startPad = (first.getDay() - weekStartsOn + 7) % 7;
+  const cells = [];
+  const start = new Date(first);
+  start.setDate(start.getDate() - startPad);
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    cells.push({ date: d.toISOString().slice(0, 10), inMonth: d.getMonth() === month - 1, dayNum: d.getDate() });
+  }
+  return { year, month, cells };
+}
+function shiftMonth(delta) {
+  if (!S.viewMonth) S.viewMonth = { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+  let { year, month } = S.viewMonth;
+  month += delta;
+  if (month < 1) { month = 12; year--; }
+  if (month > 12) { month = 1; year++; }
+  S.viewMonth = { year, month };
+}
+function applyViewSeg() {
+  $$('#view-seg button').forEach((b) => b.classList.toggle('active', b.dataset.view === S.view));
+  $('#timeline').classList.toggle('hidden', S.view !== 'timeline');
+  $('#kanban').classList.toggle('hidden', S.view !== 'kanban');
+  $('#month-cal').classList.toggle('hidden', S.view !== 'month');
 }
 function renderTimeline() {
   const b = S.board;
@@ -516,11 +610,11 @@ function renderKanban() {
 function renderBoardViews(flip, moved) {
   const b = S.board; if (!b) return;
   const rects = new Map();
-  const root = S.view === 'kanban' ? '#kanban ' : '#timeline ';
-  if (flip) for (const el of $$(root + '.post-card')) rects.set(el.dataset.key, el.getBoundingClientRect());
-  // 보이는 뷰만 리빌드 — 숨은 뷰는 dirty 마킹 후 전환 시 리빌드 (50+ 카드에서 2배 작업 방지)
-  if (S.view === 'kanban') { renderKanban(); S.viewDirty.timeline = true; }
-  else { renderTimeline(); S.viewDirty.kanban = true; }
+  const root = S.view === 'kanban' ? '#kanban ' : (S.view === 'month' ? '#month-cal ' : '#timeline ');
+  if (flip && S.view !== 'month') for (const el of $$(root + '.post-card')) rects.set(el.dataset.key, el.getBoundingClientRect());
+  if (S.view === 'kanban') { renderKanban(); S.viewDirty.timeline = true; S.viewDirty.month = true; }
+  else if (S.view === 'month') { renderMonthCalendar(); S.viewDirty.timeline = true; S.viewDirty.kanban = true; }
+  else { renderTimeline(); S.viewDirty.kanban = true; S.viewDirty.month = true; }
   S.viewDirty[S.view] = false;
   // FLIP — 읽기(rect)를 전부 모은 뒤 쓰기(transform) — 카드당 강제 리플로우 방지
   if (flip && rects.size) {
@@ -544,7 +638,7 @@ function renderBoardViews(flip, moved) {
     });
   }
 }
-const INDEX_PROMPT = 'context/content-calendar.md를 읽고, 앱 보드가 파싱할 수 있게 context/calendar-index.json 파일을 만들어줘. 형식: {"posts":[{"id":"IG-1","week":1,"day":"화","platform":"Instagram","pillar":"...","format":"single image","objective":"...","topic":"...","angle":"...","visual":"...","notes":"..."}]} — 캘린더의 모든 포스트를 하나도 빠짐없이 포함하고, JSON 외 다른 내용은 파일에 넣지 마.';
+const INDEX_PROMPT = 'context/content-calendar.md를 읽고, 앱 보드가 파싱할 수 있게 context/calendar-index.json과 context/calendar-meta.json을 만들어줘. index 형식: {"posts":[{"id":"IG-1","week":1,"day":"화","scheduledDate":"2026-07-15","scheduledTime":"10:00","platform":"Instagram","pillar":"...","format":"single image","objective":"...","topic":"...","angle":"...","visual":"...","notes":"..."}]}. meta 형식: {"year":2026,"month":7,"anchor":"2026-07-01","weekStartsOn":"monday"}. 메인 채널: Instagram, Threads, Naver Blog, Naver Clip, Kakao Channel. 같은 날 여러 채널 포스트는 scheduledDate를 같게 두고 scheduledTime으로 구분. JSON 외 다른 내용은 파일에 넣지 마.';
 function renderHero() {
   const b = S.board;
   const hero = $('#hero');
@@ -553,6 +647,7 @@ function renderHero() {
   hero.classList.toggle('hidden', !showHero);
   $('#timeline').classList.toggle('hidden', showHero || S.view !== 'timeline');
   $('#kanban').classList.toggle('hidden', showHero || S.view !== 'kanban');
+  $('#month-cal').classList.toggle('hidden', showHero || S.view !== 'month');
   if (!showHero) return;
   if (!S.client) {
     hero.innerHTML = `<div class="hero-card"><h3>클라이언트로 시작하세요</h3><p>좌측 레일의 + 버튼으로 클라이언트 폴더를 만들면, 팀이 그 폴더 안에서 브랜드·캘린더·콘텐츠를 관리합니다.</p></div>`;
@@ -1650,13 +1745,16 @@ async function openSettings(section) {
   sheet.innerHTML = `
     <div class="sheet-head"><h2>설정</h2><button class="icon-btn" id="set-close"><svg><use href="#i-close"/></svg></button></div>
     <div class="settings-nav">
-      <button data-sec="env" class="active">환경</button><button data-sec="engine">엔진</button><button data-sec="channels">채널</button><button data-sec="render">렌더</button><button data-sec="update">업데이트</button><button data-sec="about">정보</button>
+      <button data-sec="env" class="active">환경</button><button data-sec="engine">엔진</button><button data-sec="channels">채널</button><button data-sec="opencrab">OpenCrab</button><button data-sec="render">렌더</button><button data-sec="update">업데이트</button><button data-sec="about">정보</button>
     </div>
     <div class="sheet-body">
       <div data-body="env">${envRows(s)}${envButtons()}</div>
       <div data-body="channels" class="hidden">
-        <p class="muted small" style="margin-bottom:12px;line-height:1.6">각 플랫폼의 개발자 포털에서 발급한 토큰으로 <b>Blotato 없이 직접 발행</b>합니다. 값은 이 PC의 <code>~/.social-ai-team/secrets.json</code>에만 저장됩니다.<br>Instagram·네이버는 API 제약으로 수동 발행 체크리스트를 사용합니다.</p>
+        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>메인 채널</b>: 인스타그램 · 스레드 · 네이버 블로그 · 네이버 클립 · 카카오채널<br>각 플랫폼 토큰으로 Blotato 없이 직접 발행합니다. Instagram·네이버·클립·카카오는 API 제약으로 수동 체크리스트를 사용합니다.</p>
         <div id="sec-forms-ch"></div>
+      </div>
+      <div data-body="opencrab" class="hidden">
+        <div id="sec-opencrab"></div>
       </div>
       <div data-body="render" class="hidden">
         <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>클로드 디자인</b>(SVG→PNG) 레인은 키 없이 항상 동작합니다. 아래 키를 넣으면 이미지·영상 프로바이더가 추가로 열립니다.</p>
@@ -1726,6 +1824,7 @@ async function openSettings(section) {
   buildSecretForms($('#sec-forms-ch', sheet), CH_SECRET_FORMS, true);
   buildSecretForms($('#sec-forms-rd', sheet), RD_SECRET_FORMS, false);
   renderPackSection($('#sec-forms-rd', sheet));
+  renderOpenCrabSection($('#sec-opencrab', sheet));
   if (section) $(`.settings-nav button[data-sec="${section}"]`, sheet).click();
   openSheet('#sheet-settings');
 }
@@ -1759,6 +1858,80 @@ const RD_SECRET_FORMS = [
   { ns: 'opencrab', title: 'OpenCrab MCP (프롬프트 팩)', hint: 'opencrab.sh의 내 MCP 엔드포인트(https://opencrab.sh/api/mcp/…)를 넣으면 아래 팩 섹션에서 프롬프트·이미지·영상 팩을 검색해 컴파일러에 로드할 수 있습니다.',
     fields: [['endpoint', 'MCP 엔드포인트 URL']] },
 ];
+
+// ---- OpenCrab 연결 (설정 → OpenCrab 탭) -----------------------------------------------
+async function renderOpenCrabSection(root) {
+  if (!root) return;
+  const c = await window.api.packs.ocConstants();
+  const box = document.createElement('div');
+  box.className = 'sec-form';
+  box.innerHTML = `<div class="sec-head"><b>OpenCrab 프로젝트·워크플로</b><span class="muted small">에이전트 글쓰기 근거</span></div>
+    <p class="muted small" style="margin:6px 0 10px;line-height:1.6">기본 프로젝트 <code>${esc(c.project && c.project.name || '')}</code> · 워크플로 <code>${esc((c.workflows && c.workflows.threads_evidence_writing && c.workflows.threads_evidence_writing.name) || 'Threads Evidence Writing Workflow')}</code><br>MCP 엔드포인트는 <b>렌더</b> 탭의 OpenCrab 설정을 사용합니다.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button id="oc-run-threads">Threads 워크플로 실행</button>
+      <button id="oc-list-proj">프로젝트 목록</button>
+      <button id="oc-orch-cal" class="chip">pumasi: 캘린더 인덱스</button>
+    </div>
+    <p class="muted small" id="oc-run-msg"></p>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <div class="sec-head"><b>비주얼 자산 인제스트</b><span class="muted small">마스터시트 · 캐릭터시트 · 콘텐츠 베이스</span></div>
+    <p class="muted small" style="margin:6px 0 8px"><code>context/visual-assets/{master_sheet,character_sheet,content_base}/</code> 에 .md를 넣고 인제스트하세요.</p>
+    <div id="va-list" class="small" style="margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="va-ensure">폴더 준비</button>
+      <input id="va-proj" class="rp-input" placeholder="OpenCrab 프로젝트명" style="flex:1">
+      <button id="va-ingest">비주얼 팩 인제스트</button>
+    </div>
+    <p class="muted small" id="va-msg" style="margin-top:6px"></p>`;
+  root.appendChild(box);
+
+  const refreshVa = async () => {
+    if (!S.client) { $('#va-list', box).innerHTML = '<span class="muted">클라이언트 선택 필요</span>'; return; }
+    const list = await window.api.vassets.list(S.client.dir);
+    $('#va-list', box).innerHTML = (list || []).length
+      ? list.map((a) => `<span class="chip tiny">${esc(a.kind)}: ${esc(a.file)}</span>`).join(' ')
+      : '<span class="muted">자산 없음 — [폴더 준비] 후 md 파일 추가</span>';
+    if (S.client) $('#va-proj', box).value = $('#va-proj', box).value || `${S.client.name}-비주얼`;
+  };
+  refreshVa();
+
+  $('#oc-run-threads', box).onclick = async () => {
+    const b = $('#oc-run-threads', box); b.disabled = true;
+    $('#oc-run-msg', box).textContent = '워크플로 실행 중…';
+    try {
+      const r = await window.api.packs.ocRunWorkflow('threads_evidence_writing', { query: '소셜 글쓰기 패턴' });
+      $('#oc-run-msg', box).textContent = r && r.ok ? `✔ ${r.workflow} 실행됨` : '✖ ' + ((r && r.error) || '실패');
+    } catch (e) { $('#oc-run-msg', box).textContent = '✖ ' + e.message; }
+    finally { b.disabled = false; }
+  };
+  $('#oc-list-proj', box).onclick = async () => {
+    const r = await window.api.packs.ocProjects();
+    $('#oc-run-msg', box).textContent = r && r.ok
+      ? (r.projects || []).map((p) => p.name || p.id).slice(0, 5).join(', ') || '프로젝트 없음'
+      : '✖ ' + ((r && r.error) || '실패');
+  };
+  $('#oc-orch-cal', box).onclick = async () => {
+    if (!S.client) { toast('클라이언트 선택 필요'); return; }
+    const r = await window.api.orch.run(S.client.dir, 'calendar-index');
+    $('#oc-run-msg', box).textContent = r && r.ok ? '✔ 캘린더 인덱스 태스크 완료' : '✖ ' + ((r && r.error) || (r && r.tail) || '실패');
+    refreshBoard(false);
+  };
+  $('#va-ensure', box).onclick = async () => {
+    if (!S.client) return;
+    await window.api.vassets.ensure(S.client.dir);
+    toast('visual-assets 폴더 준비됨');
+    refreshVa();
+  };
+  $('#va-ingest', box).onclick = async () => {
+    if (!S.client) return;
+    const b = $('#va-ingest', box); b.disabled = true;
+    try {
+      const r = await window.api.vassets.ingest(S.client.dir, $('#va-proj', box).value.trim());
+      $('#va-msg', box).textContent = r && r.ok ? `✔ ${r.ingested || r.count}/${r.total || r.count} 인제스트` : '✖ ' + ((r && r.error) || '실패');
+    } catch (e) { $('#va-msg', box).textContent = '✖ ' + e.message; }
+    finally { b.disabled = false; }
+  };
+}
 
 // ---- 프롬프트 팩 관리 (설정 → 렌더 하단) ------------------------------------------------
 async function renderPackSection(root) {

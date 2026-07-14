@@ -1,0 +1,62 @@
+# Social AI Team — OpenCrab SSOT
+# 에이전트·데스크톱·스킬이 동일한 프로젝트/워크플로/팩을 참조합니다.
+
+project:
+  id: f4aef485-ee91-44a0-85cf-a9a96dfa04c2
+  name: threads_top_exposure_research_ko
+  description: Threads 상위노출 관측 기반 한국어 소셜 글쓰기 근거
+
+workflows:
+  threads_evidence_writing:
+    id: d3a71109-a469-4217-80ff-03e423e24dbc
+    name: Threads Evidence Writing Workflow
+    channels: [threads]
+    skill: threads-writer
+
+packs:
+  threads_golf:
+    id: c161bb15-6863-49a8-ae42-cad1d6c1da0a
+    title: threads-top-golf-ko-v1
+    topics: [golf, 골프]
+  threads_development:
+    id: 4fda8da8-9573-4cf0-a169-7340671f1bb6
+    title: threads-top-development-ko-v1
+    topics: [development, dev, 개발]
+  threads_it:
+    id: 04532b1a-0ed7-4241-ac92-6687d9824f01
+    title: threads-top-it-ko-v1
+    topics: [it, IT]
+  naver_brandconnect_seo:
+    id: cfe1fd01-a052-4ec0-a97b-b7f45cd92b9d
+    title: naver-brandconnect-seo-ontology-2026-07-01
+    channels: [naver]
+
+# 클라이언트별 비주얼·캐릭터 자산 — context/visual-assets/ 인제스트 시 팩 카테고리
+visual_asset_kinds:
+  master_sheet:
+    label: 마스터시트
+    ingest_category: brand-visual-master
+    description: 브랜드 비주얼 일관성 앵커(팔레트·타이포·그리드·금지 규칙)
+  character_sheet:
+    label: 캐릭터시트
+    ingest_category: brand-character
+    description: 인물/마스코트 정체성 앵커(외형·의상·표정 규칙)
+  content_base:
+    label: 콘텐츠 베이스
+    ingest_category: content-reference
+    description: 제품·장면·레퍼런스 이미지/카피 묶음
+
+# 채널 → 권장 OpenCrab 워크플로/스킬 라우팅
+channel_routing:
+  threads:
+    workflow: threads_evidence_writing
+    skill: threads-writer
+  naver:
+    pack: naver_brandconnect_seo
+    skill: naver-blog-writer
+  naver_clip:
+    skill: reels-script
+  kakao_channel:
+    skill: caption-writer
+  instagram:
+    skill: caption-writer

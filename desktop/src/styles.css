@@ -7,7 +7,8 @@
   --accent-subtle:rgba(201,111,74,.12);
   --ok:#6fbf73; --warn:#e0b04b; --bad:#e06c5b; --info:#8fb4c9;
   --ch-instagram:#c9678f; --ch-facebook:#7286b8; --ch-linkedin:#5f8fa8; --ch-threads:#b9b3c4;
-  --ch-x:#a8a29a; --ch-naver:#7fae6f; --ch-tiktok:#6fb8b1; --ch-etc:#a99d8e;
+  --ch-x:#a8a29a; --ch-naver:#7fae6f; --ch-naver_clip:#5fa88a; --ch-kakao_channel:#f0c040;
+  --ch-tiktok:#6fb8b1; --ch-etc:#a99d8e;
 }
 * { box-sizing:border-box; margin:0; padding:0; }
 html,body { height:100%; overflow:hidden; }
@@ -117,6 +118,22 @@ button:disabled { opacity:.4; cursor:default; }
 .kb-ticker { font-family:'D2Coding',Consolas,monospace; font-size:10.5px; color:var(--accent-hover); padding:3px 12px; border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .kb-cards { padding:10px; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
 .ghost-post { border:1.5px dashed var(--line); border-radius:10px; height:60px; opacity:.5; }
+
+/* ══ 월간 캘린더 ══ */
+.month-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+.month-toolbar h3 { font-size:15px; min-width:120px; }
+.month-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+.month-dow { text-align:center; font-size:11px; color:var(--muted); font-weight:600; padding:4px 0; }
+.month-cell { min-height:108px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:6px; display:flex; flex-direction:column; gap:4px; }
+.month-cell.out { opacity:.35; }
+.month-cell.today { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent-subtle); }
+.month-cell-head { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--muted); }
+.month-cell-head b { color:var(--text); font-size:12px; }
+.month-stack { display:flex; flex-direction:column; gap:3px; overflow:hidden; flex:1; }
+.month-chip { font-size:10px; line-height:1.25; padding:3px 6px; border-radius:6px; border-left:3px solid; background:var(--card); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.month-chip.dim { opacity:.2; }
+.month-chip .time { color:var(--faint); margin-right:4px; }
+.month-more { font-size:10px; color:var(--muted); text-align:center; padding:2px; }
 /* 히어로 */
 #hero { display:flex; gap:14px; justify-content:center; align-items:stretch; padding:40px 20px; flex-wrap:wrap; }
 .hero-card { width:250px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:10px; }

@@ -83,6 +83,19 @@ contextBridge.exposeInMainWorld('api', {
     delete: (file) => ipcRenderer.invoke('packs:delete', file),
     ocSearch: (query) => ipcRenderer.invoke('oc:search', query),
     ocLoad: (pack) => ipcRenderer.invoke('oc:load', pack),
+    ocConstants: () => ipcRenderer.invoke('oc:constants'),
+    ocProjects: () => ipcRenderer.invoke('oc:projects'),
+    ocRunWorkflow: (key, args) => ipcRenderer.invoke('oc:runWorkflow', key, args),
+    ocRoute: (channel) => ipcRenderer.invoke('oc:route', channel),
+  },
+  vassets: {
+    list: (dir) => ipcRenderer.invoke('vassets:list', dir),
+    ensure: (dir) => ipcRenderer.invoke('vassets:ensure', dir),
+    ingest: (dir, projectName) => ipcRenderer.invoke('vassets:ingest', dir, projectName),
+  },
+  orch: {
+    tasks: () => ipcRenderer.invoke('orch:tasks'),
+    run: (dir, taskName, extra) => ipcRenderer.invoke('orch:run', dir, taskName, extra),
   },
   strat: {
     extract: (dir) => ipcRenderer.invoke('strat:extract', dir),
