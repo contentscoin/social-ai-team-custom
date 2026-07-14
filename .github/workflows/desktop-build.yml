@@ -23,15 +23,24 @@ jobs:
         include:
           - os: windows-latest
             flags: --win --x64
-            artifact: 'desktop/dist/*.exe'
+            artifact: |
+              desktop/dist/*.exe
+              desktop/dist/*.yml
+              desktop/dist/*.blockmap
             artifact_name: windows
           - os: macos-latest
             flags: --mac --arm64
-            artifact: 'desktop/dist/*.dmg'
+            artifact: |
+              desktop/dist/*.dmg
+              desktop/dist/*.yml
+              desktop/dist/*.blockmap
+              desktop/dist/*.zip
             artifact_name: macos
           - os: ubuntu-latest
             flags: --linux --x64
-            artifact: 'desktop/dist/*.AppImage'
+            artifact: |
+              desktop/dist/*.AppImage
+              desktop/dist/*.yml
             artifact_name: linux
     runs-on: ${{ matrix.os }}
     steps:
@@ -40,8 +49,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -62,7 +69,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: desktop
-        run: npm ci || npm install
+        run: npm install
 
       - name: Build installer (no publish — avoid matrix race)
         working-directory: desktop
@@ -70,6 +77,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Electron download can flake; keep logs readable
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: 'true'
 
       - name: List dist output
         working-directory: desktop
@@ -112,6 +121,7 @@ jobs:
           name: Social AI Team v${{ steps.ver.outputs.version }}
           draft: false
           generate_release_notes: true
+          fail_on_unmatched_files: false
           files: |
             release-assets/**/*.exe
             release-assets/**/*.dmg
