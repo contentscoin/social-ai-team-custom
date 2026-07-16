@@ -113,10 +113,13 @@ app.whenReady().then(() => {
     try {
       const u = new URL(req.url);
       const dir = decodeURIComponent(u.searchParams.get('d') || '');
-      const rel = decodeURIComponent(u.searchParams.get('p') || '');
-      const known = workspace.listClients().some((c) => c.dir === dir);
-      const abs = path.resolve(dir, rel);
-      if (!known || !abs.startsWith(path.resolve(dir) + path.sep) || !/\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(abs)) { cb({ error: -10 }); return; }
+      const rel = decodeURIComponent(u.searchParams.get('p') || '').replace(/\\/g, '/');
+      const root = path.resolve(dir);
+      const known = workspace.listClients().some((c) => path.resolve(c.dir) === root);
+      const abs = path.resolve(root, rel);
+      const relToRoot = path.relative(root, abs);
+      const escaped = !relToRoot || relToRoot.startsWith('..') || path.isAbsolute(relToRoot);
+      if (!known || escaped || !/\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(abs)) { cb({ error: -10 }); return; }
       cb({ path: abs });
     } catch { cb({ error: -2 }); }
   });
@@ -232,17 +235,47 @@ function initAutoUpdate() {
 }
 ipcMain.handle('update:version', () => app.getVersion());
 ipcMain.handle('update:check', async () => {
-  if (!autoUpdater) return { ok: false, message: 'updater unavailable (dev run)' };
-  if (!app.isPackaged) return { ok: false, message: 'dev run — packaged app에서만 동작' };
-  configureAutoUpdaterFeed();
-  try { await autoUpdater.checkForUpdates(); return { ok: true }; }
-  catch (e) { return { ok: false, message: explainUpdateError(e && e.message || e), code: 'private-feed' }; }
+  if (!autoUpdater) return { ok: false, state: 'error', message: 'updater unavailable (dev run)' };
+  if (!app.isPackaged) {
+    const msg = '개발 실행(npm start)에서는 자동 업데이트가 동작하지 않습니다. 설치본에서 확인하세요.';
+    send('update', { state: 'error', message: msg, code: 'dev' });
+    return { ok: false, state: 'error', message: msg, code: 'dev' };
+  }
+  const feed = configureAutoUpdaterFeed();
+  send('update', { state: 'checking', hasToken: !!feed.hasToken });
+  try {
+    const result = await Promise.race([
+      autoUpdater.checkForUpdates(),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('업데이트 확인 시간 초과(20초). PAT 권한·네트워크를 확인하세요.')), 20000);
+      }),
+    ]);
+    const remote = result && result.updateInfo && result.updateInfo.version;
+    const cur = app.getVersion();
+    if (remote && String(remote) !== String(cur)) {
+      send('update', { state: 'available', version: remote });
+      return { ok: true, state: 'available', version: remote, current: cur };
+    }
+    send('update', { state: 'latest', version: cur });
+    return { ok: true, state: 'latest', version: cur };
+  } catch (e) {
+    const message = explainUpdateError(e && e.message || e);
+    const code = /releases\.atom|404|token|시간 초과/i.test(String(e && e.message || e)) ? 'private-feed' : 'other';
+    send('update', { state: 'error', message, code });
+    return { ok: false, state: 'error', message, code };
+  }
 });
 ipcMain.handle('update:install', () => { if (autoUpdater) autoUpdater.quitAndInstall(); });
 ipcMain.handle('update:openReleases', () => {
   shell.openExternal('https://github.com/contentscoin/social-ai-team-custom/releases');
   return { ok: true };
 });
+ipcMain.handle('update:status', () => ({
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  hasToken: !!updateToken(),
+  feed: UPDATE_FEED,
+}));
 
 // ---- Setup wizard ----------------------------------------------------------
 ipcMain.handle('setup:check', safe(() => setup.checkEnvironment()));

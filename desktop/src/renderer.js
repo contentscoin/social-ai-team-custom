@@ -440,7 +440,11 @@ function applyBoard(b, first) {
 }
 function cardId(p) { return (CH_MONO[p.channel] || '?') + '-' + p.n; }
 // 워크스페이스 미디어 직접 서빙 URL (main의 sat:// 프로토콜 — 등록 폴더 내 미디어만 허용)
-function satUrl(rel) { return 'sat://f?d=' + encodeURIComponent(S.client.dir) + '&p=' + encodeURIComponent(rel); }
+function satUrl(rel) {
+  // Windows 경로 구분자를 URL에서 통일 — sat:// 프로토콜이 파일을 못 찾는 경우 방지
+  const p = String(rel || '').replace(/\\/g, '/');
+  return 'sat://f?d=' + encodeURIComponent(S.client.dir) + '&p=' + encodeURIComponent(p);
+}
 function makeCard(p) {
   const el = $('#tpl-post-card').content.firstElementChild.cloneNode(true);
   const color = `var(--ch-${p.channel})`;
@@ -705,10 +709,19 @@ async function renderTemplateBoard() {
             images: postRenderRels(p),
             compact: true,
           })}</div>
+          <div class="tm-asset-bar" data-uid="${esc(p.uid)}">${(() => {
+            const imgs = postRenderRels(p);
+            if (!imgs.length) {
+              return '<span class="chip tiny pub-ready no">이미지 없음 — 카드 상세에서 비주얼 생성</span>';
+            }
+            return `<span class="chip tiny pub-ready ok">이미지 ${imgs.length}장 배치</span>`
+              + imgs.slice(0, 4).map((r) => `<img class="tm-asset-thumb" src="${satUrl(r)}" alt="" loading="lazy">`).join('');
+          })()}</div>
           <p class="muted small tm-loading" data-uid="${esc(p.uid)}">본문 불러오는 중…</p>
           <div class="tm-slot-actions">
             <button type="button" class="chip accent tm-review" data-uid="${esc(p.uid)}">발행 검토</button>
             <button type="button" class="chip tm-insp" data-uid="${esc(p.uid)}">카드 상세</button>
+            <button type="button" class="chip tm-visual" data-uid="${esc(p.uid)}">비주얼 생성</button>
           </div>
         </div>`).join('') : `<div class="tm-empty muted">${esc(CH_NAME[chKey] || chKey)} 포스트가 없습니다. 캘린더에 편성하거나 필터를 바꿔보세요.</div>`}
     </div>`;
@@ -735,20 +748,39 @@ async function renderTemplateBoard() {
       if (p) openInspector(p);
     };
   }
+  for (const btn of $$('.tm-visual', root)) {
+    btn.onclick = () => {
+      const p = S.board.posts.find((x) => x.uid === btn.dataset.uid);
+      if (!p) return;
+      openInspector(p);
+      setTimeout(() => openRenderPanel(p), 0);
+    };
+  }
   // 비동기로 실제 생성된 본문 주입 → 목업을 "작성된 모습"으로 갱신
+  const gen = ++renderTemplateBoard._gen || (renderTemplateBoard._gen = 1);
+  renderTemplateBoard._gen = gen;
   for (const p of posts) {
     try {
       const draft = await window.api.pub2.draft(S.client.dir, p.lane, p.topic);
+      if (renderTemplateBoard._gen !== gen || S.view !== 'template') return; // 탭 전환 시 오래된 결과 무시
       const mock = $$('.tm-mock', root).find((el) => el.dataset.uid === p.uid);
       const load = $$('.tm-loading', root).find((el) => el.dataset.uid === p.uid);
+      const bar = $$('.tm-asset-bar', root).find((el) => el.dataset.uid === p.uid);
       if (load) load.remove();
       if (!mock) continue;
+      const imgs = postRenderRels(p);
       mock.innerHTML = channelMock(chKey, {
         text: draft.ok ? draft.text : '',
         topic: p.topic,
-        images: postRenderRels(p),
+        images: imgs,
         compact: false,
       });
+      if (bar) {
+        bar.innerHTML = imgs.length
+          ? `<span class="chip tiny pub-ready ok">이미지 ${imgs.length}장 배치</span>`
+            + imgs.slice(0, 4).map((r) => `<img class="tm-asset-thumb" src="${satUrl(r)}" alt="" loading="lazy">`).join('')
+          : '<span class="chip tiny pub-ready no">이미지 없음 — 「비주얼 생성」으로 이미지를 만드세요</span>';
+      }
       if (!draft.ok) {
         const note = document.createElement('p');
         note.className = 'muted small';
@@ -1662,9 +1694,26 @@ async function openRenderPanel(p) {
 
 // ---- publish panel (검토 미리보기 + API/수동 발행) ------------------------------------------
 function postRenderRels(p) {
-  const imgs = (p.files || []).filter((f) => f.kind === 'render').map((f) => f.rel);
-  if (!imgs.length && p.thumb) imgs.push(p.thumb);
-  return imgs;
+  const out = [];
+  const push = (rel) => {
+    if (!rel) return;
+    const n = String(rel).replace(/\\/g, '/');
+    if (!out.includes(n)) out.push(n);
+  };
+  for (const f of (p.files || [])) {
+    if (f.kind === 'render' || f.kind === 'creative') push(f.rel);
+  }
+  push(p.thumb);
+  // 보드 카드 매칭이 비어도 creatives 레인에서 chId-n 프리픽스로 보강
+  if (!out.length && S.board && Array.isArray(S.board.lanes && S.board.lanes.creatives)) {
+    const id = p.chId || 'etc';
+    const re = new RegExp(`^${id}-0*${Number(p.n) || p.n}(?![0-9])`, 'i');
+    for (const f of S.board.lanes.creatives) {
+      const name = f.name || (f.rel || '').split(/[\\/]/).pop() || '';
+      if (re.test(name) && /\.(png|jpe?g|webp|gif)$/i.test(name)) push(f.rel);
+    }
+  }
+  return out;
 }
 function postCopyRels(p) {
   return (p.files || []).filter((f) => f.kind === 'copy').map((f) => f.rel);
@@ -2139,9 +2188,36 @@ async function openSettings(section) {
   };
   bindModel('#set-model-claude', 'claude');
   bindModel('#set-model-codex', 'codex');
+  const setUpdStatus = (text) => {
+    const el = $('#set-upd-status');
+    if (el) el.textContent = text;
+  };
+  const applyUpdResult = (r) => {
+    if (!r) { setUpdStatus('응답 없음'); return; }
+    if (r.state === 'latest') setUpdStatus(`최신 버전입니다 (v${r.version || ''})`);
+    else if (r.state === 'available') setUpdStatus(`v${r.version} 발견 — 다운로드 중…`);
+    else if (r.state === 'checking') setUpdStatus('확인 중…');
+    else if (r.ok) setUpdStatus(`확인 완료${r.version ? ` (v${r.version})` : ''}`);
+    else setUpdStatus(r.message || '업데이트 확인 실패');
+  };
+  try {
+    const st = await window.api.update.status();
+    if (st && !st.packaged) setUpdStatus('설치본이 아닙니다(개발 실행). 자동 업데이트는 설치 후 동작합니다.');
+    else if (st && !st.hasToken) setUpdStatus('PAT 없음 — Private 저장소면 아래에 토큰을 저장하세요.');
+    else setUpdStatus('「업데이트 확인」을 누르면 결과가 여기에 표시됩니다.');
+  } catch { /* ignore */ }
   $('#set-upd-check').onclick = async () => {
-    const r = await window.api.update.check();
-    $('#set-upd-status').textContent = r.ok ? '확인 중…' : (r.message || '실패');
+    setUpdStatus('확인 중… (최대 20초)');
+    try {
+      const r = await window.api.update.check();
+      applyUpdResult(r);
+      toast(r && r.ok
+        ? (r.state === 'available' ? `업데이트 v${r.version} 발견` : '최신 버전입니다')
+        : ('업데이트: ' + (r && r.message || '실패')).slice(0, 120));
+    } catch (e) {
+      setUpdStatus('확인 실패: ' + e.message);
+      toast('업데이트 확인 실패: ' + e.message);
+    }
   };
   $('#set-upd-releases').onclick = () => window.api.update.openReleases();
   try {
@@ -2155,7 +2231,12 @@ async function openSettings(section) {
     $('#set-gh-token').value = '';
     const gh = await window.api.sec.get('github');
     $('#set-gh-mask').textContent = gh && gh.token ? `저장됨: ${gh.token}` : '토큰 삭제됨';
-    toast(token ? 'GitHub 업데이트 토큰 저장됨 — 다시 「업데이트 확인」' : '토큰 삭제됨');
+    toast(token ? 'GitHub 업데이트 토큰 저장됨 — 확인 중…' : '토큰 삭제됨');
+    if (token) {
+      setUpdStatus('토큰 저장됨 — 업데이트 확인 중…');
+      try { applyUpdResult(await window.api.update.check()); }
+      catch (e) { setUpdStatus('확인 실패: ' + e.message); }
+    }
   };
   // 채널 토큰 폼 (직접 발행) + 렌더 프로바이더 키 폼
   buildSecretForms($('#sec-forms-ch', sheet), CH_SECRET_FORMS, true);
@@ -2500,11 +2581,14 @@ window.api.onUpdate(async (u) => {
   if (u.state === 'error' && !updErrToasted) {
     updErrToasted = true; // 백그라운드 실패도 최소 1회는 통지
     logLine('update', '업데이트 확인 실패: ' + u.message);
-    if (u.code !== 'private-feed') toast('업데이트 확인 실패 — 설정→업데이트 참고');
+    toast(('업데이트: ' + (u.message || '실패')).slice(0, 140));
   }
+  if (u.state === 'latest') toast('최신 버전입니다');
+  if (u.state === 'available') toast(`업데이트 v${u.version} 발견 — 다운로드 중`);
   const el = $('#set-upd-status');
   if (el) {
-    if (u.state === 'latest') el.textContent = '최신 버전입니다';
+    if (u.state === 'checking') el.textContent = '확인 중…';
+    else if (u.state === 'latest') el.textContent = `최신 버전입니다 (v${u.version || ''})`;
     else if (u.state === 'available') el.textContent = `v${u.version} 발견 — 다운로드 중…`;
     else if (u.state === 'downloading') el.textContent = `다운로드 중… ${u.percent}%`;
     else if (u.state === 'ready') el.textContent = `v${u.version} 준비 완료 — 재시작하면 적용됩니다`;

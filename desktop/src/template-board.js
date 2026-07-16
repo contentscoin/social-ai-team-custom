@@ -28,10 +28,15 @@
       : `<div class="${cls || 'tm-img'} empty">이미지 없음</div>`);
 
     if (chKey === 'instagram') {
+      const media = images.length
+        ? (images.length === 1
+          ? img(images[0])
+          : `<div class="tm-carousel-strip">${images.slice(0, 6).map((r) => img(r, 'tm-img tm-slide')).join('')}</div>`)
+        : img(null);
       return `<article class="tm-card tm-ig ${compact ? 'compact' : ''}">
         <header class="tm-ig-head"><span class="tm-avatar">${esc(handle.slice(0, 1).toUpperCase())}</span>
           <div><b>${esc(handle)}</b><span class="muted small">원본 · 게시물</span></div></header>
-        <div class="tm-ig-media">${img(images[0])}${images.length > 1 ? `<span class="tm-carousel">${images.length}</span>` : ''}</div>
+        <div class="tm-ig-media">${media}${images.length > 1 ? `<span class="tm-carousel">${images.length}장</span>` : ''}</div>
         <div class="tm-ig-actions" aria-hidden="true">♡ 💬 ➤</div>
         <div class="tm-ig-caption"><b>${esc(handle)}</b> ${nl2br(esc, text || topic || '캡션이 아직 없습니다')}</div>
       </article>`;
