@@ -2091,7 +2091,22 @@ async function openSettings(section) {
       </div>
       <div data-body="update" class="hidden">
         <p>현재 버전 <b>v${esc(v)}</b></p>
-        <div class="btn-grid"><button id="set-upd-check">업데이트 확인</button></div>
+        <p class="muted small" style="margin:8px 0;line-height:1.55">
+          릴리즈 저장소 <code>contentscoin/social-ai-team-custom</code>이 <b>Private</b>이면
+          자동 업데이트가 <code>releases.atom</code> 404를 냅니다.
+          <br>① 저장소를 <b>Public</b>으로 바꾸거나
+          ② 아래 GitHub PAT(<code>repo</code> 권한)를 저장하세요.
+        </p>
+        <label class="small muted">GitHub PAT (업데이트 전용, 로컬만 저장)</label>
+        <div style="display:flex;gap:8px;margin:6px 0 10px">
+          <input id="set-gh-token" class="rp-input" type="password" placeholder="ghp_… 또는 github_pat_…" style="flex:1" autocomplete="off">
+          <button id="set-gh-save" type="button">저장</button>
+        </div>
+        <p id="set-gh-mask" class="muted small"></p>
+        <div class="btn-grid">
+          <button id="set-upd-check">업데이트 확인</button>
+          <button id="set-upd-releases" type="button">릴리즈 페이지 열기</button>
+        </div>
         <p id="set-upd-status" class="muted" style="margin-top:8px"></p>
       </div>
       <div data-body="about" class="hidden">
@@ -2124,7 +2139,24 @@ async function openSettings(section) {
   };
   bindModel('#set-model-claude', 'claude');
   bindModel('#set-model-codex', 'codex');
-  $('#set-upd-check').onclick = async () => { const r = await window.api.update.check(); $('#set-upd-status').textContent = r.ok ? '확인 중…' : r.message; };
+  $('#set-upd-check').onclick = async () => {
+    const r = await window.api.update.check();
+    $('#set-upd-status').textContent = r.ok ? '확인 중…' : (r.message || '실패');
+  };
+  $('#set-upd-releases').onclick = () => window.api.update.openReleases();
+  try {
+    const gh = await window.api.sec.get('github');
+    const mask = $('#set-gh-mask');
+    if (mask) mask.textContent = gh && gh.token ? `저장됨: ${gh.token}` : '토큰 없음 — Public 저장소이거나 PAT 필요';
+  } catch { /* ignore */ }
+  $('#set-gh-save').onclick = async () => {
+    const token = ($('#set-gh-token').value || '').trim();
+    await window.api.sec.set('github', { token });
+    $('#set-gh-token').value = '';
+    const gh = await window.api.sec.get('github');
+    $('#set-gh-mask').textContent = gh && gh.token ? `저장됨: ${gh.token}` : '토큰 삭제됨';
+    toast(token ? 'GitHub 업데이트 토큰 저장됨 — 다시 「업데이트 확인」' : '토큰 삭제됨');
+  };
   // 채널 토큰 폼 (직접 발행) + 렌더 프로바이더 키 폼
   buildSecretForms($('#sec-forms-ch', sheet), CH_SECRET_FORMS, true);
   buildSecretForms($('#sec-forms-rd', sheet), RD_SECRET_FORMS, false);
@@ -2462,9 +2494,13 @@ window.api.onStage(({ state, stage, dir }) => {
 let updErrToasted = false;
 window.api.onUpdate(async (u) => {
   if (u.state === 'ready') { $('#tb-update').classList.remove('hidden'); }
+  if (u.state === 'skipped') {
+    logLine('update', u.message || '자동 업데이트 건너뜀 (비공개 저장소)');
+  }
   if (u.state === 'error' && !updErrToasted) {
     updErrToasted = true; // 백그라운드 실패도 최소 1회는 통지
     logLine('update', '업데이트 확인 실패: ' + u.message);
+    if (u.code !== 'private-feed') toast('업데이트 확인 실패 — 설정→업데이트 참고');
   }
   const el = $('#set-upd-status');
   if (el) {
@@ -2472,6 +2508,7 @@ window.api.onUpdate(async (u) => {
     else if (u.state === 'available') el.textContent = `v${u.version} 발견 — 다운로드 중…`;
     else if (u.state === 'downloading') el.textContent = `다운로드 중… ${u.percent}%`;
     else if (u.state === 'ready') el.textContent = `v${u.version} 준비 완료 — 재시작하면 적용됩니다`;
+    else if (u.state === 'skipped') el.textContent = u.message || '자동 업데이트 비활성 (비공개 저장소)';
     else if (u.state === 'error') el.textContent = `업데이트 오류: ${u.message}`;
   }
 });

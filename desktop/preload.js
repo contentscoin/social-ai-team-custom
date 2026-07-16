@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld('api', {
     version: () => ipcRenderer.invoke('update:version'),
     check: () => ipcRenderer.invoke('update:check'),
     install: () => ipcRenderer.invoke('update:install'),
+    openReleases: () => ipcRenderer.invoke('update:openReleases'),
   },
   onLog: (cb) => subscribe('log', cb),
   onUpdate: (cb) => subscribe('update', cb),

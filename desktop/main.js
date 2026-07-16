@@ -154,29 +154,95 @@ ipcMain.handle('app:copyLogs', () => {
 });
 
 // ---- Auto update (electron-updater ← GitHub Releases) -----------------------
+// social-ai-team-custom 은 private 저장소라 releases.atom 이 토큰 없이 404 난다.
+// 해결: (A) 저장소를 Public 으로 두거나 (B) 설정→업데이트에 GitHub PAT(repo) 저장.
+const UPDATE_FEED = {
+  provider: 'github',
+  owner: 'contentscoin',
+  repo: 'social-ai-team-custom',
+  private: true,
+};
+
+function updateToken() {
+  const fromSecrets = (secrets.get('github') || {}).token;
+  const fromEnv = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  return String(fromSecrets || fromEnv || '').trim() || null;
+}
+
+function explainUpdateError(raw) {
+  const msg = String(raw || '');
+  if (/releases\.atom|authentication token|404/i.test(msg)) {
+    return '비공개 저장소 업데이트 피드에 접근하지 못했습니다. '
+      + '저장소를 Public으로 바꾸거나, 설정→업데이트에 GitHub PAT(repo 권한)를 넣으세요. '
+      + '수동 설치: https://github.com/contentscoin/social-ai-team-custom/releases';
+  }
+  return msg.slice(0, 300);
+}
+
+function configureAutoUpdaterFeed() {
+  if (!autoUpdater) return { ok: false, reason: 'no-updater' };
+  const token = updateToken();
+  try {
+    if (token) {
+      // Private 저장소: GitHub API + PAT
+      autoUpdater.setFeedURL({ ...UPDATE_FEED, private: true, token });
+      return { ok: true, mode: 'private', hasToken: true };
+    }
+    // Public 저장소면 releases.atom 으로 동작. Private면 404 → 안내.
+    autoUpdater.setFeedURL({
+      provider: UPDATE_FEED.provider,
+      owner: UPDATE_FEED.owner,
+      repo: UPDATE_FEED.repo,
+      private: false,
+    });
+    return { ok: true, mode: 'public', hasToken: false };
+  } catch (e) {
+    applog.write('update-feed', String(e && e.message || e));
+    return { ok: false, reason: String(e && e.message || e) };
+  }
+}
+
 function initAutoUpdate() {
   if (!autoUpdater || !app.isPackaged) return; // dev run or dep missing
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  configureAutoUpdaterFeed();
   autoUpdater.on('checking-for-update', () => send('update', { state: 'checking' }));
   autoUpdater.on('update-available', (i) => send('update', { state: 'available', version: i.version }));
   autoUpdater.on('update-not-available', () => send('update', { state: 'latest', version: app.getVersion() }));
   autoUpdater.on('download-progress', (p) => send('update', { state: 'downloading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (i) => send('update', { state: 'ready', version: i.version }));
-  autoUpdater.on('error', (e) => send('update', { state: 'error', message: String(e && e.message || e).slice(0, 300) }));
+  autoUpdater.on('error', (e) => {
+    const raw = String(e && e.message || e);
+    const message = explainUpdateError(raw);
+    applog.write('update-error', message);
+    send('update', {
+      state: 'error',
+      message,
+      code: /releases\.atom|404|token/i.test(raw) ? 'private-feed' : 'other',
+    });
+  });
   // macOS unsigned builds cannot apply updates (Squirrel requires a signature) — the
   // error handler above surfaces that instead of crashing.
   autoUpdater.checkForUpdates().catch(() => {});
-  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 3600 * 1000); // 장시간 켜둔 앱도 갱신
+  setInterval(() => {
+    configureAutoUpdaterFeed();
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 6 * 3600 * 1000); // 장시간 켜둔 앱도 갱신
 }
 ipcMain.handle('update:version', () => app.getVersion());
 ipcMain.handle('update:check', async () => {
   if (!autoUpdater) return { ok: false, message: 'updater unavailable (dev run)' };
   if (!app.isPackaged) return { ok: false, message: 'dev run — packaged app에서만 동작' };
+  configureAutoUpdaterFeed();
   try { await autoUpdater.checkForUpdates(); return { ok: true }; }
-  catch (e) { return { ok: false, message: String(e && e.message || e).slice(0, 300) }; }
+  catch (e) { return { ok: false, message: explainUpdateError(e && e.message || e), code: 'private-feed' }; }
 });
 ipcMain.handle('update:install', () => { if (autoUpdater) autoUpdater.quitAndInstall(); });
+ipcMain.handle('update:openReleases', () => {
+  shell.openExternal('https://github.com/contentscoin/social-ai-team-custom/releases');
+  return { ok: true };
+});
 
 // ---- Setup wizard ----------------------------------------------------------
 ipcMain.handle('setup:check', safe(() => setup.checkEnvironment()));
