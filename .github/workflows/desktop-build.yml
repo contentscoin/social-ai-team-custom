@@ -68,7 +68,7 @@ jobs:
         working-directory: desktop
         run: npm install
 
-      - name: Build installer (no Actions artifacts ??quota workaround)
+      - name: Build installer (no Actions artifacts — quota workaround)
         working-directory: desktop
         run: npx electron-builder ${{ matrix.flags }} --publish never
         env:
