@@ -1,7 +1,7 @@
 {
   "name": "social-ai-team-desktop",
   "productName": "Social AI Team",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Desktop control tower for the Social AI Team — installs the skills, authenticates Codex, and drives the content pipeline per client.",
   "main": "main.js",
   "author": "contentscoin",
@@ -23,7 +23,6 @@
   "build": {
     "appId": "kr.contentscoin.socialaiteam",
     "productName": "Social AI Team",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": { "output": "dist" },
     "publish": [
       { "provider": "github", "owner": "contentscoin", "repo": "social-ai-team-custom", "releaseType": "release" }
@@ -37,28 +36,9 @@
       { "from": "../opencrab", "to": "payload/opencrab" },
       { "from": "../pumasi.config.yaml", "to": "payload/pumasi.config.yaml" }
     ],
-    "win": { "target": ["nsis"], "icon": "assets/icon.png" },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "artifactName": "Social-AI-Team-Setup-${version}.${ext}"
-    },
-    "mac": {
-      "target": ["dmg"],
-      "icon": "assets/icon.png",
-      "category": "public.app-category.productivity",
-      "identity": null,
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false
-    },
-    "dmg": {
-      "artifactName": "Social-AI-Team-${version}-${arch}.${ext}"
-    },
-    "linux": {
-      "target": ["AppImage"],
-      "icon": "assets/icon.png",
-      "category": "Office",
-      "artifactName": "Social-AI-Team-${version}.${ext}"
-    }
+    "win": { "target": "nsis", "icon": "assets/icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "mac": { "target": "dmg", "icon": "assets/icon.png", "category": "public.app-category.productivity" },
+    "linux": { "target": "AppImage", "icon": "assets/icon.png", "category": "Office" }
   }
 }
