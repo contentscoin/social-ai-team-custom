@@ -254,7 +254,7 @@ async function selectClient(c) {
 for (const b of $$('#view-seg button')) b.onclick = () => {
   S.view = b.dataset.view;
   applyViewSeg();
-  // 템플릿 보드는 본문 미리보기가 있어 전환 시 항상 갱신
+  // 템플릿은 fingerprint로 불필요 재빌드를 건너뛰므로 dirty/전환 시 갱신
   if (S.board && (S.viewDirty[S.view] || S.view === 'template')) renderBoardViews(false);
   renderHero();
 };
@@ -588,12 +588,13 @@ function brandHandle() {
   const n = (S.client && (S.client.name || S.client.id)) || 'brand';
   return String(n).replace(/\s+/g, '').slice(0, 24) || 'brand';
 }
-function mockOpts(chKey, { text, topic, images, compact }) {
+function mockOpts(chKey, { text, topic, images, imageSrcs, compact }) {
   return {
     text: text || '',
     topic: topic || '',
     handle: brandHandle(),
     images: images || [],
+    imageSrcs: imageSrcs || [],
     compact: !!compact,
     esc,
     satUrl,
@@ -604,6 +605,35 @@ function channelMock(chKey, opts) {
     return SatTemplate.channelMockHTML(chKey, mockOpts(chKey, opts));
   }
   return `<p class="muted">템플릿 모듈을 불러오지 못했습니다</p>`;
+}
+/** 템플릿/미리보기용 — nativeImage 썸네일(작음). 실패 시 sat:// 폴백 */
+async function resolveImageSrcs(rels) {
+  const list = (rels || []).slice(0, 6);
+  const out = await Promise.all(list.map(async (rel) => {
+    try {
+      const readImg = window.api.ws.readImage
+        ? (r) => window.api.ws.readImage(S.client.dir, r, 720)
+        : (r) => window.api.ws.readFile(S.client.dir, r);
+      const r = await readImg(rel);
+      if (r && r.ok && r.dataUrl) return r.dataUrl;
+      return satUrl(rel);
+    } catch {
+      return satUrl(rel);
+    }
+  }));
+  return out;
+}
+function templateBoardFingerprint(chKey) {
+  const b = S.board;
+  if (!b) return '';
+  const posts = (b.posts || []).filter((p) => p.channel === chKey);
+  const creatives = ((b.lanes && b.lanes.creatives) || [])
+    .map((f) => `${f.rel}:${f.mtime || 0}:${f.size || 0}`).join('|');
+  const postSig = posts.map((p) => {
+    const files = (p.files || []).filter((f) => f.kind === 'render' || f.kind === 'creative').map((f) => f.rel).join(',');
+    return `${p.uid}:${p.stage}:${p.thumb || ''}:${files}`;
+  }).join(';');
+  return `${chKey}::${creatives}::${postSig}`;
 }
 function renderTimeline() {
   const b = S.board;
@@ -662,10 +692,10 @@ function openTemplateBoard(chKey) {
   S.view = 'template';
   applyViewSeg();
   renderChannels();
-  renderTemplateBoard();
+  renderTemplateBoard(true);
   renderHero();
 }
-async function renderTemplateBoard() {
+async function renderTemplateBoard(force) {
   const root = $('#template-board');
   if (!root || !S.board) return;
   const channels = [...S.board.channels]
@@ -677,13 +707,22 @@ async function renderTemplateBoard() {
   ];
   if (!ordered.length) {
     root.innerHTML = '<div class="tm-empty muted">캘린더 포스트가 생기면 채널별 템플릿 보드가 표시됩니다.</div>';
+    renderTemplateBoard._fp = '';
     return;
   }
   if (!S.templateCh || !ordered.includes(S.templateCh)) {
     S.templateCh = (S.filter && ordered.includes(S.filter)) ? S.filter : ordered[0];
   }
   const chKey = S.templateCh;
+  // 파일 감시가 보드를 자주 밀어넣어도, 내용이 같으면 DOM을 부수지 않음 (이미지 로드 중단 방지)
+  const fp = templateBoardFingerprint(chKey);
+  if (!force && renderTemplateBoard._fp === fp) return;
+  renderTemplateBoard._fp = fp;
   const posts = S.board.posts.filter((p) => p.channel === chKey);
+  const allCreatives = ((S.board.lanes && S.board.lanes.creatives) || [])
+    .filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f.name || f.rel || ''))
+    .sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+  root.dataset.hydrated = '0';
   root.innerHTML = `
     <div class="tm-toolbar">
       <div class="tm-tabs">${ordered.map((k) => `
@@ -693,6 +732,15 @@ async function renderTemplateBoard() {
           <span class="chip tiny">${S.board.posts.filter((p) => p.channel === k).length}</span>
         </button>`).join('')}</div>
       <p class="muted small tm-hint">포스팅 전 미리보기 — 실제 ${esc(CH_NAME[chKey] || chKey)}에 올라갈 글·이미지 배치를 확인하세요.</p>
+      <div class="tm-pool">
+        <b class="small">outputs/creatives ${allCreatives.length}장</b>
+        ${allCreatives.length
+          ? `<div class="tm-pool-strip" id="tm-pool">${allCreatives.slice(0, 24).map((f) =>
+            `<img class="tm-pool-thumb" data-rel="${esc(String(f.rel || '').replace(/\\/g, '/'))}" src="${satUrl(f.rel)}" alt="${esc(f.name || '')}" title="${esc(f.name || f.rel)}" loading="lazy">`).join('')}</div>`
+          : '<span class="chip tiny pub-ready no">아직 생성된 이미지 파일이 없습니다 — 비주얼 생성을 실행하세요</span>'}
+        <button type="button" class="chip" id="tm-open-creatives">이미지 폴더 열기</button>
+        <button type="button" class="chip" id="tm-reload-previews">미리보기 새로고침</button>
+      </div>
     </div>
     <div class="tm-feed" id="tm-feed">
       ${posts.length ? posts.map((p) => `
@@ -703,21 +751,9 @@ async function renderTemplateBoard() {
             ${p.published ? '<span class="chip tiny pub-ready ok">발행됨</span>' : ''}
             ${readinessChips(p)}
           </div>
-          <div class="tm-mock" data-uid="${esc(p.uid)}">${channelMock(chKey, {
-            text: p.topic,
-            topic: p.topic,
-            images: postRenderRels(p),
-            compact: true,
-          })}</div>
-          <div class="tm-asset-bar" data-uid="${esc(p.uid)}">${(() => {
-            const imgs = postRenderRels(p);
-            if (!imgs.length) {
-              return '<span class="chip tiny pub-ready no">이미지 없음 — 카드 상세에서 비주얼 생성</span>';
-            }
-            return `<span class="chip tiny pub-ready ok">이미지 ${imgs.length}장 배치</span>`
-              + imgs.slice(0, 4).map((r) => `<img class="tm-asset-thumb" src="${satUrl(r)}" alt="" loading="lazy">`).join('');
-          })()}</div>
-          <p class="muted small tm-loading" data-uid="${esc(p.uid)}">본문 불러오는 중…</p>
+          <div class="tm-mock" data-uid="${esc(p.uid)}"><p class="muted small">미리보기 준비 중…</p></div>
+          <div class="tm-asset-bar" data-uid="${esc(p.uid)}"><span class="muted small">이미지 연결 중…</span></div>
+          <p class="muted small tm-loading" data-uid="${esc(p.uid)}">본문·이미지 불러오는 중…</p>
           <div class="tm-slot-actions">
             <button type="button" class="chip accent tm-review" data-uid="${esc(p.uid)}">발행 검토</button>
             <button type="button" class="chip tm-insp" data-uid="${esc(p.uid)}">카드 상세</button>
@@ -725,12 +761,30 @@ async function renderTemplateBoard() {
           </div>
         </div>`).join('') : `<div class="tm-empty muted">${esc(CH_NAME[chKey] || chKey)} 포스트가 없습니다. 캘린더에 편성하거나 필터를 바꿔보세요.</div>`}
     </div>`;
+  const openCr = $('#tm-open-creatives', root);
+  if (openCr) openCr.onclick = () => window.api.ws.openFolder(S.client.dir + '/outputs/creatives');
+  const reloadBtn = $('#tm-reload-previews', root);
+  if (reloadBtn) reloadBtn.onclick = () => renderTemplateBoard(true);
+  // 풀 썸네일 — 작은 미리보기 IPC (원본 base64는 OOM 유발)
+  (async () => {
+    const thumbs = $$('.tm-pool-thumb', root);
+    await Promise.all(thumbs.map(async (im) => {
+      const rel = (im.dataset.rel || '').replace(/\\/g, '/');
+      if (!rel) return;
+      try {
+        const r = window.api.ws.readImage
+          ? await window.api.ws.readImage(S.client.dir, rel, 160)
+          : await window.api.ws.readFile(S.client.dir, rel);
+        if (r && r.ok && r.dataUrl) im.src = r.dataUrl;
+      } catch { /* keep sat */ }
+    }));
+  })();
   for (const btn of $$('.tm-tab', root)) {
     btn.onclick = () => {
       S.templateCh = btn.dataset.ch;
       S.filter = S.templateCh;
       renderChannels();
-      renderTemplateBoard();
+      renderTemplateBoard(true);
     };
   }
   for (const btn of $$('.tm-review', root)) {
@@ -756,40 +810,53 @@ async function renderTemplateBoard() {
       setTimeout(() => openRenderPanel(p), 0);
     };
   }
-  // 비동기로 실제 생성된 본문 주입 → 목업을 "작성된 모습"으로 갱신
-  const gen = ++renderTemplateBoard._gen || (renderTemplateBoard._gen = 1);
-  renderTemplateBoard._gen = gen;
-  for (const p of posts) {
+  // 본문·이미지를 병렬로 주입 (draft 대기에 이미지 로드가 막히지 않게)
+  renderTemplateBoard._gen = (renderTemplateBoard._gen || 0) + 1;
+  const gen = renderTemplateBoard._gen;
+  await Promise.all(posts.map(async (p) => {
     try {
-      const draft = await window.api.pub2.draft(S.client.dir, p.lane, p.topic);
-      if (renderTemplateBoard._gen !== gen || S.view !== 'template') return; // 탭 전환 시 오래된 결과 무시
+      const imgs = postRenderRels(p);
+      const [draft, srcs] = await Promise.all([
+        window.api.pub2.draft(S.client.dir, p.lane, p.topic).catch((e) => ({ ok: false, error: String(e && e.message || e) })),
+        resolveImageSrcs(imgs),
+      ]);
+      if (renderTemplateBoard._gen !== gen || S.view !== 'template') return;
       const mock = $$('.tm-mock', root).find((el) => el.dataset.uid === p.uid);
       const load = $$('.tm-loading', root).find((el) => el.dataset.uid === p.uid);
       const bar = $$('.tm-asset-bar', root).find((el) => el.dataset.uid === p.uid);
       if (load) load.remove();
-      if (!mock) continue;
-      const imgs = postRenderRels(p);
+      if (!mock) return;
       mock.innerHTML = channelMock(chKey, {
-        text: draft.ok ? draft.text : '',
+        text: draft && draft.ok ? draft.text : '',
         topic: p.topic,
         images: imgs,
+        imageSrcs: srcs,
         compact: false,
       });
       if (bar) {
-        bar.innerHTML = imgs.length
-          ? `<span class="chip tiny pub-ready ok">이미지 ${imgs.length}장 배치</span>`
-            + imgs.slice(0, 4).map((r) => `<img class="tm-asset-thumb" src="${satUrl(r)}" alt="" loading="lazy">`).join('')
-          : '<span class="chip tiny pub-ready no">이미지 없음 — 「비주얼 생성」으로 이미지를 만드세요</span>';
+        if (!imgs.length) {
+          bar.innerHTML = '<span class="chip tiny pub-ready no">이미지 없음 — 「비주얼 생성」또는 상단 creatives 확인</span>';
+        } else {
+          const shown = srcs.filter(Boolean).length;
+          bar.innerHTML = `<span class="chip tiny pub-ready ${shown ? 'ok' : 'no'}">이미지 ${imgs.length}장${shown ? ` · 표시 ${shown}` : ' · 로드 실패'}</span>`
+            + srcs.slice(0, 4).map((src, i) =>
+              `<img class="tm-asset-thumb" src="${src}" alt="${esc((imgs[i] || '').split(/[\\/]/).pop() || '')}" title="${esc(imgs[i] || '')}" loading="lazy">`).join('')
+            + `<span class="muted small">${esc(imgs.map((r) => r.split(/[\\/]/).pop()).join(', '))}</span>`;
+        }
       }
-      if (!draft.ok) {
+      if (!draft || !draft.ok) {
         const note = document.createElement('p');
         note.className = 'muted small';
         note.style.color = 'var(--warn)';
         note.textContent = '본문 초안 없음 — 토픽만 표시 중. 카피 단계를 실행하세요.';
         mock.after(note);
       }
-    } catch (_) { /* ignore per-card failures */ }
-  }
+    } catch (e) {
+      const mock = $$('.tm-mock', root).find((el) => el.dataset.uid === p.uid);
+      if (mock) mock.innerHTML = `<p class="muted small" style="color:var(--warn)">미리보기 실패: ${esc(e.message || e)}</p>`;
+    }
+  }));
+  if (renderTemplateBoard._gen === gen) root.dataset.hydrated = '1';
 }
 function renderBoardViews(flip, moved) {
   const b = S.board; if (!b) return;
@@ -798,7 +865,7 @@ function renderBoardViews(flip, moved) {
   if (flip && S.view !== 'month' && S.view !== 'template') for (const el of $$(root + '.post-card')) rects.set(el.dataset.key, el.getBoundingClientRect());
   if (S.view === 'kanban') { renderKanban(); S.viewDirty.timeline = true; S.viewDirty.month = true; S.viewDirty.template = true; }
   else if (S.view === 'month') { renderMonthCalendar(); S.viewDirty.timeline = true; S.viewDirty.kanban = true; S.viewDirty.template = true; }
-  else if (S.view === 'template') { renderTemplateBoard(); S.viewDirty.timeline = true; S.viewDirty.kanban = true; S.viewDirty.month = true; }
+  else if (S.view === 'template') { renderTemplateBoard(false); S.viewDirty.timeline = true; S.viewDirty.kanban = true; S.viewDirty.month = true; }
   else { renderTimeline(); S.viewDirty.kanban = true; S.viewDirty.month = true; S.viewDirty.template = true; }
   S.viewDirty[S.view] = false;
   // FLIP — 읽기(rect)를 전부 모은 뒤 쓰기(transform) — 카드당 강제 리플로우 방지
@@ -1704,14 +1771,29 @@ function postRenderRels(p) {
     if (f.kind === 'render' || f.kind === 'creative') push(f.rel);
   }
   push(p.thumb);
-  // 보드 카드 매칭이 비어도 creatives 레인에서 chId-n 프리픽스로 보강
-  if (!out.length && S.board && Array.isArray(S.board.lanes && S.board.lanes.creatives)) {
+  const creatives = (S.board && S.board.lanes && S.board.lanes.creatives) || [];
+  if (!out.length && Array.isArray(creatives)) {
     const id = p.chId || 'etc';
-    const re = new RegExp(`^${id}-0*${Number(p.n) || p.n}(?![0-9])`, 'i');
-    for (const f of S.board.lanes.creatives) {
+    const mono = CH_MONO[p.channel] || '';
+    const n = Number(p.n) || p.n;
+    const res = [
+      new RegExp(`^${id}-0*${n}(?![0-9])`, 'i'),
+      mono ? new RegExp(`^${mono}-0*${n}(?![0-9])`, 'i') : null,
+    ].filter(Boolean);
+    for (const f of creatives) {
       const name = f.name || (f.rel || '').split(/[\\/]/).pop() || '';
-      if (re.test(name) && /\.(png|jpe?g|webp|gif)$/i.test(name)) push(f.rel);
+      if (/\.(png|jpe?g|webp|gif)$/i.test(name) && res.some((re) => re.test(name))) push(f.rel);
     }
+  }
+  // 그래도 없으면 채널 포스트 순서대로 creatives 풀에서 1장 배정
+  if (!out.length && Array.isArray(creatives) && creatives.length) {
+    const peers = (S.board.posts || []).filter((x) => x.channel === p.channel);
+    const idx = Math.max(0, peers.findIndex((x) => x.uid === p.uid));
+    const pool = creatives
+      .filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f.name || f.rel || ''))
+      .sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+    if (pool[idx]) push(pool[idx].rel);
+    else if (pool.length === 1) push(pool[0].rel);
   }
   return out;
 }
@@ -2581,10 +2663,7 @@ window.api.onUpdate(async (u) => {
   if (u.state === 'error' && !updErrToasted) {
     updErrToasted = true; // 백그라운드 실패도 최소 1회는 통지
     logLine('update', '업데이트 확인 실패: ' + u.message);
-    toast(('업데이트: ' + (u.message || '실패')).slice(0, 140));
   }
-  if (u.state === 'latest') toast('최신 버전입니다');
-  if (u.state === 'available') toast(`업데이트 v${u.version} 발견 — 다운로드 중`);
   const el = $('#set-upd-status');
   if (el) {
     if (u.state === 'checking') el.textContent = '확인 중…';

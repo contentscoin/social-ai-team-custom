@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
     status: (dir) => ipcRenderer.invoke('ws:status', dir),
     outputs: (dir) => ipcRenderer.invoke('ws:outputs', dir),
     readFile: (dir, rel) => ipcRenderer.invoke('ws:readFile', dir, rel),
+    readImage: (dir, rel, maxEdge) => ipcRenderer.invoke('ws:readImage', dir, rel, maxEdge),
     openFolder: (dir) => ipcRenderer.invoke('ws:openFolder', dir),
     board: (dir) => ipcRenderer.invoke('ws:board', dir),
     watch: (dir) => ipcRenderer.invoke('ws:watch', dir),

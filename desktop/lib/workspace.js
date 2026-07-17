@@ -84,17 +84,74 @@ function listOutputs(dir) {
   return lanes;
 }
 
-function readOutputFile(dir, rel) {
-  const abs = path.resolve(dir, rel);
-  if (!abs.startsWith(path.resolve(dir) + path.sep)) return { ok: false, error: 'path escape blocked' };
-  if (!fs.existsSync(abs)) return { ok: false, error: 'not found' };
-  const stat = fs.statSync(abs);
-  if (stat.size > 2 * 1024 * 1024) return { ok: false, error: 'file too large' };
-  const ext = path.extname(abs).toLowerCase();
-  if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
-    return { ok: true, kind: 'image', dataUrl: `data:image/${ext.slice(1)};base64,${fs.readFileSync(abs).toString('base64')}` };
+function resolveInside(dir, rel) {
+  const root = path.resolve(dir);
+  const abs = path.resolve(root, String(rel || '').replace(/\\/g, '/'));
+  const relToRoot = path.relative(root, abs);
+  if (!relToRoot || relToRoot.startsWith('..') || path.isAbsolute(relToRoot)) {
+    return { ok: false, error: 'path escape blocked' };
   }
-  return { ok: true, kind: 'text', text: fs.readFileSync(abs, 'utf8') };
+  return { ok: true, root, abs, rel: relToRoot.replace(/\\/g, '/') };
 }
 
-module.exports = { listClients, createClient, addExisting, readStatus, listOutputs, readOutputFile };
+function readOutputFile(dir, rel) {
+  const loc = resolveInside(dir, rel);
+  if (!loc.ok) return loc;
+  if (!fs.existsSync(loc.abs)) return { ok: false, error: 'not found' };
+  const stat = fs.statSync(loc.abs);
+  const ext = path.extname(loc.abs).toLowerCase();
+  const isImg = ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext);
+  // 원본 전체 base64는 렌더러 OOM을 유발할 수 있음 — 큰 이미지는 미리보기 API 사용 권장
+  const max = isImg ? 4 * 1024 * 1024 : 2 * 1024 * 1024;
+  if (stat.size > max) return { ok: false, error: 'file too large — use readImagePreview' };
+  if (isImg) {
+    const mime = ext === '.jpg' ? 'jpeg' : ext.slice(1);
+    return { ok: true, kind: 'image', dataUrl: `data:image/${mime};base64,${fs.readFileSync(loc.abs).toString('base64')}`, rel: loc.rel };
+  }
+  return { ok: true, kind: 'text', text: fs.readFileSync(loc.abs, 'utf8') };
+}
+
+/** 템플릿/카드용 — Electron nativeImage로 긴 변 maxEdge 이하 썸네일 data URL */
+function readImagePreview(dir, rel, maxEdge = 720) {
+  const loc = resolveInside(dir, rel);
+  if (!loc.ok) return loc;
+  if (!fs.existsSync(loc.abs)) return { ok: false, error: 'not found', rel: String(rel || '') };
+  const ext = path.extname(loc.abs).toLowerCase();
+  if (!['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
+    return { ok: false, error: 'not an image', rel: loc.rel };
+  }
+  try {
+    const { nativeImage } = require('electron');
+    let img = nativeImage.createFromPath(loc.abs);
+    if (img.isEmpty()) {
+      // gif/webp 일부는 nativeImage 실패 — 작은 파일만 원본 fallback
+      const st = fs.statSync(loc.abs);
+      if (st.size <= 2 * 1024 * 1024) return readOutputFile(dir, loc.rel);
+      return { ok: false, error: 'decode failed', rel: loc.rel };
+    }
+    const size = img.getSize();
+    const edge = Math.max(1, Number(maxEdge) || 720);
+    if (Math.max(size.width, size.height) > edge) {
+      const scale = edge / Math.max(size.width, size.height);
+      img = img.resize({
+        width: Math.max(1, Math.round(size.width * scale)),
+        height: Math.max(1, Math.round(size.height * scale)),
+        quality: 'better',
+      });
+    }
+    // PNG data URL — JPEG보다 호환 안정
+    const dataUrl = img.toDataURL();
+    return {
+      ok: true,
+      kind: 'image',
+      dataUrl,
+      rel: loc.rel,
+      width: img.getSize().width,
+      height: img.getSize().height,
+    };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e), rel: loc.rel };
+  }
+}
+
+module.exports = { listClients, createClient, addExisting, readStatus, listOutputs, readOutputFile, readImagePreview, resolveInside };

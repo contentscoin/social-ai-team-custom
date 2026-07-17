@@ -34,6 +34,20 @@ if (!app.requestSingleInstanceLock()) {
 }
 // Windows 토스트 알림에 필요 (electron-builder appId와 동일해야 함)
 app.setAppUserModelId('kr.contentscoin.socialaiteam');
+// sat:// 커스텀 스킴 — ready 이전에 권한 등록해야 <img src="sat://..."> 가 동작한다
+try {
+  protocol.registerSchemesAsPrivileged([{
+    scheme: 'sat',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true,
+      corsEnabled: true,
+    },
+  }]);
+} catch { /* already registered in reload */ }
 // 앱 종료 시 실행 중인 CLI 자식들을 고아로 남기지 않는다
 app.on('before-quit', () => {
   try { pipeline.stopCurrent(); } catch { /* gone */ }
@@ -107,21 +121,27 @@ function createWindow() {
 
 app.whenReady().then(() => {
   applog.write('boot', `v${app.getVersion()} ${process.platform}/${process.arch} electron ${process.versions.electron}`);
-  // sat:// — 워크스페이스 이미지/영상을 렌더러 <img>/<video>로 직접 서빙 (IPC dataURL보다 훨씬 가볍다).
-  // 등록된 클라이언트 폴더 내부의 미디어 파일만 허용.
+  // sat:// — 워크스페이스 이미지/영상을 렌더러 <img>/<video>로 직접 서빙.
+  // registerFileProtocol만 사용 (protocol.handle + Response 는 일부 Electron/Windows에서 기동·로드 오류).
   protocol.registerFileProtocol('sat', (req, cb) => {
     try {
       const u = new URL(req.url);
       const dir = decodeURIComponent(u.searchParams.get('d') || '');
       const rel = decodeURIComponent(u.searchParams.get('p') || '').replace(/\\/g, '/');
       const root = path.resolve(dir);
-      const known = workspace.listClients().some((c) => path.resolve(c.dir) === root);
+      const norm = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+      const known = workspace.listClients().some((c) => norm(c.dir) === norm(root));
       const abs = path.resolve(root, rel);
       const relToRoot = path.relative(root, abs);
       const escaped = !relToRoot || relToRoot.startsWith('..') || path.isAbsolute(relToRoot);
-      if (!known || escaped || !/\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(abs)) { cb({ error: -10 }); return; }
+      if (!known || escaped || !/\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(abs) || !fs.existsSync(abs)) {
+        cb({ error: -10 });
+        return;
+      }
       cb({ path: abs });
-    } catch { cb({ error: -2 }); }
+    } catch {
+      cb({ error: -2 });
+    }
   });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -300,6 +320,7 @@ ipcMain.handle('ws:pickFolder', safe(async () => {
 ipcMain.handle('ws:status', safe((_e, dir) => (dir ? workspace.readStatus(dir) : { statusItems: [], statusRaw: '' })));
 ipcMain.handle('ws:outputs', safe((_e, dir) => workspace.listOutputs(dir)));
 ipcMain.handle('ws:readFile', safe((_e, dir, rel) => workspace.readOutputFile(dir, rel)));
+ipcMain.handle('ws:readImage', safe((_e, dir, rel, maxEdge) => workspace.readImagePreview(dir, rel, maxEdge || 720)));
 ipcMain.handle('ws:openFolder', (_e, dir) => shell.openPath(dir));
 ipcMain.handle('ws:board', (_e, dir) => {
   try { return board.buildBoard(dir); }

@@ -46,7 +46,8 @@ function readLane(dir, lane) {
       const fp = path.join(p, f);
       const st = fs.statSync(fp);
       if (!st.isFile()) continue;
-      files.push({ name: f, rel: path.join('outputs', lane, f), mtime: st.mtimeMs, size: st.size, _fp: fp });
+      // rel은 항상 POSIX 슬래시 — Windows에서 sat:// / HTML data-rel 깨짐 방지
+      files.push({ name: f, rel: path.join('outputs', lane, f).replace(/\\/g, '/'), mtime: st.mtimeMs, size: st.size, _fp: fp });
     }
   } catch { /* lane absent */ }
   files.sort((a, b) => b.mtime - a.mtime);
@@ -271,14 +272,39 @@ function buildBoard(dir) {
     const lane = laneOf(post.platform);
     const isReel = /reel|video|영상|릴스|shorts|tiktok/i.test(post.format + ' ' + (post.headerRaw || ''));
     const copyDone = topicIn(lanes[lane].norm, post.topic);
-    // 렌더 엔진 산출물 — `${chId}-${n}` 프리픽스 파일명으로 이 포스트에 직접 매칭
-    const chId = CH_ID[channelKey(post.platform)] || 'etc';
-    const rendPrefix = new RegExp(`^${chId}-0*${post.n}(?![0-9])`, 'i');
+    // 렌더 엔진 산출물 — `${chId}-${n}` / `${MONO}-${n}` / 토픽 키워드 파일명 매칭
+    const chKey = channelKey(post.platform);
+    const chId = CH_ID[chKey] || 'etc';
+    const mono = (channelRegistry.REGISTRY[chKey] && channelRegistry.REGISTRY[chKey].mono) || '';
+    const n = post.n;
+    const renderRes = [
+      new RegExp(`^${chId}-0*${n}(?![0-9])`, 'i'),
+      mono ? new RegExp(`^${mono}-0*${n}(?![0-9])`, 'i') : null,
+      new RegExp(`^${chKey}[_-]?0*${n}(?![0-9])`, 'i'),
+      // uid 형태: instagram-1 / ig_1
+      new RegExp(`^${chKey}-${n}(?![0-9])`, 'i'),
+    ].filter(Boolean);
+    const isImageName = (name) => /\.(png|jpe?g|webp|gif)$/i.test(name || '');
+    const matchRenderName = (name) => renderRes.some((re) => re.test(name));
     // 파일명 순으로 정렬 — 캐러셀 슬라이드 _1,_2,… / 카드뉴스 _c1,_c2… 순서를 보드에 그대로
-    const renders = (lanes.creatives.files || [])
-      .filter((f) => rendPrefix.test(f.name) && /\.(png|jpe?g|webp)$/i.test(f.name))
+    let renders = (lanes.creatives.files || [])
+      .filter((f) => isImageName(f.name) && matchRenderName(f.name))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    const videoRenders = (lanes.videos.files || []).filter((f) => rendPrefix.test(f.name) && /\.(mp4|webm|mov)$/i.test(f.name));
+    // 프리픽스 미스(에이전트 케밥 파일명) — 토픽 토큰이 파일명에 있으면 매칭
+    if (!renders.length) {
+      const tokens = String(post.topic || '').toLowerCase().split(/[^a-z0-9가-힣]+/).filter((t) => t.length >= 3).slice(0, 6);
+      if (tokens.length) {
+        renders = (lanes.creatives.files || [])
+          .filter((f) => {
+            if (!isImageName(f.name)) return false;
+            const nn = f.name.toLowerCase();
+            return tokens.some((t) => nn.includes(t));
+          })
+          .sort((a, b) => (b.mtime || 0) - (a.mtime || 0))
+          .slice(0, 6);
+      }
+    }
+    const videoRenders = (lanes.videos.files || []).filter((f) => matchRenderName(f.name) && /\.(mp4|webm|mov)$/i.test(f.name));
     const visualDone = isReel
       ? videoRenders.length > 0 || topicIn(lanes.videos.norm, post.topic) || topicIn(lanes.storyboards.norm, post.topic)
       : renders.length > 0 || (lanes.creatives.files.length > 0 && topicIn(norm(lanes.creatives.text), post.topic));
@@ -304,13 +330,36 @@ function buildBoard(dir) {
     if (verdict && (lanes.compliance.perFile || []).length) files.push({ rel: lanes.compliance.perFile[0].rel, kind: 'verdict' });
 
     return {
-      ...post, lane, isReel, stage, verdict: copyDone ? verdict : null, channel: channelKey(post.platform), files,
+      ...post, lane, isReel, stage, verdict: copyDone ? verdict : null, channel: chKey, files,
       // 카드 썸네일 — 최신 렌더 이미지 (fs.watch가 생성 즉시 반영)
       thumb: renders[0] ? renders[0].rel : null,
       videoThumb: videoRenders[0] ? videoRenders[0].rel : null,
       chId,
     };
   });
+
+  // 아직 썸네일이 없는 카드에, 쓰이지 않은 creatives를 채널·순서대로 배분
+  // (에이전트가 ig-1.png 규칙 없이 저장한 경우 템플릿/카드에 이미지가 비는 문제 보완)
+  {
+    const used = new Set();
+    for (const c of cards) {
+      for (const f of (c.files || [])) if (f.kind === 'render' || f.kind === 'creative') used.add(f.rel);
+      if (c.thumb) used.add(c.thumb);
+    }
+    const pool = (lanes.creatives.files || [])
+      .filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f.name) && !used.has(f.rel))
+      .sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+    let pi = 0;
+    for (const c of cards) {
+      if (c.thumb || !pool[pi]) continue;
+      const f = pool[pi++];
+      c.thumb = f.rel;
+      c.files = c.files || [];
+      c.files.push({ rel: f.rel, kind: 'render' });
+      if (c.stage === 'copy') c.stage = 'visual';
+    }
+  }
+
   // 채널-ID 캘린더는 IG-1과 TH-1처럼 번호가 겹친다 — 카드 식별은 uid로
   const seenUid = new Set();
   let publishLog = {};

@@ -20,10 +20,12 @@ function outName(dir, sub, base, ext) {
   fs.mkdirSync(d, { recursive: true });
   for (let i = 1; i < 100; i++) {
     const name = i === 1 ? `${base}.${ext}` : `${base}_v${i}.${ext}`;
-    if (!fs.existsSync(path.join(d, name))) return { abs: path.join(d, name), rel: path.join('outputs', sub, name) };
+    if (!fs.existsSync(path.join(d, name))) {
+      return { abs: path.join(d, name), rel: path.join('outputs', sub, name).replace(/\\/g, '/') };
+    }
   }
   const name = `${base}_${Date.now()}.${ext}`;
-  return { abs: path.join(d, name), rel: path.join('outputs', sub, name) };
+  return { abs: path.join(d, name), rel: path.join('outputs', sub, name).replace(/\\/g, '/') };
 }
 
 async function fetchJson(url, opts, timeoutMs = 120_000) {
