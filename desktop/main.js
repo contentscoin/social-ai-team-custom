@@ -421,24 +421,19 @@ ipcMain.handle('pub:mark', safe((_e, dir, uid, on) => {
   return { ok: true, ...r };
 }));
 // 레인의 모든 텍스트 파일을 스캔해 해당 포스트의 블록을 찾는다 (복사·직접 발행 초안·프롬프트 컴파일 공용).
-const { findPostBlock } = require('./lib/postblock');
+const { findPostBlock, draftForPublish } = require('./lib/postblock');
 ipcMain.handle('pub:copy', safe((_e, dir, lane, topic) => {
-  const r = findPostBlock(dir, lane, topic);
+  // 클립보드에는 게시용 본문만 (VISUAL DIRECTION·메타 제외)
+  const r = draftForPublish(dir, lane, topic);
   if (!r.ok) return r;
   clipboard.writeText(r.text);
-  return { ok: true, chars: r.text.length, file: r.file };
+  return { ok: true, chars: r.text.length, file: r.file, title: r.title || null };
 }));
 
 // ---- 직접 발행 (Blotato 대체) ------------------------------------------------------
-// 발행 초안 — 블록에서 계약 필드(VISUAL DIRECTION 등)를 걷어내 실제 게시 본문만 남긴다.
+// 발행 초안 — CAPTION/POST COPY/BODY만 추출, VISUAL DIRECTION·프롬프트 메타 제거.
 // 운영자가 발행 전에 textarea에서 최종 확인·수정한다 (사람 게이트).
-const CONTRACT_LINE = /^\s*(?:\*\*)?(VISUAL DIRECTION|BLOTATO FLAG|INFOGRAPHIC|PASS|WARN|BLOCK|Char count|글자수|문자수)\b.*$/gim;
-ipcMain.handle('pub2:draft', safe((_e, dir, lane, topic) => {
-  const r = findPostBlock(dir, lane, topic);
-  if (!r.ok) return r;
-  const cleaned = r.text.replace(CONTRACT_LINE, '').replace(/\n{3,}/g, '\n\n').trim();
-  return { ok: true, text: cleaned, file: r.file };
-}));
+ipcMain.handle('pub2:draft', safe((_e, dir, lane, topic) => draftForPublish(dir, lane, topic)));
 ipcMain.handle('pub2:status', safe(() => pubdirect.status()));
 ipcMain.handle('pub2:publishNow', safe(async (_e, dir, payload) => {
   const r = await pubdirect.publishNow(dir, payload);

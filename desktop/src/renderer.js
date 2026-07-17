@@ -588,10 +588,11 @@ function brandHandle() {
   const n = (S.client && (S.client.name || S.client.id)) || 'brand';
   return String(n).replace(/\s+/g, '').slice(0, 24) || 'brand';
 }
-function mockOpts(chKey, { text, topic, images, imageSrcs, compact }) {
+function mockOpts(chKey, { text, topic, title, images, imageSrcs, compact }) {
   return {
     text: text || '',
     topic: topic || '',
+    title: title || '',
     handle: brandHandle(),
     images: images || [],
     imageSrcs: imageSrcs || [],
@@ -828,6 +829,7 @@ async function renderTemplateBoard(force) {
       if (!mock) return;
       mock.innerHTML = channelMock(chKey, {
         text: draft && draft.ok ? draft.text : '',
+        title: draft && draft.ok ? (draft.title || '') : '',
         topic: p.topic,
         images: imgs,
         imageSrcs: srcs,
@@ -1915,6 +1917,8 @@ async function openCompose(chKey, p, direct) {
   const canImage = !!direct.image && renders.length > 0;
   const canChain = !!direct.chain; // Threads 등 댓글형 체인 지원 채널
   const selectedRel = renders[0] || p.thumb || null;
+  const previewRels = selectedRel ? [selectedRel] : renders.slice(0, 6);
+  const previewSrcs = await resolveImageSrcs(previewRels);
   box.innerHTML = `
     <div class="rp-head" style="margin-top:10px"><b>발행 검토 — ${cardId(p)}</b><button class="icon-btn" id="cmp-close"><svg><use href="#i-close"/></svg></button></div>
     <p class="muted small">${esc(p.topic)} · ${STAGE_LABEL[p.stage] || p.stage}</p>
@@ -1927,8 +1931,10 @@ async function openCompose(chKey, p, direct) {
       <div class="cmp-mock-label muted small">포스팅 전 모습 · ${esc(CH_NAME[chKey] || chKey)}</div>
       <div id="cmp-mock">${channelMock(chKey, {
         text: draft.ok ? draft.text : '',
+        title: draft.ok ? (draft.title || '') : '',
         topic: p.topic,
-        images: selectedRel ? [selectedRel] : renders,
+        images: previewRels,
+        imageSrcs: previewSrcs,
         compact: false,
       })}</div>
     </div>

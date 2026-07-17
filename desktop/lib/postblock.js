@@ -7,8 +7,10 @@ const path = require('path');
 const normText = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 function findPostBlock(dir, lane, topic) {
+  const root = path.resolve(dir);
   const laneDir = path.resolve(dir, 'outputs', lane);
-  if (!laneDir.startsWith(path.resolve(dir) + path.sep)) return { ok: false, error: 'path escape' };
+  const laneRel = path.relative(root, laneDir);
+  if (!laneRel || laneRel.startsWith('..') || path.isAbsolute(laneRel)) return { ok: false, error: 'path escape' };
   const t = normText(topic).slice(0, 24);
   if (!t) return { ok: false, error: '토픽이 비어 있습니다' };
   let files = [];
@@ -38,4 +40,151 @@ function findVisualDirection(dir, lane, topic) {
   return m ? m[1].replace(/\n\s*/g, ' ').trim().slice(0, 600) : null;
 }
 
-module.exports = { findPostBlock, findVisualDirection, normText };
+/** 게시 본문 섹션(서로 peer) — 여기서만 섹션을 끊는다. VISUAL DIRECTION은 끊지 않음 */
+const PEER_SECTION = /^(?:CAPTION|POST COPY|BODY|TITLE(?:\s*\([^)]*\))?|HASHTAGS?|HASH\s*TAGS?|CTA|TAGS?|본문|제목|해시태그)\s*[:：]/i;
+const META_LINE = /^(?:PLATFORM|OBJECTIVE|FRAMEWORK|TYPE|WORD COUNT|CHAR COUNT|글자수|문자수|MAIN KEYWORD|SUB KEYWORDS?|SPONSORED|HOOK|ANGLE|PILLAR|FORMAT|NOTES?|BLOTATO FLAG|INFOGRAPHIC)\s*[:：]/i;
+const CONTRACT_START = /^(?:\[?\s*IMAGE SLOT\b|(?:\*\*)?VISUAL DIRECTION\b)/i;
+
+function sectionBody(text, nameRe) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(new RegExp(String.raw`^\s*(?:\*\*)?(${nameRe})(?:\*\*)?\s*[:：]\s*(.*)$`, 'i'));
+    if (!m) continue;
+    const sameLine = (m[2] || '').trim();
+    const collected = [];
+    if (sameLine) collected.push(sameLine);
+    let skipContract = false;
+    for (let j = i + 1; j < lines.length; j++) {
+      const L = lines[j];
+      const trimmed = L.trim();
+      if (/^\s*---+\s*$/.test(L)) break;
+      if (/^\s*(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(L)) break;
+      // 다른 게시 섹션이 시작되면 종료 (CAPTION 다음 HASHTAGS 등)
+      if (PEER_SECTION.test(trimmed) && !new RegExp(String.raw`^(?:${nameRe})\s*[:：]`, 'i').test(trimmed)) break;
+      if (CONTRACT_START.test(trimmed)) { skipContract = true; continue; }
+      if (skipContract) {
+        if (!trimmed) { skipContract = false; continue; }
+        if (/^\s*##\s+/.test(L) || PEER_SECTION.test(trimmed) || META_LINE.test(trimmed)) {
+          skipContract = false;
+        } else {
+          continue;
+        }
+      }
+      if (META_LINE.test(trimmed)) continue;
+      // 네이버 본문 안 ## 소제목은 유지
+      collected.push(L);
+    }
+    return collected.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  return null;
+}
+
+function stripVisualAndSlots(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let skip = false;
+  for (const L of lines) {
+    if (/^\s*\[?\s*IMAGE SLOT\b/i.test(L) || /^\s*(?:\*\*)?VISUAL DIRECTION\b/i.test(L)) {
+      skip = true;
+      continue;
+    }
+    if (skip) {
+      // VISUAL DIRECTION 연속 줄 스킵 — 빈 줄·새 헤더·소제목에서 해제
+      if (!L.trim()) { skip = false; continue; }
+      if (/^\s*##\s+/.test(L) || SECTION_HEAD.test(L.trim()) || /^\s*---+\s*$/.test(L)) {
+        skip = false;
+      } else {
+        continue;
+      }
+    }
+    if (/^\s*(?:\*\*)?BLOTATO FLAG\b/i.test(L)) continue;
+    if (/^\s*(?:\*\*)?(?:Char count|Word count|글자수|문자수)\b/i.test(L)) continue;
+    if (/^\s*(?:\*\*)?(?:PASS|WARN|BLOCK)\b/i.test(L)) continue;
+    out.push(L);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function stripPackageMeta(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let skipVd = false;
+  for (const L of lines) {
+    const trimmed = L.trim().replace(/^\*\*|\*\*$/g, '');
+    if (/^\s*---+\s*$/.test(L)) continue;
+    if (/^\s*(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(L)) continue;
+    if (/^\s*[A-Z]{1,2}-\d+\b/.test(L) && /—|-/.test(L)) continue; // IG-1 — topic
+    if (/^\s*#\s+/.test(L) && /(POST|캡션|스레드)/i.test(L)) continue;
+    if (CONTRACT_START.test(trimmed)) { skipVd = true; continue; }
+    if (skipVd) {
+      if (!trimmed) { skipVd = false; continue; }
+      if (/^\s*##\s+/.test(L) || PEER_SECTION.test(trimmed) || META_LINE.test(trimmed)) skipVd = false;
+      else continue;
+    }
+    if (META_LINE.test(trimmed)) continue;
+    if (/^\s*\d+\s*\/\s*\d+\s*chars?\b/i.test(L)) continue;
+    // 라벨만 있고 내용 없는 CAPTION: 줄은 제거
+    if (/^(?:CAPTION|POST COPY|BODY|TITLE|HASHTAGS?|CTA|TAGS?)\s*[:：]\s*$/i.test(trimmed)) continue;
+    out.push(L);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * 패키지 블록 → 실제 게시용 본문.
+ * 캡션/스레드/블로그 규약에서 CAPTION·POST COPY·BODY·TITLE만 남기고
+ * VISUAL DIRECTION·메타·프롬프트 필드를 제거한다.
+ * @returns {{ text: string, title: string|null }}
+ */
+function extractPublishBody(raw) {
+  let text = String(raw || '').replace(/\r\n/g, '\n').trim();
+  text = text.replace(/^---+\s*\n/, '').replace(/\n---+\s*$/, '').trim();
+
+  const caption = sectionBody(text, 'CAPTION|POST COPY|본문');
+  const body = sectionBody(text, 'BODY');
+  const title = sectionBody(text, 'TITLE(?:\\s*\\([^\\n)]*\\))?|제목');
+  const hashtags = sectionBody(text, 'HASHTAGS?|HASH\\s*TAGS?|해시태그');
+  const cta = sectionBody(text, 'CTA');
+  const tags = sectionBody(text, 'TAGS?');
+
+  if (caption) {
+    let out = caption;
+    if (hashtags) out += (out ? '\n\n' : '') + hashtags;
+    // CTA가 캡션에 이미 없으면 덧붙임
+    if (cta && !out.replace(/\s+/g, '').includes(cta.replace(/\s+/g, '').slice(0, 24))) {
+      out += (out ? '\n\n' : '') + cta;
+    }
+    return { text: stripVisualAndSlots(out), title: null };
+  }
+
+  if (body || title) {
+    let out = '';
+    if (body) out = stripVisualAndSlots(body);
+    else out = stripPackageMeta(text);
+    if (tags) {
+      const tagLine = tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+        .map((t) => (t.startsWith('#') ? t : '#' + t.replace(/\s+/g, ''))).join(' ');
+      if (tagLine) out += (out ? '\n\n' : '') + tagLine;
+    }
+    return { text: out.replace(/\n{3,}/g, '\n\n').trim(), title: title || null };
+  }
+
+  // 라벨 없는 스레드/X 스타일 — 메타·계약 필드만 제거
+  return { text: stripPackageMeta(text), title: null };
+}
+
+function draftForPublish(dir, lane, topic) {
+  const r = findPostBlock(dir, lane, topic);
+  if (!r.ok) return r;
+  const { text, title } = extractPublishBody(r.text);
+  if (!text) return { ok: false, error: '본문 필드를 찾지 못했습니다 — CAPTION/POST COPY/BODY를 확인하세요', file: r.file };
+  return { ok: true, text, title, file: r.file, rawChars: r.text.length };
+}
+
+module.exports = {
+  findPostBlock,
+  findVisualDirection,
+  extractPublishBody,
+  draftForPublish,
+  normText,
+};
