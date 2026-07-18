@@ -49,7 +49,10 @@ async function renderAll(dir, opts, onLine) {
     onLine && onLine(`[비주얼] ${cid} — ${count}장 (${size}) 준비`);
     let prompt = brief, negative = null;
     try {
-      const c = await promptlab.compile(dir, { kind: 'image', provider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane, prompt: brief, size }, onLine);
+      const c = await promptlab.compile(dir, {
+        kind: 'image', provider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
+        prompt: brief, size, count,
+      }, onLine);
       if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
     } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
     try {

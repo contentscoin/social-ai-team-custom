@@ -11,6 +11,7 @@ const { runCmd, isWin } = require('./proc');
 const secrets = require('./secrets');
 const config = require('./config');
 const { svgToPng, extractSvg, extractSvgAll } = require('./svg2png');
+const { finalizeImagePrompt } = require('./promptlab');
 
 const SIZES = { square: [1080, 1080], portrait: [1080, 1350], story: [1080, 1920], landscape: [1200, 675] };
 
@@ -105,13 +106,39 @@ async function genOpenAI(dir, job, onLine) {
   if (!key) return err('openai-image', 'OpenAI API 키가 없습니다 — 설정 → 렌더에서 입력하세요');
   const [w, h] = SIZES[job.size] || SIZES.square;
   const apiSize = w === h ? '1024x1024' : (h > w ? '1024x1536' : '1536x1024');
-  onLine && onLine(`[render] OpenAI gpt-image-1 생성 중… (${apiSize})`);
+  const prompt = finalizeImagePrompt(job.prompt, job.negative);
+  onLine && onLine(`[render] OpenAI gpt-image-1 생성 중… (${apiSize}, quality=high)`);
+  const body = {
+    model: 'gpt-image-1',
+    prompt,
+    size: apiSize,
+    n: 1,
+    quality: 'high',
+  };
   const r = await fetchJson('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-image-1', prompt: job.prompt, size: apiSize, n: 1 }),
+    body: JSON.stringify(body),
   }, 300_000);
-  if (!r.ok) return err('openai-image', (r.json && r.json.error && r.json.error.message) || `HTTP ${r.status}`);
+  if (!r.ok) {
+    // quality 미지원 구버전/게이트웨이 대비 — quality 없이 1회 재시도
+    if (/quality|unknown parameter|unsupported/i.test((r.json && r.json.error && r.json.error.message) || r.text || '')) {
+      onLine && onLine('[render] quality=high 미지원 — 기본 품질로 재시도');
+      delete body.quality;
+      const r2 = await fetchJson('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }, 300_000);
+      if (!r2.ok) return err('openai-image', (r2.json && r2.json.error && r2.json.error.message) || `HTTP ${r2.status}`);
+      const b64r = r2.json && r2.json.data && r2.json.data[0] && r2.json.data[0].b64_json;
+      if (!b64r) return err('openai-image', '응답에 이미지가 없습니다');
+      const out = outName(dir, 'creatives', job.base, 'png');
+      fs.writeFileSync(out.abs, Buffer.from(b64r, 'base64'));
+      return { ok: true, provider: 'openai-image', rel: out.rel, files: [out.rel] };
+    }
+    return err('openai-image', (r.json && r.json.error && r.json.error.message) || `HTTP ${r.status}`);
+  }
   const b64 = r.json && r.json.data && r.json.data[0] && r.json.data[0].b64_json;
   if (!b64) return err('openai-image', '응답에 이미지가 없습니다');
   const { abs, rel } = outName(dir, 'creatives', job.base, 'png');
@@ -139,8 +166,9 @@ async function ensureIma2Serve(onLine) {
 const IMA2_DOWN = /server unreachable|ima2 serve/i;
 async function genIma2(dir, job, onLine) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sat-ima2-'));
-  onLine && onLine('[render] ima2 생성 중…');
-  const run = () => runCmd('ima2', ['gen', job.prompt, '-d', tmp, '--quality', 'high'], onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
+  const prompt = finalizeImagePrompt(job.prompt, job.negative);
+  onLine && onLine('[render] ima2 생성 중… (quality=high + negative fused)');
+  const run = () => runCmd('ima2', ['gen', prompt, '-d', tmp, '--quality', 'high'], onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
   let r = await run();
   if (!r.ok && IMA2_DOWN.test(r.out) && await ensureIma2Serve(onLine)) r = await run();
   const made = (fs.existsSync(tmp) ? fs.readdirSync(tmp) : []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
@@ -512,7 +540,7 @@ function availability(env) {
 // job: {kind:'image'|'video', provider, base, prompt, size, duration?, refAbs?}
 // 캐러셀 슬라이드 지시 — 한 세트로 응집되되 슬라이드마다 앵글·크롭을 달리한다
 function slideDirective(i, n) {
-  return `\n\n(Carousel slide ${i} of ${n}: keep the SAME subject, brand palette, lighting and overall style as one cohesive series, but vary the camera angle / crop / composition so the slides read as a set — not identical duplicates. No text or logos in the image.)`;
+  return `\n\n(Carousel slide ${i} of ${n}: keep the SAME subject, brand palette, lighting, camera character and material finish as one cohesive premium series, but vary the camera angle / crop / composition so the slides read as a set — not identical duplicates. Maintain sharp focus and photoreal texture. No text or logos in the image.)`;
 }
 async function generate(dir, job, onLine) {
   const table = job.kind === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS;

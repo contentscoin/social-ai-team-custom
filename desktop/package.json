@@ -1,7 +1,7 @@
 {
   "name": "social-ai-team-desktop",
   "productName": "Social AI Team",
-  "version": "0.18.5",
+  "version": "0.18.6",
   "description": "Desktop control tower for the Social AI Team — installs the skills, authenticates Codex, and drives the content pipeline per client.",
   "main": "main.js",
   "author": "contentscoin",
@@ -23,7 +23,9 @@
   "build": {
     "appId": "kr.contentscoin.socialaiteam",
     "productName": "Social AI Team",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "publish": [
       {
         "provider": "github",
@@ -33,18 +35,57 @@
         "private": true
       }
     ],
-    "files": ["main.js", "preload.js", "lib/**", "src/**", "assets/**"],
-    "extraResources": [
-      { "from": "../skills", "to": "payload/skills" },
-      { "from": "../.claude/agents", "to": "payload/agents" },
-      { "from": "../sop", "to": "payload/sop" },
-      { "from": "../TEAM.md", "to": "payload/TEAM.md" },
-      { "from": "../opencrab", "to": "payload/opencrab" },
-      { "from": "../pumasi.config.yaml", "to": "payload/pumasi.config.yaml" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "src/**",
+      "assets/**"
     ],
-    "win": { "target": "nsis", "icon": "assets/icon.png" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
-    "mac": { "target": "dmg", "icon": "assets/icon.png", "category": "public.app-category.productivity" },
-    "linux": { "target": "AppImage", "icon": "assets/icon.png", "category": "Office" }
+    "extraResources": [
+      {
+        "from": "../skills",
+        "to": "payload/skills"
+      },
+      {
+        "from": "../.claude/agents",
+        "to": "payload/agents"
+      },
+      {
+        "from": "../sop",
+        "to": "payload/sop"
+      },
+      {
+        "from": "../TEAM.md",
+        "to": "payload/TEAM.md"
+      },
+      {
+        "from": "../opencrab",
+        "to": "payload/opencrab"
+      },
+      {
+        "from": "../pumasi.config.yaml",
+        "to": "payload/pumasi.config.yaml"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png",
+      "artifactName": "Social-AI-Team-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "category": "Office"
+    }
   }
 }

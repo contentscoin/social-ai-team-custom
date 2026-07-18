@@ -1712,11 +1712,18 @@ async function openRenderPanel(p) {
         topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
         prompt: $('#rp-prompt').value.trim(),
         size: $('#rp-size').value, duration: Number($('#rp-dur').value) || 5,
+        count: Number(($('#rp-count') && $('#rp-count').value) || 1) || 1,
       });
       if (r && r.ok && r.prompt) {
         $('#rp-prompt').value = r.prompt;
         const neg = $('#rp-negative');
-        if (r.negative) { neg.value = r.negative; neg.classList.remove('hidden'); }
+        if (r.negative) {
+          neg.value = r.negative;
+          neg.classList.remove('hidden');
+        } else {
+          neg.value = '';
+          neg.classList.add('hidden');
+        }
         compiled = true;
         toast(`컴파일 완료 (${r.via === 'claude' ? 'Claude' : '템플릿'}${r.vd ? ' + VISUAL DIRECTION' : ''})`);
       } else toast('컴파일 실패: ' + ((r && r.error) || '알 수 없음'));
