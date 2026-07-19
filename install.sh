@@ -19,6 +19,8 @@ SKILLS=(
   "publisher"
   "content-director"
   "reels-script"
+  "slide-video"
+  "video-guide"
   "ad-storyboard"
   "kr-guardrail-check"
   "kr-voice-localizer"

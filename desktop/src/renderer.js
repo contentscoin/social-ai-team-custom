@@ -88,6 +88,8 @@ const S = {
   clients: [], client: null, board: null, prevStages: new Map(),
   gates: null, engine: 'claude', view: 'month',
   running: null, runStart: 0, lastRunStart: {}, runTimer: null,
+  // 클라이언트(폴더)별 실행 상태 — 백그라운드 동시 실행의 진실. 뷰 클라이언트 값은 여기서 파생.
+  runByDir: {}, autoByDir: {},
   filter: null, chips: [], chatBusy: false, env: null, blotato: false,
   viewDirty: { timeline: false, kanban: false, month: false, template: false },
   viewMonth: null, templateCh: null, auto: false, monthCost: 0, selectSeq: 0,
@@ -152,10 +154,11 @@ async function refreshClients() {
     a.textContent = c.name.slice(0, 2).toUpperCase();
     a.title = c.name;
     a.onclick = () => {
-      if (S.running || S.auto) { toast('실행 중에는 클라이언트를 전환할 수 없습니다'); return; }
+      // 실행 중이어도 전환 가능 — 떠난 클라이언트는 백그라운드에서 계속 돈다 (폴더별 독립 실행).
       if (S.chatBusy) { toast('디렉터 응답을 기다리는 중에는 전환할 수 없습니다'); return; }
       selectClient(c);
     };
+    if (S.runByDir[c.dir] || S.autoByDir[c.dir]) a.classList.add('running-avatar');
     pressable(a);
     box.appendChild(a);
   }
@@ -219,6 +222,12 @@ $('#rail-settings').onclick = () => openSettings();
 async function selectClient(c) {
   const seq = S.selectSeq = (S.selectSeq || 0) + 1; // 빠른 연속 전환 시 낡은 continuation이 상태를 덮지 않게
   S.client = c; S.filter = null; S.prevStages = new Map();
+  // 새 클라이언트의 실행 상태를 폴더별 맵에서 복원 — 백그라운드로 돌던 클라이언트로 돌아오면
+  // 진행 중인 단계/오토파일럿이 그대로 툴바에 다시 뜬다.
+  const run = S.runByDir[c.dir];
+  S.auto = !!S.autoByDir[c.dir];
+  setRunning(run ? run.stage : null, run ? run.start : 0);
+  updateAutoBtn();
   $('#tb-name').textContent = c.name;
   $('#tb-path').textContent = c.dir;
   $('#rail-folder').disabled = $('#rail-term').disabled = false;
@@ -271,11 +280,18 @@ function applyEngine() {
 $('#tb-update').onclick = () => window.api.update.install();
 $('#tb-drawer').onclick = () => openDrawer();
 
-function setRunning(stage) {
+// 뷰 클라이언트의 실행 상태를 설정하고 폴더별 맵에도 반영. startAt을 주면(백그라운드에서
+// 돌던 걸 다시 열 때) 경과 시간을 실제 시작 시각 기준으로 표시한다.
+function setRunning(stage, startAt) {
+  const dir = S.client && S.client.dir;
   S.running = stage;
+  if (dir) {
+    if (stage) S.runByDir[dir] = { stage, start: startAt || (S.runByDir[dir] && S.runByDir[dir].start) || Date.now() };
+    else delete S.runByDir[dir];
+  }
   $('#tb-running').classList.toggle('hidden', !stage);
   if (stage) {
-    S.runStart = Date.now();
+    S.runStart = (dir && S.runByDir[dir] && S.runByDir[dir].start) || Date.now();
     clearInterval(S.runTimer);
     S.runTimer = setInterval(() => {
       const d = fmtDur(Date.now() - S.runStart);
@@ -286,6 +302,37 @@ function setRunning(stage) {
     $('#tb-running-label').textContent = `${stage} 실행 중`;
   } else clearInterval(S.runTimer);
   renderGateBar();
+  updateBgBanner();
+}
+
+// 백그라운드(현재 뷰가 아닌) 클라이언트의 실행 상태만 갱신 — 뷰 툴바는 건드리지 않는다.
+function trackBgRun(dir, stage) {
+  if (!dir) return;
+  if (stage) S.runByDir[dir] = { stage, start: (S.runByDir[dir] && S.runByDir[dir].start) || Date.now() };
+  else delete S.runByDir[dir];
+  updateBgBanner();
+}
+
+// "다른 클라이언트 N곳 실행 중" 배너 — 클릭하면 그 클라이언트로 이동
+function updateBgBanner() {
+  const el = $('#tb-bg-runs');
+  if (!el) return;
+  const viewed = S.client && S.client.dir;
+  const active = new Set([...Object.keys(S.runByDir), ...Object.keys(S.autoByDir)].filter((d) => d && d !== viewed));
+  if (!active.size) { el.classList.add('hidden'); el.onclick = null; return; }
+  const names = [...active].map((d) => {
+    const c = S.clients.find((x) => x.dir === d);
+    return c ? c.name : d.split(/[\\/]/).pop();
+  });
+  el.classList.remove('hidden');
+  el.textContent = `⚡ 다른 클라이언트 ${active.size}곳 실행 중`;
+  el.title = names.join(', ') + ' — 클릭하면 이동';
+  el.onclick = () => {
+    const first = [...active][0];
+    const c = S.clients.find((x) => x.dir === first);
+    if (c) selectClient(c);
+  };
+  el.style.cursor = 'pointer';
 }
 
 // ---- channels (존 A) -------------------------------------------------------------------
@@ -1148,8 +1195,9 @@ function renderCTA() {
     cta.classList.add('stop'); icon.setAttribute('href', '#i-stop');
     label.textContent = `중지 · ${fmtDur(Date.now() - S.runStart)}`;
     cta.onclick = async () => {
-      if (S.auto) { await window.api.auto.stop(); } // 오토파일럿 중이면 파일럿째 중지 (다음 단계로 안 넘어가게)
-      else await window.api.pipe.stop(S.client && S.client.dir);
+      const dir = S.client && S.client.dir;
+      if (S.auto) { await window.api.auto.stop(dir); } // 오토파일럿 중이면 파일럿째 중지 (다음 단계로 안 넘어가게)
+      else await window.api.pipe.stop(dir);
       setRunning(null);
     };
     return;
@@ -1212,7 +1260,7 @@ $('#gate-checklist').onclick = async (e) => {
 // ---- 오토파일럿: 승인 게이트 앞까지 자동 진행 --------------------------------------
 $('#gate-auto').onclick = (e) => {
   if (!S.client) { toast('클라이언트를 먼저 선택하세요'); return; }
-  if (S.auto) { window.api.auto.stop(); return; } // 실행 중이면 중지
+  if (S.auto) { window.api.auto.stop(S.client.dir); return; } // 실행 중이면 중지
   if (S.running) { toast('단계 실행 중에는 오토파일럿을 시작할 수 없습니다'); return; }
   const b = S.board;
   if (!b || !b.foundation || !b.foundation.brand) { toast('브랜드 스타일이 먼저 필요합니다 — 온보딩을 진행하세요'); return; }
@@ -1224,18 +1272,20 @@ $('#gate-auto').onclick = (e) => {
 };
 async function startAutopilot() {
   const dir = S.client.dir;
-  S.auto = true;
+  S.autoByDir[dir] = true;
+  if (S.client && S.client.dir === dir) { S.auto = true; updateAutoBtn(); }
+  updateBgBanner();
   switchDock('log');
   logLine('autopilot', '▶ 오토파일럿 시작 — 승인 게이트 앞까지 자동 진행');
-  updateAutoBtn();
   try {
     const r = await window.api.auto.run(dir);
     if (r && r.error) toast('오토파일럿: ' + r.error);
   } catch (e) {
     logLine('autopilot', '✖ 오류: ' + e.message);
   } finally {
-    S.auto = false; updateAutoBtn();
-    if (S.client && S.client.dir === dir) await refreshBoard(false);
+    delete S.autoByDir[dir];
+    if (S.client && S.client.dir === dir) { S.auto = false; updateAutoBtn(); await refreshBoard(false); }
+    updateBgBanner();
   }
 }
 function updateAutoBtn() {
@@ -1246,7 +1296,14 @@ function updateAutoBtn() {
     : '<svg style="width:13px;height:13px;vertical-align:-2px"><use href="#i-auto"/></svg> 오토파일럿';
 }
 window.api.onAuto((ev) => {
-  if (!ev || !S.client || (ev.dir && ev.dir !== S.client.dir)) return;
+  if (!ev || !ev.dir) return;
+  // 모든 클라이언트의 오토파일럿 상태를 맵에 추적 (백그라운드 포함)
+  const terminal = ['done', 'failed', 'stopped', 'paused'].includes(ev.state);
+  if (ev.state === 'start' || ev.state === 'stage') S.autoByDir[ev.dir] = true;
+  else if (terminal) delete S.autoByDir[ev.dir];
+  if (S.client && ev.dir === S.client.dir) { S.auto = !!S.autoByDir[ev.dir]; if (terminal) updateAutoBtn(); }
+  updateBgBanner();
+  if (!S.client || ev.dir !== S.client.dir) return; // 로그는 뷰 클라이언트만
   if (ev.state === 'stage') logLine('autopilot', `▸ ${STAGE_LABEL[STAGE2COL[ev.stage]] || ev.stage} 단계 실행`);
   else if (ev.state === 'skip') logLine('autopilot', `⤳ ${STAGE_LABEL[STAGE2COL[ev.stage]] || ev.stage} — 이미 완료됨, 건너뜀`);
   else if (ev.state === 'paused') { logLine('autopilot', `⏸ 일시정지 — ${ev.message}`); toast(ev.message); }
@@ -2881,9 +2938,15 @@ window.api.onBoard((payload) => {
   });
 });
 window.api.onStage(({ state, stage, dir }) => {
-  if (dir && S.client && dir !== S.client.dir) return; // 다른 클라이언트의 스테이지 이벤트
-  if (state === 'start') setRunning(stage);
-  else if (stage === S.running) setRunning(null); // 지연 도착한 이전 스테이지 end 무시
+  if (!dir) return;
+  if (S.client && dir === S.client.dir) {
+    // 뷰 클라이언트 — 툴바/게이트바 갱신
+    if (state === 'start') setRunning(stage);
+    else if (stage === S.running) setRunning(null); // 지연 도착한 이전 스테이지 end 무시
+  } else {
+    // 백그라운드 클라이언트 — 맵과 배너만 갱신
+    trackBgRun(dir, state === 'start' ? stage : null);
+  }
 });
 // 실행 결과 리포트 — 단계가 끝나면 "무엇이 바뀌었나"를 로그에 구조화 블록으로 남긴다.
 // 오토파일럿 중에는 단계마다 토스트를 띄우지 않는다 (로그 블록 + 종료 알림으로 충분).

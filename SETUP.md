@@ -72,7 +72,7 @@ This copies the skills into the right place so Claude Code can find them.
    ```bash
    bash install.sh
    ```
-4. You should see 19 skills listed with checkmarks. Done.
+4. You should see 21 skills listed with checkmarks. Done.
 
 ### Windows
 

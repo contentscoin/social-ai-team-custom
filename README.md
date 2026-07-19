@@ -162,7 +162,7 @@ bash install.sh
 
 **Windows:** double-click `install.bat` (or run it from the command line).
 
-This copies all 19 skills into `~/.claude/skills/` and the 4 team agents into `~/.claude/agents/` where Claude Code can find them.
+This copies all 21 skills into `~/.claude/skills/` and the 4 team agents into `~/.claude/agents/` where Claude Code can find them.
 
 ---
 

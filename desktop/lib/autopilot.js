@@ -14,20 +14,32 @@ const REQUIRES = {
 };
 const NODE_LABEL = { calendar: '캘린더', copy: '카피', visuals: '비주얼 브리프', compliance: '컴플라이언스' };
 
-let state = { running: false, dir: null, stage: null };
-let stopped = false;
+// 클라이언트(폴더)별 오토파일럿 상태 — 서로 다른 클라이언트는 동시에 오토파일럿을 돌릴 수 있다.
+const states = new Map(); // dir → { running, dir, stage }
+const stopFlags = new Map(); // dir → true(중지 요청)
 
-function status() { return { ...state }; }
+function status(dir) {
+  if (dir) return { ...(states.get(dir) || { running: false, dir: null, stage: null }) };
+  // dir 없는 레거시 호출 — 실행 중인 아무 하나(없으면 idle)를 반환
+  for (const s of states.values()) if (s.running) return { ...s };
+  return { running: false, dir: null, stage: null };
+}
+// 실행 중인 모든 클라이언트 dir 목록 (백그라운드 배너용)
+function runningDirs() {
+  return [...states.values()].filter((s) => s.running).map((s) => s.dir);
+}
 
 // deps: { buildBoard(dir), runStage(dir, stage) → Promise<r>, onEvent(ev), stopStage() }
 async function run(dir, deps) {
-  if (state.running) return { ok: false, error: '오토파일럿이 이미 실행 중입니다' };
-  state = { running: true, dir, stage: null };
-  stopped = false;
+  if (states.get(dir) && states.get(dir).running) return { ok: false, error: '이 클라이언트에서 오토파일럿이 이미 실행 중입니다' };
+  const state = { running: true, dir, stage: null };
+  states.set(dir, state);
+  stopFlags.delete(dir);
+  const isStopped = () => stopFlags.get(dir) === true;
   const ran = [];
   const emit = (ev) => { try { deps.onEvent && deps.onEvent({ ...ev, dir }); } catch { /* 소비자 보호 */ } };
   const finish = (result) => {
-    state = { running: false, dir: null, stage: null };
+    states.set(dir, { running: false, dir: null, stage: null });
     emit({ state: result.state, ...result });
     return { ok: true, ...result, ran };
   };
@@ -35,7 +47,7 @@ async function run(dir, deps) {
   emit({ state: 'start' });
   try {
     for (const stage of ORDER) {
-      if (stopped) return finish({ state: 'stopped' });
+      if (isStopped()) return finish({ state: 'stopped' });
       // 매 반복마다 보드/게이트를 새로 읽는다 — 직전 단계가 파일을 썼다
       const b = deps.buildBoard(dir);
       const g = gates.computeGates(b, gates.load(dir));
@@ -64,7 +76,7 @@ async function run(dir, deps) {
       state.stage = stage;
       emit({ state: 'stage', stage });
       const r = await deps.runStage(dir, stage);
-      if (stopped) return finish({ state: 'stopped', stage });
+      if (isStopped()) return finish({ state: 'stopped', stage });
       if (!r || !r.ok) {
         return finish({
           state: 'failed', stage,
@@ -87,10 +99,19 @@ async function run(dir, deps) {
   }
 }
 
-function stop(stopStage) {
-  stopped = true;
+// dir 지정 시 그 클라이언트만 중지. dir 없으면(레거시) 실행 중인 전부 중지.
+function stop(dir, stopStage) {
+  if (typeof dir === 'function') { stopStage = dir; dir = null; } // 레거시 시그니처 stop(fn)
+  if (dir) {
+    stopFlags.set(dir, true);
+    try { stopStage && stopStage(); } catch { /* already gone */ }
+    const s = states.get(dir);
+    return { ok: true, wasRunning: !!(s && s.running) };
+  }
+  let wasRunning = false;
+  for (const s of states.values()) if (s.running) { stopFlags.set(s.dir, true); wasRunning = true; }
   try { stopStage && stopStage(); } catch { /* already gone */ }
-  return { ok: true, wasRunning: state.running };
+  return { ok: true, wasRunning };
 }
 
-module.exports = { run, stop, status, ORDER };
+module.exports = { run, stop, status, runningDirs, ORDER };

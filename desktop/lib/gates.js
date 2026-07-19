@@ -53,7 +53,10 @@ function computeGates(board, gatesData) {
     foundation: !!(board.foundation && board.foundation.brand),
     calendar: !!board.hasCalendar,
     copy: at('copy') > 0,
-    shortform: posts.some((p) => p.isReel && ['visual', 'review', 'ready'].includes(p.stage)) || !posts.some((p) => p.isReel),
+    // 릴스/보드 단계가 '만드는' 것은 대본·스토리보드·슬라이드 가이드다(최종 영상 렌더가 아님).
+    // 따라서 모든 릴 슬롯에 대본 증거(planned 넘어섬)가 있으면 done. 릴이 없으면 공허참으로 done.
+    // (예전엔 'visual'=렌더된 mp4를 요구해 대본이 있어도 노드가 안 열리고 오토파일럿이 맴돌았다)
+    shortform: !posts.some((p) => p.isReel) || posts.filter((p) => p.isReel).every((p) => p.stage !== 'planned'),
     visuals: at('visual') > 0 || posts.every((p) => !p.visual),
     'visuals-generate': (board.lanes && board.lanes.creatives || []).length > 0 || at('visual') > 0,
     compliance: !!(board.compliance && (board.compliance.pass + board.compliance.warn + board.compliance.block) > 0),

@@ -123,3 +123,40 @@ test('실행 중 중복 run은 거부된다', async () => {
   release();
   await p1;
 });
+
+test('서로 다른 클라이언트는 동시에 오토파일럿을 돌릴 수 있다', async () => {
+  const dirA = tmpDir();
+  const dirB = tmpDir();
+  let releaseA, releaseB;
+  const gateA = new Promise((res) => { releaseA = res; });
+  const gateB = new Promise((res) => { releaseB = res; });
+  const pA = autopilot.run(dirA, { buildBoard: () => boardWith({}), runStage: async () => { await gateA; return { ok: false }; } });
+  const pB = autopilot.run(dirB, { buildBoard: () => boardWith({}), runStage: async () => { await gateB; return { ok: false }; } });
+  await new Promise((res) => setTimeout(res, 10));
+  // 둘 다 동시에 실행 중 — B가 A 때문에 거부되지 않는다
+  assert.equal(autopilot.status(dirA).running, true);
+  assert.equal(autopilot.status(dirB).running, true);
+  assert.deepEqual(autopilot.runningDirs().sort(), [dirA, dirB].sort());
+  releaseA(); releaseB();
+  await Promise.all([pA, pB]);
+  assert.equal(autopilot.status(dirA).running, false);
+  assert.equal(autopilot.status(dirB).running, false);
+});
+
+test('stop(dir)은 지정한 클라이언트만 멈춘다 — 다른 클라이언트는 계속 실행', async () => {
+  const dirA = tmpDir();
+  const dirB = tmpDir();
+  let releaseB;
+  const gateB = new Promise((res) => { releaseB = res; });
+  const rA = autopilot.run(dirA, {
+    buildBoard: () => boardWith({}),
+    runStage: async () => { autopilot.stop(dirA); return { ok: true }; }, // A만 중지
+  });
+  const pB = autopilot.run(dirB, { buildBoard: () => boardWith({}), runStage: async () => { await gateB; return { ok: false }; } });
+  await new Promise((res) => setTimeout(res, 10));
+  const resA = await rA;
+  assert.equal(resA.state, 'stopped');
+  assert.equal(autopilot.status(dirB).running, true); // B는 안 멈춤
+  releaseB();
+  await pB;
+});

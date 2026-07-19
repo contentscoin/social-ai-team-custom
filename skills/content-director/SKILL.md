@@ -205,13 +205,17 @@ description: Korean-speaking team director layered over /social-media-manager; r
 |---|---|---|---|
 | `single image` (정적 이미지) | `creative-designer` | `/social-creative-designer` (+ `sop/creative-designer/image-qa.md` QA 통과 필수) | `outputs/creatives/` |
 | `carousel` | `creative-designer` | `/social-creative-designer` (+ `sop/creative-designer/image-qa.md` QA 통과 필수) | `outputs/creatives/` |
-| `reel` (Reel / Short video) | `video-producer` | `/reels-script` | `outputs/videos/` |
-| 캠페인/광고 스팟 (Format이 `reel`이고 Notes에 campaign context가 있거나 Objective가 sales인 프로모션 슬롯) | `video-producer` | `/ad-storyboard` | `outputs/storyboards/` |
+| `reel` / `video` / `clip` / `slide` (영상 슬롯 — **기본**) | `video-producer` | `/slide-video` (앱 자체 렌더 슬라이드형 영상 매니페스트 + 나레이션 + TTS) | `outputs/videos/` |
+| 실사 촬영·AI 영상이 필요한 영상 슬롯 (**운영자/디렉터가 명시적으로 지시할 때만**) | `video-producer` | `/video-guide` (마스터·캐릭터·장면 시트 + 생성 프롬프트 + 대본 + TTS, **생성은 수동**) | `outputs/videos/` |
+| 캠페인/광고 스팟 (Notes에 campaign context가 있거나 Objective가 sales인 프로모션 슬롯) | `video-producer` | `/ad-storyboard` | `outputs/storyboards/` |
+| 클래식 타임코드 장면 대본을 명시 요청 | `video-producer` | `/reels-script` | `outputs/videos/` |
+
+**영상 레인 기본값 규칙:** 영상 슬롯의 기본은 `/slide-video`입니다 — 앱이 자체적으로 렌더할 수 있는 슬라이드형 영상이라, 사람 촬영·외부 생성 없이 팀이 바로 만듭니다. 실사 촬영이나 AI 영상 생성이 필요한 슬롯은 **운영자가 명시적으로 요청할 때만** `/video-guide`로 배정하고, 그 경우 최종 영상 생성은 사람이 수동으로 진행합니다(이 레인은 제작 가이드만 준비). 애매하면 slide-video를 씁니다.
 
 라우팅 절차:
-1. 캘린더와 캡션 파일의 `VISUAL DIRECTION` 필드를 기준으로 제작 대상 목록을 만들고, 위 테이블로 레인을 배정
+1. 캘린더와 캡션 파일의 `VISUAL DIRECTION` 필드를 기준으로 제작 대상 목록을 만들고, 위 테이블로 레인을 배정(영상 슬롯 기본 = slide-video)
 2. 배정 결과를 한국어로 제시하고 확인:
-   > "이번 달 제작 배정입니다 — 이미지 [n]건(creative-designer), 릴스 대본 [n]건(video-producer /reels-script), 광고 스토리보드 [n]건(video-producer /ad-storyboard). 이대로 진행할까요? 클라이언트가 직접 촬영할 포스트는 빼주세요."
+   > "이번 달 제작 배정입니다 — 이미지 [n]건(creative-designer), 슬라이드형 영상 [n]건(video-producer /slide-video, 앱 자체 렌더), 광고 스토리보드 [n]건. 실사·AI 영상이 필요한 슬롯이 있으면 알려주세요 — 그건 제작 가이드(/video-guide)로 준비하고 생성은 직접 하셔야 합니다. 클라이언트가 직접 촬영할 포스트는 빼주세요."
 3. 승인 후 에이전트 디스패치. 이미지 작업은 포스트 단위로 순차 진행(기존 `/social-creative-designer` 설계 유지), 비디오 레인은 이미지 레인과 병렬 가능 — 산출 폴더가 겹치지 않기 때문
 4. 각 에이전트의 결과가 돌아오면 Phase 3 검증 후 운영자에게 한국어로 승인 요청. **에이전트가 만든 결과물을 에이전트가 승인하는 일은 없습니다.**
 
