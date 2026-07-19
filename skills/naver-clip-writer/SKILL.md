@@ -1,7 +1,7 @@
 ---
 name: naver-clip-writer
 version: 1.0.0
-description: 네이버 클립(숏폼) 전용 스크립트·캡션 작성. 세로 영상 훅·3초 리텐션·자막 구조. brand-style.md와 content-calendar.md를 읽고 outputs/videos/ 또는 outputs/storyboards/에 저장.
+description: 네이버 클립(숏폼) 전용 스크립트·캡션 작성. 세로 영상 훅·3초 리텐션·자막 구조. brand-style.md와 content-calendar.md를 읽고 outputs/naver_clip/에 저장.
 ---
 
 # Naver Clip Writer
@@ -10,8 +10,8 @@ description: 네이버 클립(숏폼) 전용 스크립트·캡션 작성. 세로
 
 ## 출력 규칙
 
-- `outputs/storyboards/` — 샷별 스크립트 (0–3s 훅, 본문, CTA)
-- `outputs/videos/` — 최종 내레이션/자막 텍스트
+- `outputs/naver_clip/` — 샷별 스크립트(0–3s 훅, 본문, CTA)와 최종 내레이션/자막 텍스트. 파일명은 `NC-n` 형식
+- `outputs/videos/`·`outputs/storyboards/`에는 쓰지 않습니다 — 릴스·광고 스토리보드 레인과의 병렬 안전(disjoint) 조건
 - 각 포스트에 `VISUAL DIRECTION` (영문, 렌더 핸드오프)
 
 ## 구조 템플릿

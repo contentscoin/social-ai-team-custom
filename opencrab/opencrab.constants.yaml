@@ -55,8 +55,8 @@ channel_routing:
     pack: naver_brandconnect_seo
     skill: naver-blog-writer
   naver_clip:
-    skill: reels-script
+    skill: naver-clip-writer
   kakao_channel:
-    skill: caption-writer
+    skill: kakao-channel-writer
   instagram:
     skill: caption-writer

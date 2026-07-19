@@ -318,7 +318,7 @@ Posts checked: [n]
 ## Related Skills
 
 - `/brand-onboarding` — 선행 필수. `context/brand-style.md`를 만들고, 그 직후 이 스킬의 모드 A 실행
-- `/caption-writer`, `/linkedin-writer`, `/threads-writer`, `/x-writer` — `context/kr-voice-profile.md`를 읽어 한국어 카피 작성; 모드 B의 수정 제안을 받아 리라이트
+- `/caption-writer`, `/linkedin-writer`, `/threads-writer`, `/x-writer` — 모드 B의 수정 제안을 받아 리라이트하는 라이터 스킬 (프로파일 적용은 카피라이터 에이전트가 저장 전에 수행 — 스킬 직접 호출 시에는 적용되지 않음)
 - 카피라이터 에이전트 (copywriter) — 배치 작성 시 프로파일을 채점 기준으로 사용
 - `/content-calendar` — 월간 브리핑에서 이 스킬의 시즌 커머스 캘린더 표를 인용
 - `/content-director` — 워크플로우 오케스트레이션; `context/workflow-status.md`의 유일한 작성자

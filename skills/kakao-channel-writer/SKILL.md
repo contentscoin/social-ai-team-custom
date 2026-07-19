@@ -1,7 +1,7 @@
 ---
 name: kakao-channel-writer
 version: 1.0.0
-description: 카카오채널(카카오톡 채널) 메시지·소식글 작성. 짧은 제목+본문+버튼 CTA. brand-style.md와 content-calendar.md 기반. outputs/captions/ 또는 outputs/kakao/에 저장.
+description: 카카오채널(카카오톡 채널) 메시지·소식글 작성. 짧은 제목+본문+버튼 CTA. brand-style.md와 content-calendar.md 기반. outputs/kakao/에 저장.
 ---
 
 # Kakao Channel Writer
@@ -13,7 +13,7 @@ description: 카카오채널(카카오톡 채널) 메시지·소식글 작성. �
 - 제목 20자 내외 (잘림 방지)
 - 본문 3–7줄, 이모지는 브랜드 가이드에 따름
 - CTA 버튼 문구 1개 (예: 자세히 보기, 신청하기)
-- `outputs/kakao/` 또는 `outputs/captions/`에 `KK-n` 형식 파일명
+- `outputs/kakao/`에 `KK-n` 형식 파일명 — `outputs/captions/`에는 쓰지 않습니다 (인스타/페북 레인과의 병렬 안전 조건)
 
 ## 금지
 
