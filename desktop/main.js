@@ -30,6 +30,8 @@ const runreport = require('./lib/runreport');
 const variants = require('./lib/variants');
 const comments = require('./lib/comments');
 const slidevideorender = require('./lib/slidevideorender');
+const slidevideo = require('./lib/slidevideo');
+const htmlslide = require('./lib/htmlslide');
 const ffmpegResolver = require('./lib/ffmpeg');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
@@ -529,8 +531,7 @@ function envHint() {
   return { ima2 };
 }
 
-// ffmpeg로 슬라이드 영상 매니페스트를 mp4로 인코딩. ffmpeg 부재 시 매니페스트+이미지만
-// 남기고 건너뛴다(발행은 어차피 사람 승인). onLine으로 진행을 로그 탭에 흘린다.
+// ffmpeg 인코딩 1회 — concat 스크립트/인자를 받아 mp4를 만든다.
 function encodeOne(ffmpegPath, args) {
   return new Promise((resolve) => {
     let child;
@@ -542,23 +543,86 @@ function encodeOne(ffmpegPath, args) {
     child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: (err.slice(-300) || `ffmpeg exit ${code}`) }));
   });
 }
+
+// 슬라이드 HTML 1장을 오프스크린 창(내장 Chromium)에서 렌더해 PNG 버퍼로 캡처.
+// 하이퍼프레임이 Puppeteer로 하는 일을, 앱에 이미 있는 Chromium으로 추가 설치 없이 수행한다.
+async function captureSlidePng(html, w, h) {
+  const win = new BrowserWindow({
+    width: w, height: h, show: false, useContentSize: true,
+    webPreferences: { offscreen: true, sandbox: true, javascript: true },
+  });
+  try {
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    await new Promise((r) => setTimeout(r, 350)); // 폰트·레이아웃 안정화
+    const img = await win.webContents.capturePage();
+    return img.toPNG();
+  } finally { try { win.destroy(); } catch { /* already gone */ } }
+}
+
+// 매니페스트 1건: 슬라이드마다 HTML→PNG 캡처 → ffmpeg concat → mp4. 이미지 없이 텍스트만으로도 렌더된다.
+async function renderOneManifest(dir, rel, ff, onLine) {
+  const base = path.resolve(dir);
+  const manAbs = path.resolve(dir, rel);
+  if (!manAbs.startsWith(base + path.sep)) return { ok: false, error: '워크스페이스 밖 경로' };
+  let m;
+  try { m = JSON.parse(fs.readFileSync(manAbs, 'utf8')); } catch { return { ok: false, error: '매니페스트 JSON 파싱 실패' }; }
+  const v = slidevideo.validateManifest(m);
+  if (!v.ok) return { ok: false, error: '계약 위반: ' + v.errors.join('; ') };
+  const [w, h] = slidevideo.ASPECTS[m.aspect] || slidevideo.ASPECTS['9:16'];
+  const baseName = path.basename(manAbs).replace(/\.json$/i, '');
+  const framesDir = path.join(path.dirname(manAbs), `.${baseName}.frames`);
+  fs.mkdirSync(framesDir, { recursive: true });
+  const framePaths = [];
+  try {
+    for (let i = 0; i < m.slides.length; i++) {
+      if (isRenderStopped(dir)) return { ok: false, error: '중단됨' };
+      const s = m.slides[i];
+      // 배경 이미지(선택)를 워크스페이스 안에서만 해석
+      let imgAbs = null;
+      if (s.image && s.image.rel) {
+        const a = path.resolve(dir, s.image.rel);
+        if (a.startsWith(base + path.sep) && fs.existsSync(a)) imgAbs = a;
+      }
+      const html = htmlslide.slideHtml({ head: s.head, sub: s.sub, transition: s.transition, image: imgAbs ? { abs: imgAbs } : null },
+        { aspect: m.aspect, brand: m.brand || {}, index: i + 1, total: m.slides.length });
+      const png = await captureSlidePng(html, w, h);
+      const fp = path.join(framesDir, `slide-${String(i + 1).padStart(3, '0')}.png`);
+      fs.writeFileSync(fp, png);
+      framePaths.push(fp);
+    }
+    const concatPath = path.join(framesDir, 'concat.txt');
+    fs.writeFileSync(concatPath, slidevideo.buildConcatScript(framePaths, m.slides), 'utf8');
+    const outAbs = path.join(dir, 'outputs', 'videos', `${baseName}.mp4`);
+    let audioAbs = null;
+    if (m.audio && m.audio.audioFile) {
+      const a = path.resolve(dir, m.audio.audioFile);
+      if (a.startsWith(base + path.sep) && fs.existsSync(a)) audioAbs = a;
+    }
+    const args = slidevideo.buildFfmpegArgs(m, { concatPath, outPath: outAbs, audioPath: audioAbs });
+    const r = await encodeOne(ff.path, args);
+    return r.ok ? { ok: true, outRel: path.join('outputs', 'videos', `${baseName}.mp4`).replace(/\\/g, '/') } : { ok: false, error: r.error };
+  } finally {
+    try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+
+// 워크스페이스의 모든 slide-video 매니페스트를 mp4로 렌더. ffmpeg 부재 시 건너뛴다(발행은 사람 승인).
 async function renderSlideVideos(dir, onLine) {
   const manifests = slidevideorender.listManifests(dir);
   if (!manifests.length) return { ok: true, rendered: 0, total: 0, note: '슬라이드 영상 매니페스트 없음' };
   const ff = ffmpegResolver.resolve();
   if (!ff.path) {
-    onLine && onLine('[슬라이드 영상] ffmpeg가 없어 mp4 인코딩을 건너뜁니다 — 매니페스트+슬라이드 이미지까지 준비됨. (설치본은 ffmpeg 번들, 개발 실행은 npm install 후 ffmpeg-static)');
+    onLine && onLine('[슬라이드 영상] ffmpeg가 없어 mp4 인코딩을 건너뜁니다 — 매니페스트까지 준비됨. (설치본은 ffmpeg 번들, 개발 실행은 npm install 후 ffmpeg-static)');
     return { ok: true, rendered: 0, total: manifests.length, note: 'ffmpeg 없음 — 인코딩 생략', needsFfmpeg: true };
   }
   let rendered = 0; const skipped = [];
   for (const rel of manifests) {
     if (isRenderStopped(dir)) break;
-    const prep = slidevideorender.prepare(dir, rel);
-    if (!prep.ok) { skipped.push(`${rel}: ${prep.reason}`); onLine && onLine(`[슬라이드 영상] 건너뜀 — ${prep.reason}`); continue; }
-    onLine && onLine(`[슬라이드 영상] 렌더 중 (${ff.source}) → ${prep.plan.outRel}`);
-    const r = await encodeOne(ff.path, prep.plan.argsFor());
-    try { fs.unlinkSync(prep.plan.concatPath); } catch { /* best effort */ }
-    if (r.ok) { rendered++; onLine && onLine(`[슬라이드 영상] 완료 → ${prep.plan.outRel}`); }
+    onLine && onLine(`[슬라이드 영상] 렌더 중 (HTML→${ff.source}) → ${rel}`);
+    let r;
+    try { r = await renderOneManifest(dir, rel, ff, onLine); }
+    catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+    if (r.ok) { rendered++; onLine && onLine(`[슬라이드 영상] 완료 → ${r.outRel}`); }
     else { skipped.push(`${rel}: ${r.error}`); onLine && onLine(`[슬라이드 영상] 실패 — ${r.error}`); }
   }
   return { ok: true, rendered, total: manifests.length, skipped, source: ff.source };
@@ -646,12 +710,9 @@ ipcMain.handle('slidevideo:render', async (_e, dir, manifestRel) => {
     if (manifestRel) {
       const ff = ffmpegResolver.resolve();
       if (!ff.path) return { ok: false, needsFfmpeg: true, error: 'ffmpeg가 없습니다 — 설치본은 번들됩니다. 개발 실행은 npm install 후 ffmpeg-static이 필요합니다.' };
-      const prep = slidevideorender.prepare(dir, manifestRel);
-      if (!prep.ok) return { ok: false, error: prep.reason, needsImages: prep.needsImages };
-      const r = await encodeOne(ff.path, prep.plan.argsFor());
-      try { fs.unlinkSync(prep.plan.concatPath); } catch { /* best effort */ }
+      const r = await renderOneManifest(dir, manifestRel, ff, (line) => send('log', { source: 'slide-video', line, dir }));
       setTimeout(pushBoard, 300);
-      return r.ok ? { ok: true, outRel: prep.plan.outRel, source: ff.source } : { ok: false, error: r.error };
+      return r.ok ? { ok: true, outRel: r.outRel, source: ff.source } : { ok: false, error: r.error };
     }
     const r = await renderSlideVideos(dir, (line) => send('log', { source: 'slide-video', line, dir }));
     setTimeout(pushBoard, 300);
