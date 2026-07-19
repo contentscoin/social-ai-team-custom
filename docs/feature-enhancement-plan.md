@@ -1,10 +1,10 @@
 ---
 title: Social AI Team — 기능 고도화 기획서
-version: 1.1.0
+version: 1.2.0
 date: 2026-07-19
-status: 제안 (Draft)
-scope: 스킬 레이어(19종) · 서브에이전트(4종) · 온에어 데스크(Electron v0.18.5) · OpenCrab 지식 오케스트레이션 · pumasi
-method: 8개 서브시스템 병렬 심층 분석(코드/파일 근거 기반) → 개선기회 50건 도출 → 임팩트·난이도·의존성 기준 우선순위화 → 독립 완결성 크리틱 반영(v1.1)
+status: 제안 (Draft) — Now 전 항목 코드 대조 검증 완료
+scope: 스킬 레이어(19종) · 서브에이전트(4종) · 온에어 데스크(Electron v0.18.6) · OpenCrab 지식 오케스트레이션 · pumasi
+method: 8개 서브시스템 병렬 심층 분석(코드/파일 근거 기반) → 개선기회 50건 도출 → 임팩트·난이도·의존성 기준 우선순위화 → 독립 완결성 크리틱 반영(v1.1) → Now 11항목·Quick Win 8건을 v0.18.6(f764abb) 코드와 파일:라인 대조 검증, 티켓 범위 3건 수정·신규 발견 4건 반영(v1.2)
 ---
 
 # Social AI Team — 기능 고도화 기획서
@@ -50,7 +50,7 @@ disjoint-폴더 안전조건, 원자적 쓰기)은 견고합니다. 그러나 8�
 |---|---|---|---|---|
 | 1 | **콘텐츠 파이프라인** (디렉터 + 8 라이터) | ★★★★☆ | disjoint-폴더 병렬 팬아웃, 단독 기록자 규칙, 승인 게이트 회수 | 카카오·네이버클립 라이터 **오케스트레이터 미배선**, 캘린더-라이터 플랫폼 불일치, 계약 필드 대소문자 드리프트 |
 | 2 | **비주얼·영상 레인** | ★★★☆☆ | CSP 하드닝, 캐러셀 top-up 회복, 이미지-QA 이중 스코어링 설계 | "다층 폴백"이 실제 캐스케이드가 아님, Composite/편집 레인 부재, 이미지 QA **코드 미구현**, 릴스 CLIP PLAN 실행 없음 |
-| 3 | **온에어 데스크(앱)** | ★★★★☆ | fs 감시 자동 카드 이동, 원자적 쓰기, 프로세스 트리 종료, 보안 경계 | **테스트 0개**, 락 만료 없음(데드락), history CAP 500 비용 축소, `renderer.js` 2706줄 단일 IIFE |
+| 3 | **온에어 데스크(앱)** | ★★★★☆ | fs 감시 자동 카드 이동, 원자적 쓰기, 프로세스 트리 종료, 보안 경계 | **테스트 0개**, 행(hang) CLI의 락 점유(스테이지 타임아웃 부재), history CAP 500 비용 축소, `renderer.js` 2706줄 단일 IIFE |
 | 4 | **발행·배포** | ★★★☆☆ | OAuth1.0a 자체 서명, Threads 댓글체인, 원자적 큐 | 재시도/백오프 **전무**, 'publishing' 크래시 고착, 토큰 만료 추적 없음, 한국 주력 4채널이 수동, 성과 연결 없음 |
 | 5 | **컴플라이언스·현지화** | ★★★★☆ | 판정자/결정자 분리, 과탐 지향, CJK 2배 가중 계약화 | 규칙이 SKILL 본문에 **하드코딩**, AI기본법 대비 #AI생성 과소처리, 결정적 검증 스크립트 없음 |
 | 6 | **지식·오케스트레이션** (OpenCrab/pumasi) | ★★☆☆☆ | SSOT 상수화, 방어적 도구 발견, 팩 컴파일 재사용 | `createProject`가 실제 도구 미매칭(조용히 실패), 전략 추출 단방향, pumasi gates **미실행**, 크로스클라이언트 학습 전무 |
@@ -107,17 +107,17 @@ disjoint-폴더 안전조건, 원자적 쓰기)은 견고합니다. 그러나 8�
 
 | 항목 | 테마 | 임팩트 | 난이도 | 핵심 |
 |---|---|---|---|---|
-| 카카오·네이버클립 라이터 오케스트레이터 배선 + 출력 폴더 충돌 제거 | T1 | High | M | `naver-clip` 출력을 `outputs/naver_clip/`으로 분리(비디오 레인과 disjoint 복원), 디렉터 로스터·Route·검증표에 2채널 추가 |
-| 계약 필드 스키마 단일화 + case-insensitive 파싱 | T1 | Med | S~M | `Visual direction:`↔`VISUAL DIRECTION:` 드리프트 제거, 공용 `contract-fields.md` 정의 |
-| kr-voice-profile 전 라이터 적용 | T1 | Med | S | 현재 네이버블로그만 읽는 톤 프로파일을 6개 라이터로 확대 |
-| 문서·설치 SSOT 동기화 | T5 | High | S | 스킬 개수(10/17/19)·repo URL(3종)·`install.bat`(10개) 불일치 해소, CI drift 감지 |
-| 핵심 순수함수 테스트 하네스 + `gates.js` 결함 수정 + CI 게이트 | T5 | High | M | `board/gates/autopilot/postblock` `node:test`, `gates.js:64` 항상-true 삼항 정리, 배포 전 `npm test` 강제 |
-| 예약 발행 재시도 엔진 + 크래시 복구 | T2 | High | M | 지수 백오프·오류 분류·'publishing' stale 회수·멱등 발행 |
+| 카카오·네이버클립 라이터 오케스트레이터 배선 + 출력 폴더 충돌 제거 | T1 | High | M | `naver-clip` 출력을 `outputs/naver_clip/`으로 분리(비디오 레인과 disjoint 복원, 보드 `board.js:262` 레인과 정합), 카카오 출력을 `outputs/kakao/` 단일로 고정, 디렉터 로스터·Route·검증표 + copywriter 에이전트 라우팅 표에 2채널 추가(kr-voice 적용 경로 확보), `opencrab.constants.yaml:57` channel_routing을 전용 라이터로 갱신 |
+| 계약 필드 표기 통일 + 지시문 관용성 명시 | T1 | Med | S | `Visual direction:`↔`VISUAL DIRECTION:` 드리프트 제거(수정 대상: content-calendar·ad-storyboard·social-creative-designer·social-media-manager). **코드 파서는 이미 case-insensitive**(`postblock.js:39` `/i`, `board.js:95` 한글 변형까지 매칭) — 코드 수정 불필요, 대신 kr-guardrail-check·kr-voice-localizer 지시문에 "필드명 대소문자 무시" 명시. 공용 정의는 신규 파일 대신 TEAM.md 계약 필드 용어집(160행) 확장으로 |
+| kr-voice-profile 잔여 갭 배선 | T1 | Med | S | 에이전트 레이어(`copywriter.md:36·49`)가 5개 라우트에 이미 필수 적용 중 — 남은 갭은 ① 카카오·네이버클립(copywriter 라우팅 표에도 없어 어느 레이어에도 경로 없음, 위 배선 티켓과 병합), ② 스킬 직접 호출(에이전트 미경유) 경로 |
+| 문서·설치 SSOT 동기화 | T5 | High | S | 스킬 개수(10/16·17/19)·repo URL(3종)·`install.bat`(10개) 불일치 해소, CI drift 감지. `install.bat`은 서브에이전트 4종 복사도 누락, desktop/README은 같은 파일 안에서 16/17 혼재, TEAM.md 구성 열거는 카카오·네이버클립 2종 누락 — 함께 정정 |
+| 핵심 순수함수 테스트 하네스 + `gates.js` 정리 + CI 게이트 | T5 | High | M | `board/gates/autopilot/postblock` `node:test`, `gates.js:64` 항상-true 삼항 정리(죽은 코드 — 실제 승인 게이트는 `gates.js:70-76`, 동작 변화 없는 정리+특성화 테스트), 배포 전 `npm test` 강제. board/postblock은 fs 직접 읽기라 픽스처 디렉터리, autopilot은 모듈 상태 리셋 필요 |
+| 예약 발행 재시도 엔진 + 크래시 복구 | T2 | High | M | 지수 백오프·오류 분류·'publishing' stale 회수·멱등 발행. Threads 댓글 체인은 부분 성공 상태(published/firstId, `pubdirect.js:161-163`)를 큐에 보존해 "이어서 재개" — 단순 전체 재시도는 이중 게시 유발 |
 | AI 생성물 표시 의무 **단계적** 상향 + 정치·선거 딥페이크 BLOCK | T4 | High | S | AI기본법 대응. 시행령 미확정 리스크를 고려해 1단계 `#AI생성` 자동 삽입 → 2단계 미삽입 시 발효일 조건부 BLOCK. 딥페이크는 즉시 BLOCK |
-| 비용 예산 가드레일 + history 무손실 롤업 | T5 | Med | S~M | 월 예산 임계 경고·오토파일럿 자동 정지, CAP 500 축소집계 해소 |
-| 락 TTL/하트비트 + 강제 해제 UI | T5 | Med | S | 멎은 CLI가 클라이언트를 영구 잠그는 데드락 제거 |
-| 토큰 safeStorage 암호화 이관 | T5 | Med | S~M | 평문 `secrets.json` → Electron safeStorage(OS 키체인), 기존 파일 자동 마이그레이션. 발행 토큰·API 키를 다루는 제품의 최소 보안 기준 |
-| 워크스페이스 백업·복원 + 스키마 버전 프레임워크 | T5 | Med | M | zip 백업/복원 UI(secrets 제외), 구조화 파일별 `schemaVersion` + 기동 시 마이그레이션 러너. 계약 파일을 늘리는 이 기획 전체의 전제 인프라 |
+| 비용 예산 가드레일 + history 무손실 롤업 | T5 | Med | S~M | 월 예산 임계 경고·오토파일럿 자동 정지, CAP 500 축소집계 해소(워크스페이스 구분 없는 전역 CAP이라 dir별 누적 필요). **렌더(`visuals-generate`/`render-*`)·codex 실행은 costUsd 미기록** — 비용 기록 보강 없이는 가드레일이 최대 비용 축(이미지·영상 API)을 놓침 |
+| 락 데드락 제거(스테이지 타임아웃 + 강제 해제) | T5 | Med | S | 검증 결과 CLI '사망' 시엔 락이 풀림(모든 acquire가 finally에서 release, `main.js:521`) — 실제 원인은 '행(hang)': 스테이지 실행만 `timeoutMs` 부재(`pipeline.js:95`, 채팅은 20분 타임아웃 있음). 처방: 스테이지 타임아웃 추가, POSIX 프로세스 그룹 kill(현재 stop은 셸만 종료), N분 초과 시 강제 해제 버튼. 락은 인메모리 Map이라 TTL/하트비트 신설 불필요 |
+| 토큰 safeStorage 암호화 이관 | T5 | Med | S~M | 평문 `secrets.json` → Electron safeStorage(OS 키체인), 기존 파일 자동 마이그레이션(이관 후 평문 안전 삭제). 발행 토큰·API 키를 다루는 제품의 최소 보안 기준. `masked()` IPC 경계가 이미 있어 `secrets.js` load/save 내부만 교체하면 됨(검증 확인). Linux 키링 부재 시(`isEncryptionAvailable()` false) 폴백 정책 선결 |
+| 워크스페이스 백업·복원 + 스키마 버전 프레임워크 | T5 | Med | M | zip 백업/복원 UI(secrets 제외), 구조화 파일별 `schemaVersion` + 기동 시 마이그레이션 러너. 계약 파일을 늘리는 이 기획 전체의 전제 인프라. 대상 표면: 워크스페이스 파일 8종(gates/publish-log/publish-queue/visual-assets-manifest 등) + 전역 6종(settings/history/secrets/chatlogs 등). `clients.json`의 절대경로 dir 재매핑, `gates.json`의 calendarHash 보존 포함 |
 
 **Now 단계 목표:** 실제로 깨진 것을 고치고, 이후 모든 고도화의 안전망(테스트·CI·비용
 가드)을 깐다. 신규 사용자 진입장벽(문서 드리프트·설치 반쪽)을 제거한다.
@@ -127,7 +127,7 @@ disjoint-폴더 안전조건, 원자적 쓰기)은 견고합니다. 그러나 8�
 | 항목 | 테마 | 임팩트 | 난이도 | 핵심 |
 |---|---|---|---|---|
 | 캘린더 8채널·포맷 확장 + `calendar-index.json` 단일 소스 승격 | T1 | High | L | 기획을 8채널로, prose/JSON 이중 진실을 스킬이 JSON 동시 산출로 해소 |
-| 통합 렌더 오케스트레이터(진짜 자동 캐스케이드) + Nano Banana 프로바이더 추가 | T2 | High | M | 순위 기반 폴백·실패 분류·앱↔스킬 엔진 일치 |
+| 통합 렌더 오케스트레이터(진짜 자동 캐스케이드) + Nano Banana 프로바이더 추가 | T2 | High | M | 순위 기반 폴백·실패 분류·앱↔스킬 엔진 일치. 동일-프로바이더 내부 재시도는 이미 존재(openai quality 재시도·ima2 serve 자동 기동) — 작업의 본질은 "프로바이더 간" 캐스케이드. 선행: 폴백 우선순위 정본 결정(스킬/SOP는 Nano Banana 1순위, 데스크톱 `pipeline.js:52` 프롬프트는 ima2 우선 — 상호 모순) |
 | Composite/이미지 편집 레인 데스크톱 구현 | T2 | High | M | 제품 사진 앵커(`refAbs`)를 gpt-image edits·ima2 `--ref`·Nano Banana edit로 라우팅 |
 | 코드화된 이미지 QA 게이트(텍스트 세이프 + 한글 OCR + 재생성 상한) | T2 | High | M~L | 깨진 한글 유출 0, 무검증 저장 차단 |
 | 규칙 데이터 외부화 + 규제 버전 관리 | T4 | High | M | `references/rules/*.yaml`, 결과 파일에 `rules_version` 기록 |
@@ -180,14 +180,14 @@ disjoint-폴더 안전조건, 원자적 쓰기)은 견고합니다. 그러나 8�
 아래는 **Now 단계 중에서도 즉시 착수 가능하고 리스크가 낮은** 항목입니다. 첫 스프린트를
 이것으로 채우길 권장합니다.
 
-1. **`gates.js:64` 항상-true 삼항 제거** — `done: !!(evidence && (key==='foundation'||key==='calendar' ? true : true))`. 의도가 코드로 표현되지 못한 명백한 죽은 코드. 특성화 테스트로 현재 동작 캡처 후 정리.
+1. **`gates.js:64` 항상-true 삼항 제거** — `done: !!(evidence[n.key] && (n.key === 'foundation' || n.key === 'calendar' ? true : true))` (v0.18.6 64행 현존 확인). 항상-true라 `!!evidence[n.key]`와 동일 — 동작 변화 없는 죽은 코드 정리이며, 실제 승인 게이트는 `gates.js:70-76`(needsStamp/cleared)에 있음. 특성화 테스트로 현재 동작 캡처 후 정리.
 2. **네이버클립 출력 폴더 분리** — `outputs/videos/`·`outputs/storyboards/` → `outputs/naver_clip/`. 비디오 레인과의 파일 충돌 위험을 제거하고 `board.js`의 `naver_clip` 레인과 정합.
-3. **`VISUAL DIRECTION` 표기 통일** — 캘린더의 소문자 `Visual direction:`을 대문자로, Route G 파싱을 case-insensitive로. `grep 'Visual direction'` 잔존 0.
-4. **문서 스킬 개수/repo URL 통일** — `install.bat`을 `install.sh`와 동일한 19개로, README '17 skills'·SETUP '10 skills'·repo URL 3종을 실제값으로 정정.
-5. **kr-voice-profile 6개 라이터에 배선** — 각 라이터 Phase 0 읽기 목록에 `context/kr-voice-profile.md` 2~3줄 추가. ("기존 10스킬 무수정" 원칙과 충돌 시 카피라이터 에이전트 레이어 주입으로 우회 — 어느 쪽으로 할지 착수 전 명시적 결정 필요)
-6. **AI 표시 의무 단계적 상향** — 1단계로 `#AI생성` 자동 삽입을 기본화하고, 2단계로 미삽입 시 발효일 조건부 BLOCK. 시행령 미확정 상태의 일괄 BLOCK은 과차단 리스크가 있어 단계적으로.
+3. **`VISUAL DIRECTION` 표기 통일** — 캘린더의 소문자 `Visual direction:`을 대문자로(수정 대상: content-calendar:183 외 ad-storyboard:40·296, social-creative-designer:91·340, social-media-manager Title-Case 서술 4곳). 코드 파서는 이미 case-insensitive(`postblock.js` `/i`, `board.js:95`는 한글 변형까지 매칭)라 코드 수정 없음 — 대신 kr-guardrail-check:291·kr-voice-localizer:193 지시문에 "필드명 매칭은 대소문자 무시"를 명시. 목표는 스킬·문서 내 잔존 0(`board.js:95`의 하위호환 소문자 매칭은 의도적 유지).
+4. **문서 스킬 개수/repo URL 통일** — `install.bat`을 `install.sh`와 동일한 19개로(서브에이전트 4종 복사 누락도 보완), README '17 skills'·SETUP '10 skills'·desktop/README '16/17 혼재'·TEAM.md 구성 열거(2종 누락)·repo URL 3종을 실제값으로 정정. URL의 SSOT는 git origin이자 electron-builder publish 대상인 `contentscoin/social-ai-team-custom`.
+5. **kr-voice-profile 잔여 갭 배선** — 검증 결과 에이전트 레이어 주입은 이미 구현됨(`.claude/agents/copywriter.md:36·49`가 caption/linkedin/threads/x/naver-blog 5개 라우트에 필수 적용 + 보고 필드). 남은 갭: ① 카카오·네이버클립은 copywriter 라우팅 표에 없어 어느 레이어에도 적용 경로 없음(QW2·배선 티켓과 병합), ② 스킬 직접 호출(에이전트 미경유) 시 미적용 — 스킬 Phase 0 추가 여부만 "기존 10스킬 무수정" 원칙 결정 사안으로 남음. 부수: kr-voice-localizer:321의 스테일 상호참조(4개 라이터가 프로파일을 읽는다고 기술하나 실제 미배선) 정정.
+6. **AI 표시 의무 단계적 상향** — 1단계로 `#AI생성` 자동 삽입을 기본화하고, 2단계로 미삽입 시 발효일 조건부 BLOCK. 시행령 미확정 상태의 일괄 BLOCK은 과차단 리스크가 있어 단계적으로. 유의(검증 반영): 현재도 WARN은 서명 없이 발행 불가(kr-guardrail-check:397)라 상향 설계는 서명 흐름과의 관계 정의가 핵심이고, 실사 오인 연출은 이미 BLOCK(:222)이므로 2단계 대상은 그 외 일반 AI 생성물. X 레인은 CJK 2유닛 가중으로 `#AI생성` 삽입 시 280유닛 재계산 필요. "정치·선거 딥페이크 BLOCK"의 신설 범위는 공직선거법류(선거 시기 조건) — 정치인 초상 자체는 기존 2.1 규칙(:158)이 이미 BLOCK.
 7. **history 월별 롤업 백필** — CAP 500 slice 전에 월 요약을 누적해 비용 집계 정확도 확보.
-8. **토큰 safeStorage 암호화 이관** — `masked()` 경계가 이미 있어 저장 계층만 교체하면 되는 저비용 항목. 락 TTL 퀵픽스와 묶어 1–2일.
+8. **토큰 safeStorage 암호화 이관** — `masked()` 경계가 IPC 레벨(sec:get/sec:set 모두 masked만 반환)에서 이미 강제되고 있어 `secrets.js` load/save 내부만 교체하면 되는 저비용 항목(검증 확인). Linux 키링 부재 폴백만 선결. 락 데드락 퀵픽스(스테이지 타임아웃)와 묶어 1–2일.
 
 ---
 
@@ -282,7 +282,7 @@ disjoint-폴더 안전조건, 원자적 쓰기)은 견고합니다. 그러나 8�
 - 핵심 순수함수 테스트 하네스 (board/gates/autopilot/postblock) (High/Med)
 - 실행 관측성 대시보드 (High/Med)
 - 비용 예산·상한 가드레일 (Med/Low)
-- 락 만료·강제 해제 + 상태 배지 (Med/Low)
+- 락 데드락 제거 — 스테이지 타임아웃·강제 해제 + 상태 배지 (Med/Low)
 - 클라이언트 상태 동기화 백엔드(협업 옵션) (High/High)
 - history 저장 구조 개선(클라이언트별 분할 + 무손실 월 집계) (Med/Low)
 - renderer 모듈 분해 + 얇은 상태 구독 계층 (Med/High)
@@ -348,5 +348,37 @@ YouTube Shorts·모바일 원격 승인·권리 대장 신설, PIPA·이해충�
 (경쟁 차별화·과금 모델·사용자 검증)"은 엔지니어링 로드맵 밖의 별도 논의로 남겨둡니다 —
 제품 오너 결정이 필요한 영역입니다.
 
+v1.2에서는 Now 11개 항목과 Quick Win 8건 전부를 **v0.18.6(f764abb) 코드와 파일:라인
+단위로 대조 검증**했습니다(독립 검증 12건 병렬 실행 + 커버리지 크리틱). 결과: 8개 항목
+유효 확인, 3개 항목 티켓 범위 수정(계약 필드 — 코드 파서는 이미 case-insensitive,
+락 — 원인은 프로세스 사망이 아니라 행(hang), kr-voice — 에이전트 레이어 적용 기구현),
+신규 발견 4건(렌더·codex 비용 미기록, 폴백 우선순위 문서 간 모순, opencrab
+channel_routing의 전용 라이터 우회, Threads 체인 단순 재시도의 이중 게시 구조)을
+로드맵 본문에 반영했습니다. 항목별 판정과 근거는 부록 C 참조.
+
 > 본 문서는 제안(Draft)입니다. 각 항목의 상세 구현 스펙(손댈 파일·완료 판정 기준·리스크·
 > 예상 규모)은 착수 시 개별 티켓으로 전개합니다.
+
+---
+
+## 부록 C. v1.2 검증 결과 — Now 항목 × v0.18.6 코드 대조
+
+판정 기준: **유효** = 기획서 주장과 갭이 현행 코드에서 그대로 확인됨(착수 가능) ·
+**범위 수정** = 갭은 있으나 전제/처방을 위 로드맵대로 고쳐서 착수 · 기준 커밋
+`f764abb`(0.18.6)는 이미지 프롬프트 품질만 변경(promptlab/render/autovisual/packs)해
+스킬·문서·발행·보안 영역의 갭에는 영향 없음.
+
+| # | 항목 | 판정 | 핵심 근거 |
+|---|---|---|---|
+| 1 | 카카오·네이버클립 배선 + 폴더 충돌 | 유효 | content-director에 두 라이터 참조 0건(로스터·Route B·검증표 전부). naver-clip-writer는 `outputs/videos·storyboards/`에 쓰는데 보드는 `outputs/naver_clip/` 스캔(`board.js:262`) — 클립 산출물이 보드에서 영원히 빈 상태. `opencrab.constants.yaml:57` channel_routing도 전용 라이터 우회 |
+| 2 | 계약 필드 단일화 | 범위 수정 | 표기 드리프트 실재(캘린더:183 소문자 vs 가드레일:291 대문자 BLOCK 검증). 단 코드 파서는 전부 case-insensitive(`postblock.js:39,46,87` `/i`, `board.js:87,95` 한글 변형 포함) — "Route G 파싱 수정"은 잘못된 전제(Route G는 LLM 지시문). TEAM.md:160 용어집이 공용 정의 역할 부분 수행 중 |
+| 3 | kr-voice 전 라이터 적용 | 범위 수정 | 스킬 레이어는 naver-blog만 참조(주장 정확). 그러나 `.claude/agents/copywriter.md:36·49`가 5개 라우트에 이미 필수 적용 — 남은 갭은 카카오·네이버클립(어느 레이어에도 경로 없음)과 스킬 직접 호출. kr-voice-localizer:321은 스테일 상호참조 |
+| 4 | 문서·설치 SSOT | 유효 | 실측 19개 vs README 17 / SETUP 10 / desktop/README 16·17 혼재 / TEAM.md 열거 17(2종 누락). `install.bat` 10개 + 에이전트 4종 누락. repo URL 3종(stevenflanagan1/social-ai-team, contentscoin/social-ai-team, contentscoin/social-ai-team-custom). CI drift 검사 없음 |
+| 5 | 테스트 하네스 + gates.js + CI | 유효 | 테스트 파일 0개, package.json에 test 스크립트 없음. `gates.js:64` 항상-true 삼항 현존(죽은 코드, 실제 게이트는 :70-76). CI는 desktop/** 푸시 → 테스트 없이 곧바로 공개 릴리스(draft:false) |
+| 6 | 발행 재시도 + 크래시 복구 | 유효 | `pubdirect.js:327-329` 1회 시도 후 즉시 'failed'. `'publishing'` 세팅 지점만 있고 회수 코드 0건(:324가 무조건 skip) — 크래시 시 영구 고착, 취소도 불가. 만료 추적·멱등 가드 전무. Threads 체인은 부분 성공 시 앞 조각이 이미 라이브 |
+| 7 | AI 표시 상향 + 딥페이크 BLOCK | 유효 | `#AI생성` 누락 = WARN(kr-guardrail-check:221), 자동 삽입 로직 전무(전부 지침 문서 수준). 실사 오인 연출은 이미 BLOCK(:222), WARN도 서명 게이트 있음(:397). 선거법 기반 규칙은 0건 |
+| 8 | 비용 가드레일 + history 롤업 | 유효 | `history.js:10·24` CAP 500 slice — 월 비용 집계 축소 확인, 전역 CAP이라 다중 워크스페이스 시 더 빨리 잘림. 예산 임계·경고·자동 정지 0건. 신규 발견: 렌더·codex 실행은 costUsd 미기록 |
+| 9 | 락 TTL | 범위 수정 | TTL/하트비트 부재는 사실이나 "죽으면 영구 잠금"은 부정확 — 모든 acquire가 finally에서 release(`main.js:521` 등 9곳), proc.js가 child close/error에서 반드시 settle. 실제 데드락은 행(hang): 스테이지 실행만 `timeoutMs` 부재(`pipeline.js:95`). 강제 해제 UI 부재는 사실 |
+| 10 | 토큰 safeStorage | 유효 | `secrets.json` 평문(0600, Windows는 best-effort), safeStorage/keytar 사용 0건. `masked()` 경계는 IPC 레벨에서 이미 강제 — 저장 계층만 교체하면 된다는 판단 정확 |
+| 11 | 백업·복원 + schemaVersion | 유효 | backup/restore/zip 핸들러 0건, `schemaVersion` 0건, 기동 시 마이그레이션 러너 없음(유일한 유사 사례는 config.js:44 읽기 시점 정규화). 대상 파일 표면: 워크스페이스 8종 + 전역 6종 |
+| 12 | (Next 선행 확인) 렌더 캐스케이드 | 유효 | `render.js:545-548` generate()는 단일 프로바이더 디스패치, 실패 시 종료. `IMAGE_PROVIDERS`(:509) 5종에 Nano Banana 없음. 동일-프로바이더 내부 재시도만 존재. 폴백 우선순위 문서 간 모순(스킬/SOP Nano Banana 1순위 vs `pipeline.js:52` ima2 우선) |
