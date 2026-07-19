@@ -61,7 +61,7 @@ function computeGates(board, gatesData) {
   };
   const nodes = NODES.map((n) => ({
     ...n,
-    done: !!(evidence[n.key] && (n.key === 'foundation' || n.key === 'calendar' ? true : true)),
+    done: !!evidence[n.key],
     approved: ok.has(n.key),
     blocked: n.key === 'publish' && board.compliance && board.compliance.block > 0,
   }));
@@ -77,4 +77,4 @@ function computeGates(board, gatesData) {
   return { nodes, current, approvals: gatesData.approvals || [] };
 }
 
-module.exports = { NODES, load, approve, computeGates };
+module.exports = { NODES, load, approve, approvedSet, computeGates };
