@@ -1,12 +1,12 @@
 # Social AI Team Desktop (PC 설치용 앱)
 
-소셜 콘텐츠 팀(스킬 16종 + 서브에이전트 4종 + Codex 이미지 레인)을 PC에 설치하고 운영하는 데스크톱 컨트롤타워입니다. Electron 기반, Windows(NSIS 설치본)·macOS(DMG)·Linux(AppImage)를 지원합니다.
+소셜 콘텐츠 팀(스킬 19종 + 서브에이전트 4종 + Codex 이미지 레인)을 PC에 설치하고 운영하는 데스크톱 컨트롤타워입니다. Electron 기반, Windows(NSIS 설치본)·macOS(DMG)·Linux(AppImage)를 지원합니다.
 
 ## 앱이 하는 일 — "온에어 데스크" (v0.8+)
 
 단일 워크스페이스 4존: **좌측 레일**(클라이언트 아바타) / **채널 허브 스트립** / **타임라인⇄칸반 보드** / **게이트 바** + 우측 **디렉터 독**.
 
-1. **출근 준비 마법사 — "설치했을 때 적용"** — Claude/Codex/ima2 CLI 점검·설치, 스킬 17종 → `~/.claude/skills/`, 에이전트 4종 → `~/.claude/agents/`, Codex OAuth(브라우저)·MCP 등록, ima2 셋업.
+1. **출근 준비 마법사 — "설치했을 때 적용"** — Claude/Codex/ima2 CLI 점검·설치, 스킬 19종 → `~/.claude/skills/`, 에이전트 4종 → `~/.claude/agents/`, Codex OAuth(브라우저)·MCP 등록, ima2 셋업.
    - **레퍼런스 사이트 분석 (v0.14)** — 클라이언트를 만들 때(또는 온보딩 카드에서) 홈페이지·블로그·경쟁사 URL을 넣으면 앱이 페이지를 수집(제목/메타/헤딩/본문 + 컬러 시그널 hex)해 `context/references/`에 스냅샷을 남기고, 종합 분석 리포트(site-analysis.md)와 **brand-style.md 자동 초안**(없을 때만, ⚠초안 표기)을 준비합니다. SNS 페이지는 JS 렌더링이라 수집이 제한될 수 있습니다.
    - **질문지 온보딩 (v0.15)** — 한 질문씩 LLM 왕복하던 인터뷰 대신: ① 고정 질문지 폼(17문항, 전부 선택 답변 — 즉시 표시) → ② 답변의 공백·모호한 부분만 겨냥한 **후속 질문을 한 번에 묶어 생성**(LLM 1회, 최대 6개) → ③ 전체 답변 **일괄 합성**으로 brand-style.md + kr-voice-profile.md 초안 완성(LLM 1회). 답변 원본은 `context/onboarding-answers.md`에 기록됩니다. 대화형 인터뷰는 선택지로 유지.
 2. **채널 허브** — 채널별 카드: 이번 달 큐, 5단계 진행 미터, 주차 스파크바, WARN/BLOCK 닷, 발행 경로(Blotato 자동/연결 필요/수동). 카드 클릭 = 보드 필터 + 발행 와이어.
@@ -48,7 +48,7 @@ npm run dist:win      # Windows NSIS (Windows에서, 또는 CI)
 npm run dist:mac      # macOS DMG (macOS에서)
 ```
 
-권장: `desktop/**`가 바뀐 커밋이 `main`에 푸시되면 GitHub Actions(`.github/workflows/desktop-build.yml`)가 Windows/macOS/Linux 설치본을 빌드해 **GitHub Release로 자동 발행**합니다 — [Releases](https://github.com/contentscoin/social-ai-team/releases)가 공식 다운로드 위치입니다 (Actions 아티팩트에도 사본 업로드).
+권장: `desktop/**`가 바뀐 커밋이 `main`에 푸시되면 GitHub Actions(`.github/workflows/desktop-build.yml`)가 Windows/macOS/Linux 설치본을 빌드해 **GitHub Release로 자동 발행**합니다 — [Releases](https://github.com/contentscoin/social-ai-team-custom/releases)가 공식 다운로드 위치입니다 (Actions 아티팩트에도 사본 업로드).
 
 ## 자동 업데이트
 

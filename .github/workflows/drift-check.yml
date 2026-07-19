@@ -1,0 +1,17 @@
+name: Docs drift check
+
+# skills/ 디렉터리를 단일 진실로 설치 스크립트·문서 표기·저장소 URL 정합을 검사.
+# desktop-build와 분리 — 스킬/문서 커밋이 릴리스 빌드를 다시 돌리지 않게.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check install scripts and docs against skills/
+        run: bash scripts/check-drift.sh

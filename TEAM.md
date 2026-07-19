@@ -1,12 +1,12 @@
 ---
 title: Social AI Team - Korean Team Manual
 version: 1.0.0
-description: Korean operations manual for the full Social AI Team system. Covers the team roster (1 director skill, 4 subagents, 5 new skills + 1 vendored ima2 skill, render-lane SOPs layered over the 10 untouched original skills), the monthly production loop, format-to-lane routing, human approval gates, the bilingual contract boundary, MCP requirements, known contract-drift notes, installation, and the deferred roadmap.
+description: Korean operations manual for the full Social AI Team system. Covers the team roster (1 director skill, 4 subagents, 7 new skills + 1 vendored ima2 skill, render-lane SOPs layered over the 10 untouched original skills), the monthly production loop, format-to-lane routing, human approval gates, the bilingual contract boundary, MCP requirements, known contract-drift notes, installation, and the deferred roadmap.
 ---
 
 # Social AI Team — 팀 운영 매뉴얼 (한국어판)
 
-이 문서는 Social AI Team 시스템 전체의 **팀 매뉴얼**입니다. 기존 10개 스킬(영어) 위에 한국어 팀 레이어 — 디렉터 스킬 1개, 서브에이전트 4개, 신규 스킬 5개 + 벤더 스킬 1개(`/ima2`), 렌더 레인 SOP — 를 얹은 구조를 설명합니다.
+이 문서는 Social AI Team 시스템 전체의 **팀 매뉴얼**입니다. 기존 10개 스킬(영어) 위에 한국어 팀 레이어 — 디렉터 스킬 1개, 서브에이전트 4개, 신규 스킬 7개 + 벤더 스킬 1개(`/ima2`), 렌더 레인 SOP — 를 얹은 구조를 설명합니다.
 
 > **팀 모토: "한국어로 말하고, 영어로 계약한다."**
 > 운영자와의 모든 대화·요약·승인 요청은 한국어. 파일로 오가는 계약 필드(`VISUAL DIRECTION`, `BLOTATO FLAG`, `PASS`/`WARN`/`BLOCK`, `context/*.md`, `outputs/` 폴더 규약)는 기존 스킬이 정의한 영어 표기를 한 글자도 바꾸지 않습니다.
@@ -204,7 +204,7 @@ For manual publishing, use the Monthly Handoff Summary from /social-media-manage
 bash install.sh
 ```
 
-- **스킬 17종** → `~/.claude/skills/` (기존 10 + content-director, reels-script, ad-storyboard, kr-guardrail-check, kr-voice-localizer, naver-blog-writer, ima2)
+- **스킬 19종** → `~/.claude/skills/` (기존 10 + content-director, reels-script, ad-storyboard, kr-guardrail-check, kr-voice-localizer, naver-blog-writer, naver-clip-writer, kakao-channel-writer, ima2)
 - **에이전트 4종** → `~/.claude/agents/` (copywriter, creative-designer, video-producer, compliance-reviewer)
 - Windows는 `install.bat`.
 
@@ -216,7 +216,7 @@ bash install.sh
 
 ## 9. 시작하기
 
-**데스크톱 앱 (권장)**: [Releases](https://github.com/contentscoin/social-ai-team/releases)에서 설치본(Windows/macOS/Linux)을 받으세요 — "온에어 데스크" UI로 팀 설치·클라이언트 관리·라이브 칸반 보드·승인 도장·수동 발행 체크리스트까지 전부 앱에서 처리하며, 자동 업데이트됩니다. 상세: `desktop/README.md`.
+**데스크톱 앱 (권장)**: [Releases](https://github.com/contentscoin/social-ai-team-custom/releases)에서 설치본(Windows/macOS/Linux)을 받으세요 — "온에어 데스크" UI로 팀 설치·클라이언트 관리·라이브 칸반 보드·승인 도장·수동 발행 체크리스트까지 전부 앱에서 처리하며, 자동 업데이트됩니다. 상세: `desktop/README.md`.
 
 **터미널 (Claude Code CLI)**:
 

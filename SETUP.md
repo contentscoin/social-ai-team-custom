@@ -44,12 +44,12 @@ You have two options. Option B is easier if you've never used git.
 
 Open a terminal and run:
 ```bash
-git clone https://github.com/stevenflanagan1/social-ai-team.git
+git clone https://github.com/contentscoin/social-ai-team-custom.git
 ```
 
 ### Option B: Download as a ZIP (easier)
 
-1. Go to [github.com/stevenflanagan1/social-ai-team](https://github.com/stevenflanagan1/social-ai-team)
+1. Go to [github.com/contentscoin/social-ai-team-custom](https://github.com/contentscoin/social-ai-team-custom)
 2. Click the green **Code** button
 3. Click **Download ZIP**
 4. Unzip the file somewhere on your computer (e.g. your Desktop or Documents)
@@ -72,7 +72,7 @@ This copies the skills into the right place so Claude Code can find them.
    ```bash
    bash install.sh
    ```
-4. You should see 10 skills listed with checkmarks. Done.
+4. You should see 19 skills listed with checkmarks. Done.
 
 ### Windows
 
