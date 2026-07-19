@@ -8,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const secrets = require('./secrets');
 const publishlog = require('./publishlog');
+const tokenhealth = require('./tokenhealth');
 
 // ---- 공용 HTTP ---------------------------------------------------------------------
 async function http(url, opts, timeoutMs = 60_000) {
@@ -296,7 +297,7 @@ const TESTERS = { x: testX, facebook: testFacebook, threads: testThreads, linked
 
 // 채널별 직접 발행 가능 여부 (허브 배지·발행 패널이 소비)
 function status() {
-  return {
+  const out = {
     x: { connected: secrets.has('x', ['apiKey', 'apiSecret', 'accessToken', 'accessSecret']), image: true },
     facebook: { connected: secrets.has('facebook', ['pageId', 'pageToken']), image: true },
     threads: { connected: secrets.has('threads', ['userId', 'token']), image: false, chain: true, imageNote: 'Threads API는 공개 이미지 URL만 받아 이미지 포스트는 수동 발행. 텍스트는 댓글형 체인(스토리라인) 발행 지원' },
@@ -308,6 +309,14 @@ function status() {
     },
     naver: { connected: false, manualOnly: true, note: '네이버 블로그는 공개 API 미제공 — 수동 발행 체크리스트 사용' },
   };
+  // 장수 토큰(60일 수명) 만료 상태를 배지·발행 패널에 얹는다
+  for (const t of tokenhealth.check()) {
+    if (out[t.connector] && out[t.connector].connected && t.level !== 'ok') {
+      out[t.connector].tokenLevel = t.level;
+      out[t.connector].tokenNote = tokenhealth.describe(t);
+    }
+  }
+  return out;
 }
 
 async function publishNow(dir, { uid, channel, text, imageRel, imageRels, segments, chainState }) {
@@ -455,9 +464,22 @@ function startScheduler(hooks) {
   const workspace = require('./workspace');
   const dirsOf = () => (hooks.listDirs ? hooks.listDirs() : workspace.listClients().map((c) => c.dir));
   try { recoverStale(dirsOf()); } catch { /* 복구 실패는 다음 부팅에서 재시도 */ }
+  // 토큰 만료 경고 — 하루 한 번, 임박(7일)·경과 커넥터만 알림
+  let tokenWarnedDay = '';
+  const tokenTick = () => {
+    const day = new Date().toISOString().slice(0, 10);
+    if (day === tokenWarnedDay) return;
+    tokenWarnedDay = day;
+    for (const w of tokenhealth.warnings()) {
+      const title = w.level === 'expired' ? '발행 토큰 만료' : '발행 토큰 갱신 임박';
+      try { hooks.notify && hooks.notify(title, `${w.connector} — ${tokenhealth.describe(w)}`); } catch { /* 알림 실패 무시 */ }
+      try { hooks.send && hooks.send('token-health', w); } catch { /* 렌더러 부재 무시 */ }
+    }
+  };
   const tick = async () => {
     if (ticking) return; // 발행이 1분보다 오래 걸려도 중첩 실행 금지
     ticking = true;
+    try { tokenTick(); } catch { /* 경고 실패가 발행을 막지 않게 */ }
     try { await processQueues(dirsOf(), hooks); } catch { /* 다음 틱에 재시도 */ }
     ticking = false;
   };

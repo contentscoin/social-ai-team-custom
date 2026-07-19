@@ -90,19 +90,26 @@ function get(ns) { return load()[ns] || {}; }
 function set(ns, values) {
   const all = load();
   all[ns] = { ...(all[ns] || {}) };
+  let tokenTouched = false;
   for (const [k, v] of Object.entries(values || {})) {
     const s = String(v == null ? '' : v).trim();
-    if (s) all[ns][k] = s; else delete all[ns][k];
+    if (s) {
+      all[ns][k] = s;
+      if (/token|secret|apikey/i.test(k)) tokenTouched = true;
+    } else delete all[ns][k];
   }
-  if (!Object.keys(all[ns]).length) delete all[ns];
+  // 토큰 갱신 시점 스탬프 — tokenhealth가 만료(60일 수명 등)를 추적하는 근거
+  if (tokenTouched) all[ns]._savedAt = new Date().toISOString();
+  if (!Object.keys(all[ns]).some((k) => !k.startsWith('_'))) delete all[ns];
   save(all);
   return masked(ns);
 }
-// 렌더러 표시용 — 앞 4자만 남기고 가린다
+// 렌더러 표시용 — 앞 4자만 남기고 가린다. _ 접두 키는 내부 메타라 내보내지 않는다
 function masked(ns) {
   const v = get(ns);
   const out = {};
   for (const [k, val] of Object.entries(v)) {
+    if (k.startsWith('_')) continue;
     // URL·ID류는 그대로 보여줘도 된다 (비밀 아님)
     out[k] = /url|id$|^user|^page|^person|workflow/i.test(k)
       ? val
