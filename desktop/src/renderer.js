@@ -2155,7 +2155,8 @@ function envRows(s) {
   const rows = [
     ['claude', 'Claude Code CLI', s.claude], ['codex', 'Codex CLI', s.codex], ['codexAuthed', 'Codex 로그인', s.codexAuthed],
     ['ima2', 'ima2 (이미지·영상)', s.ima2], ['ima2Configured', 'ima2 OAuth 설정', s.ima2Configured],
-    ['skillsInstalled', '스킬 17종', s.skillsInstalled], ['agentsInstalled', '에이전트 4종', s.agentsInstalled],
+    ['skillsInstalled', '스킬 19종', s.skillsInstalled], ['agentsInstalled', '에이전트 4종', s.agentsInstalled],
+    ['qrMcpRegistered', 'QR MCP (qrcoding)', s.qrMcpRegistered],
   ];
   return rows.map(([k, label, ok]) => `<div class="env-row">${label}<span class="badge ${ok ? 'ok' : 'no'}" data-env="${k}">${ok ? 'OK' : '없음'}</span></div>`).join('');
 }
@@ -2165,6 +2166,7 @@ function envButtons() {
     <button data-setup="installCodex">Codex 설치</button>
     <button data-setup="codexLogin">Codex 로그인 (OAuth)</button>
     <button data-setup="registerMcp">Codex MCP 등록</button>
+    <button data-setup="registerQrMcp">QR MCP 등록</button>
     <button data-setup="installIma2">ima2 설치</button>
     <button data-setup="ima2Setup">ima2 셋업 (터미널)</button>
   </div>`;
@@ -2440,6 +2442,8 @@ const RD_SECRET_FORMS = [
     fields: [['url', '엔드포인트 URL'], ['headers', '추가 헤더 (JSON, 선택)']] },
   { ns: 'opencrab', title: 'OpenCrab MCP (프롬프트 팩)', hint: 'opencrab.sh의 내 MCP 엔드포인트(https://opencrab.sh/api/mcp/…)를 넣으면 아래 팩 섹션에서 프롬프트·이미지·영상 팩을 검색해 컴파일러에 로드할 수 있습니다.',
     fields: [['endpoint', 'MCP 엔드포인트 URL']] },
+  { ns: 'qrcoding', title: 'QR Agent Studio MCP (qrcoding)', hint: 'QR 생성·합성·스캔 검증 도구를 팀 에이전트에 제공합니다. 대시보드의 Skills & MCP 패널에서 API 키를 발급해 저장하고, 설정 → 환경의 "QR MCP 등록" 버튼으로 claude에 등록하세요. URL을 비우면 기본 게이트웨이(qrcoding-skill-mcp.vercel.app)를 씁니다.',
+    fields: [['apiKey', 'API Key (x-api-key)'], ['url', 'MCP URL (선택 — 기본 게이트웨이 /mcp)']] },
 ];
 
 // ---- OpenCrab 연결 (설정 → OpenCrab 탭) -----------------------------------------------
