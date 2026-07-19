@@ -95,7 +95,7 @@ const S = {
   viewMonth: null, templateCh: null, auto: false, monthCost: 0, selectSeq: 0,
 };
 const STAGE_LABEL = { planned: '기획', copy: '카피', visual: '비주얼/영상', review: '검수', ready: '발행준비' };
-const STAGE2COL = { calendar: 'planned', copy: 'copy', shortform: 'visual', visuals: 'visual', 'visuals-generate': 'visual', compliance: 'review', review: 'ready' };
+const STAGE2COL = { calendar: 'planned', copy: 'copy', shortform: 'visual', verify: 'review', visuals: 'visual', 'visuals-generate': 'visual', compliance: 'review', review: 'ready' };
 const CH_NAME = { instagram: '인스타그램', threads: '스레드', naver: '네이버 블로그', naver_clip: '네이버 클립', kakao_channel: '카카오채널', facebook: '페이스북', linkedin: '링크드인', x: 'X', tiktok: '틱톡', etc: '기타' };
 const CH_MONO = { instagram: 'IG', threads: 'TH', naver: 'NB', naver_clip: 'NC', kakao_channel: 'KK', facebook: 'FB', linkedin: 'IN', x: 'X', tiktok: 'TT', etc: '?' };
 const PRIMARY_CHANNELS = ['instagram', 'threads', 'naver', 'naver_clip', 'kakao_channel'];
@@ -1204,7 +1204,7 @@ function renderCTA() {
   }
   icon.setAttribute('href', '#i-play');
   const n = S.gates.nodes[S.gates.current];
-  const needsStamp = ['calendar', 'copy', 'compliance'].includes(n.key);
+  const needsStamp = ['calendar', 'copy', 'verify', 'compliance'].includes(n.key);
   if (n.key === 'foundation') { label.textContent = '온보딩 인터뷰 시작'; cta.onclick = () => prefillChat('브랜드 온보딩 인터뷰를 시작해줘. 질문을 하나씩 해줘.'); }
   else if (n.done && needsStamp && !n.approved) { cta.classList.add('approve'); icon.setAttribute('href', '#i-stamp'); label.textContent = `${n.label} 검토 → 승인`; cta.onclick = () => openApproveSheet(n); }
   else if (n.key === 'publish') {
@@ -1326,6 +1326,7 @@ function openApproveSheet(node, restoreRel) {
   if (typeof currentStampReset === 'function') currentStampReset();
   const sheet = $('#sheet-approve');
   const isCompliance = node.key === 'compliance';
+  const isVerify = node.key === 'verify';
   S.approveNode = node.key;
   let files = [];
   if (node.key === 'calendar') {
@@ -1345,7 +1346,7 @@ function openApproveSheet(node, restoreRel) {
 
   sheet.innerHTML = `
     <div class="sheet-head"><h2>${node.label} 승인 게이트</h2>
-      ${isCompliance ? `<span class="chip" style="color:var(--ok)">PASS ${S.board.compliance.pass}</span><span class="chip" style="color:var(--warn)">WARN ${S.board.compliance.warn}</span><span class="chip" style="color:var(--bad)">BLOCK ${S.board.compliance.block}</span>` : `<span class="chip">${files.length}개 파일</span>`}
+      ${isCompliance ? `<span class="chip" style="color:var(--ok)">PASS ${S.board.compliance.pass}</span><span class="chip" style="color:var(--warn)">WARN ${S.board.compliance.warn}</span><span class="chip" style="color:var(--bad)">BLOCK ${S.board.compliance.block}</span>` : isVerify ? `<span class="chip" style="color:var(--ok)">PASS ${(S.board.verify || {}).pass || 0}</span><span class="chip" style="color:var(--warn)">REVISE ${(S.board.verify || {}).revise || 0}</span>` : `<span class="chip">${files.length}개 파일</span>`}
       <button class="icon-btn" id="appr-close"><svg><use href="#i-close"/></svg></button></div>
     <div class="appr-split">
       <div class="appr-files">${isCompliance ? `
@@ -1365,7 +1366,9 @@ function openApproveSheet(node, restoreRel) {
   const list = $('#appr-list', sheet);
   const preview = $('#appr-preview', sheet);
   const complianceFile = S.board.compliance.file;
-  const showFiles = isCompliance && complianceFile ? [{ ...complianceFile, lane: 'compliance' }] : files;
+  const verifyFile = (S.board.verify || {}).file;
+  const showFiles = isCompliance && complianceFile ? [{ ...complianceFile, lane: 'compliance' }]
+    : isVerify && verifyFile ? [{ ...verifyFile, lane: 'verify' }] : files;
   for (const f of showFiles.slice(0, 30)) {
     const row = $('#tpl-file-row').content.firstElementChild.cloneNode(true);
     row.dataset.rel = f.rel;
@@ -2967,6 +2970,9 @@ window.api.onStageResult((r) => {
   if (r.compliance) {
     logLine('결과', `  판정 요약: PASS ${r.compliance.pass} · WARN ${r.compliance.warn} · BLOCK ${r.compliance.block}`);
     for (const p of (r.compliance.posts || [])) logLine('결과', `    [${p.verdict}] ${p.uid} — ${p.topic}`);
+  }
+  if (r.verify) {
+    logLine('결과', `  사실 검증: PASS ${r.verify.pass} · REVISE ${r.verify.revise}${r.verify.revise ? ' — REVISE 포스트는 교체 필요' : ''}`);
   }
   if (!S.auto) toast(head.slice(0, 120));
 });

@@ -23,6 +23,7 @@ SKILLS=(
   "video-guide"
   "ad-storyboard"
   "kr-guardrail-check"
+  "content-verify"
   "kr-voice-localizer"
   "naver-blog-writer"
   "naver-clip-writer"

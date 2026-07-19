@@ -4,15 +4,16 @@
 // 들므로 visuals 노드 도장 없이는 진입하지 않는다.
 const gates = require('./gates');
 
-const ORDER = ['calendar', 'copy', 'shortform', 'visuals', 'visuals-generate', 'compliance'];
+const ORDER = ['calendar', 'copy', 'shortform', 'verify', 'visuals', 'visuals-generate', 'compliance'];
 // 단계 실행 전에 도장이 찍혀 있어야 하는 게이트 노드
 const REQUIRES = {
   copy: 'calendar',
   shortform: 'copy',
-  visuals: 'copy',
+  verify: 'copy',
+  visuals: 'verify', // 사실 검증 통과(도장) 후에만 비주얼로 — 교체될 콘텐츠에 비주얼 낭비 방지
   'visuals-generate': 'visuals',
 };
-const NODE_LABEL = { calendar: '캘린더', copy: '카피', visuals: '비주얼 브리프', compliance: '컴플라이언스' };
+const NODE_LABEL = { calendar: '캘린더', copy: '카피', verify: '사실 검증', visuals: '비주얼 브리프', compliance: '컴플라이언스' };
 
 // 클라이언트(폴더)별 오토파일럿 상태 — 서로 다른 클라이언트는 동시에 오토파일럿을 돌릴 수 있다.
 const states = new Map(); // dir → { running, dir, stage }

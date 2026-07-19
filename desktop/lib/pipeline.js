@@ -65,6 +65,14 @@ const STAGES = {
       '① ima2 (ChatGPT OAuth, ima2 serve 자동 기동) → ② codex MCP 위임/codex_render.sh → ③ Nano Banana MCP (편집·앵커링 작업은 Nano Banana 전용). ' +
       'image-qa SOP를 적용한 뒤 파일 목록과 QA 결과만 출력하고 종료하라.',
   },
+  verify: {
+    label: '사실 검증',
+    prompt:
+      'content-director 스킬의 사실 검증 단계만 수행: content-verify 스킬을 실행해 outputs/의 작성 완료 콘텐츠(captions/linkedin/threads/x/naver/videos)에서 사실 주장을 뽑아 검증하라. ' +
+      '제품·브랜드 주장은 context/source-of-truth/(+브랜드 컨텍스트, 있으면 OpenCrab 팩)로 대조하고, 일반 세계 사실은 웹 심층 검색(SerpApi/Firecrawl/Playwright)으로 반증까지 교차 검증하라. ' +
+      '포스트별 PASS/REVISE 판정과 주장별 근거를 outputs/verify/에 저장하고, REVISE 사유 요약만 출력하고 종료하라. ' +
+      'REVISE 교체 재작성과 발행 결정은 앱에서 진행한다 — 스스로 재작성·승인하지 말라. 검색 도구가 없으면 지어내지 말고 UNVERIFIABLE로 남겨라.',
+  },
   compliance: {
     label: '컴플라이언스 게이트',
     prompt:

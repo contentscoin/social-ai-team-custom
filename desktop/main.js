@@ -641,12 +641,13 @@ async function execStage(dir, stage, opts) {
   const finish = (r) => {
     const changes = runreport.diff(before, runreport.snapshot(dir));
     const compliance = stage === 'compliance' ? runreport.complianceSummary(dir) : null;
+    const verify = stage === 'verify' ? runreport.verifySummary(dir) : null;
     send('stage:result', {
       dir, stage, ok: !!r.ok, ms: Date.now() - startedAt,
       costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
-      changes, compliance, error: r.ok ? null : String(r.tail || '').slice(-200),
+      changes, compliance, verify, error: r.ok ? null : String(r.tail || '').slice(-200),
     });
-    return { ...r, changes, compliance };
+    return { ...r, changes, compliance, verify };
   };
   const changeNote = (changes) => `+${changes.created.length}/~${changes.modified.length} 파일`;
   try {

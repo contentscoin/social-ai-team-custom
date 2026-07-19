@@ -263,7 +263,7 @@ function buildBoard(dir) {
   const posts = indexPosts || (calMd ? parseCalendar(calMd) : []);
 
   const lanes = {};
-  for (const lane of ['captions', 'linkedin', 'threads', 'x', 'naver', 'naver_clip', 'kakao', 'videos', 'storyboards', 'creatives', 'compliance', 'reviews']) {
+  for (const lane of ['captions', 'linkedin', 'threads', 'x', 'naver', 'naver_clip', 'kakao', 'videos', 'storyboards', 'creatives', 'verify', 'compliance', 'reviews']) {
     lanes[lane] = readLane(dir, lane);
     lanes[lane].norm = norm(lanes[lane].text);
   }
@@ -439,7 +439,16 @@ function buildBoard(dir) {
       warn: cards.filter((c) => c.verdict === 'WARN').length,
       block: cards.filter((c) => c.verdict === 'BLOCK').length,
     },
+    verify: verifySummary(lanes.verify),
   };
+}
+
+// 사실 검증 리포트의 요약 줄(`Overall: PASS n / REVISE n`)을 파싱 — 게이트 증거·배지용.
+function verifySummary(lane) {
+  const out = { file: (lane && lane.files[0]) || null, pass: 0, revise: 0 };
+  const m = /Overall:\s*PASS\s*(\d+)\s*\/\s*REVISE\s*(\d+)/i.exec((lane && lane.text) || '');
+  if (m) { out.pass = Number(m[1]); out.revise = Number(m[2]); }
+  return out;
 }
 
 module.exports = { buildBoard, parseCalendar, STAGES };

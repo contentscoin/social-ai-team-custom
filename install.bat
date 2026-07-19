@@ -7,7 +7,7 @@ SET SCRIPT_DIR=%~dp0
 
 echo Installing Social AI Team skills...
 
-FOR %%S IN (social-media-manager brand-onboarding content-calendar caption-writer social-creative-designer social-performance-review linkedin-writer threads-writer x-writer publisher content-director reels-script slide-video video-guide ad-storyboard kr-guardrail-check kr-voice-localizer naver-blog-writer naver-clip-writer kakao-channel-writer ima2) DO (
+FOR %%S IN (social-media-manager brand-onboarding content-calendar caption-writer social-creative-designer social-performance-review linkedin-writer threads-writer x-writer publisher content-director reels-script slide-video video-guide ad-storyboard kr-guardrail-check content-verify kr-voice-localizer naver-blog-writer naver-clip-writer kakao-channel-writer ima2) DO (
     IF NOT EXIST "%SKILLS_DIR%\%%S" MKDIR "%SKILLS_DIR%\%%S"
     XCOPY /E /Y /Q "%SCRIPT_DIR%skills\%%S\*" "%SKILLS_DIR%\%%S\" >nul
     echo   OK  %%S
