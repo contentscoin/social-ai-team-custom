@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
     registerMcp: () => ipcRenderer.invoke('setup:registerMcp'),
     registerQrMcp: () => ipcRenderer.invoke('setup:registerQrMcp'),
     installIma2: () => ipcRenderer.invoke('setup:installIma2'),
+    installVideoSkills: () => ipcRenderer.invoke('setup:installVideoSkills'),
+    videoSkillsStatus: () => ipcRenderer.invoke('setup:videoSkillsStatus'),
     ima2Setup: () => ipcRenderer.invoke('setup:ima2Setup'),
   },
   ws: {

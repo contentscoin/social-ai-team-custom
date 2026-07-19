@@ -1,7 +1,7 @@
 ---
 name: slide-video
 version: 1.0.0
-description: Default short-form video lane for the team. Turns a calendar reel/video/clip/slide slot into a slide-type video the app can auto-render — a slide manifest (JSON contract), on-screen text per slide, narration, and a TTS-ready script. Built for Remotion/Hyperframe-style slide rendering (image slides + transitions + optional voiceover), not live-action shooting. Output saves to outputs/videos/. This is the DEFAULT for video slots; full manual production (master/character/scene sheets, gen prompts) is the /video-guide lane, used only on the director's explicit instruction.
+description: Default short-form video lane for the team. Turns a calendar reel/video/clip/slide slot into a rendered MP4. Three render engines, selected per slot — HyperFrames (default, HTML video-as-code via the installed hyperframes agent skill), Remotion (advanced/premium slots, React video-as-code via the installed remotion agent skill), and the app's built-in Chromium capture (zero-install fallback, static slides). Produces the slide plan, on-screen text, narration, and a TTS-ready script; the chosen engine renders to outputs/videos/*.mp4. Output saves to outputs/videos/. This is the DEFAULT for video slots; full manual production (master/character/scene sheets, gen prompts) is the /video-guide lane, used only on the director's explicit instruction.
 ---
 
 # Slide Video (슬라이드형 영상 — 기본 영상 레인)
@@ -23,6 +23,25 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 | 캠페인/광고 스팟(수상작 6비트 스토리보드가 필요) | `/ad-storyboard` |
 
 판별이 애매하면 slide-video로 진행하되, 보고에 "실사/AI 영상이 더 적합해 보입니다 — 필요하면 /video-guide로 재지시해 주세요"를 남깁니다.
+
+---
+
+## 렌더 엔진 — 슬롯별 선택 (3계층)
+
+슬라이드 계획은 동일하게 세우고, **슬롯마다 렌더 엔진을 고릅니다.** 우선순위와 선택 규칙:
+
+| 엔진 | 언제 | 저작 방식 | 렌더 |
+|---|---|---|---|
+| **HyperFrames (기본)** | 대부분의 영상 슬롯. Format `slide`/`reel`/`clip`/`video` | 설치된 `hyperframes` 에이전트 스킬로 **HTML 장면**을 작성 (plan→HTML→애니메이션→lint→render 루프) | `npx hyperframes render` → mp4 (로컬, Apache-2.0) |
+| **Remotion (고급)** | 프리미엄 슬롯 — Format에 `-pro`/`프리미엄` 표기가 있거나 Notes에 "고급/프리미엄/pro", 또는 디렉터가 지정 | 설치된 `remotion` 에이전트 스킬로 **React 컴포지션**을 작성 (스프링 물리·정밀 전환·오디오 싱크) | `npx remotion render` → mp4 (로컬) |
+| **앱 내장 캡처 (폴백)** | 위 엔진/Node 22+가 없을 때 | 이 스킬이 슬라이드 매니페스트(JSON)만 저장 | 앱이 내장 Chromium으로 렌더 (정적 슬라이드) |
+
+**엔진 판별 절차:**
+1. 슬롯 신호를 본다 — Format에 `-pro`/`프리미엄`이 있거나 Notes에 고급 지시가 있으면 **Remotion**, 아니면 **HyperFrames**.
+2. 선택한 엔진의 에이전트 스킬이 설치돼 있는지 확인 — 설치돼 있으면 그 스킬로 video-as-code 저작 후 로컬 렌더. (설치: 데스크톱 앱 설정 → 셋업의 "영상 렌더 스킬 설치", 또는 `npx skills add heygen-com/hyperframes --all` / `npx skills add remotion`)
+3. 스킬이 없거나 렌더 전제(Node 22+·ffmpeg)가 안 되면 **폴백** — 슬라이드 매니페스트(아래 Phase 2)만 저장하고, 앱 내장 캡처가 mp4를 만든다. 보고에 "엔진 미설치 — 앱 폴백으로 렌더" 명시.
+
+**공통 계약(엔진 무관):** 산출 mp4는 `outputs/videos/`에, 사람이 읽는 대본/장면 노트(.md)에 **`Calendar slot: #n`**을 반드시 표기(보드 연결). 이미지 내 한글 텍스트를 굽지 말 것 — 화면 텍스트는 HTML/React가 네이티브로 렌더. AI 생성 비주얼이 있으면 `#AI생성` 고지.
 
 ---
 
@@ -92,14 +111,14 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 
 ---
 
-## Phase 5 — 앱 자동 렌더 (렌더 레인)
+## Phase 5 — 렌더
 
-이 스킬의 산출물(매니페스트)은 앱이 자동으로 mp4로 렌더합니다 — 별도 도구 설치가 필요 없습니다:
-- 앱은 각 슬라이드의 `head`/`sub` 텍스트를 **HTML로 조판해 앱 내장 Chromium(오프스크린)으로 렌더**하고, 그 프레임들을 **번들된 ffmpeg**로 이어붙여 `outputs/videos/[…].mp4`를 만듭니다. (하이퍼프레임이 Puppeteer로 하는 HTML→영상 방식을, 앱에 이미 있는 Chromium으로 수행)
-- **배경 이미지는 선택**입니다 — 텍스트만 있는 슬라이드도 브랜드색 배경에 그대로 렌더됩니다. 배경 이미지를 쓰려면 creative-designer가 렌더한 파일의 rel을 `image.rel`에 넣습니다.
-- 최종 mp4가 생기면 보드에서 그 릴 카드가 visual 단계로 전진합니다. mp4는 사람 검토 후 발행 대기열로 갑니다 — **자동 렌더가 자동 발행을 뜻하지 않습니다.**
+**기본 경로 (HyperFrames/Remotion 설치됨):** 선택한 엔진의 에이전트 스킬로 video-as-code를 저작하고 로컬 렌더합니다 — HyperFrames는 HTML 장면을 짜 `npx hyperframes render`, Remotion은 React 컴포지션을 짜 `npx remotion render`. 산출 mp4를 `outputs/videos/`에 저장하고, 매니페스트(Phase 2)와 동일 베이스네임 `.md`에 `Calendar slot: #n`·장면 노트를 남깁니다.
 
-ffmpeg가 없는 환경(설치본은 번들되므로 정상 동작; 개발 실행은 `npm install` 후)에서는 매니페스트까지가 산출물이며, 이 사실을 보고에 명시합니다.
+**폴백 경로 (엔진 미설치):** 슬라이드 매니페스트(Phase 2 JSON)만 저장하면, 앱이 각 슬라이드의 `head`/`sub`를 HTML로 조판해 **내장 Chromium(오프스크린)으로 렌더** → **번들 ffmpeg**로 이어붙여 mp4를 만듭니다(정적 슬라이드, 한글 네이티브, 배경 이미지 선택).
+
+- 두 경로 모두 최종 mp4가 생기면 보드에서 그 릴 카드가 visual 단계로 전진합니다. mp4는 사람 검토 후 발행 대기열로 갑니다 — **자동 렌더가 자동 발행을 뜻하지 않습니다.**
+- 어느 경로로 렌더했는지(엔진명/폴백)와 렌더 전제 충족 여부를 보고에 명시합니다.
 
 ---
 

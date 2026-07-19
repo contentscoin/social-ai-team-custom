@@ -194,6 +194,8 @@ Notes: [any special instructions, timing, or campaign context]
 
 **Image posts default to multi-image.** Plan image slots as `multi-image` (2-4 images) or `carousel` sets — one image with one caption is the exception, used only when there is a specific reason (e.g., a single poster announcement). Write the VISUAL DIRECTION so it describes a cohesive set, not a lone shot.
 
+**Video slots default to slide-type (auto-rendered).** Use `reel` / `clip` / `slide` for ordinary video slots — the team renders these itself via `/slide-video` (HyperFrames HTML video-as-code by default). For a **premium/high-motion** slot that deserves the richer engine (Remotion — spring physics, precise transitions, audio sync), mark the Format `reel-pro` (or `slide-pro`) **or** add "프리미엄/고급" to Notes. Only mark a few per month — premium slots cost more render time. Live-action or AI-generated video that a person must shoot/produce goes to `/video-guide` (note it in Notes: "실사 촬영 필요").
+
 **Platform format lanes** — pick formats that exist on the platform:
 
 | Platform | Valid formats |

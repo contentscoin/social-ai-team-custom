@@ -2368,6 +2368,7 @@ function envButtons() {
     <button data-setup="registerQrMcp">QR MCP 등록</button>
     <button data-setup="installIma2">ima2 설치</button>
     <button data-setup="ima2Setup">ima2 셋업 (터미널)</button>
+    <button data-setup="installVideoSkills" title="HyperFrames(기본)+Remotion(고급) 영상 렌더 스킬을 ~/.claude/skills에 설치. CLI 렌더는 Node 22+·ffmpeg 필요">영상 렌더 스킬 설치</button>
   </div>`;
 }
 function bindSetupButtons(root, after) {
