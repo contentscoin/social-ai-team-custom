@@ -342,6 +342,8 @@ ipcMain.handle('setup:registerMcp', safe(async () => {
 ipcMain.handle('setup:registerQrMcp', safe(() => setup.registerQrMcp((line) => send('log', { source: 'setup', line }))));
 ipcMain.handle('setup:installIma2', safe(() => setup.installIma2((line) => send('log', { source: 'setup', line }))));
 ipcMain.handle('setup:ima2Setup', safe(() => pipeline.openInteractiveTerminal(app.getPath('home'), 'ima2 setup')));
+ipcMain.handle('setup:installVideoSkills', safe(() => setup.installVideoSkills((line) => send('log', { source: 'setup', line }))));
+ipcMain.handle('setup:videoSkillsStatus', safe(() => setup.videoSkillsStatus()));
 
 // ---- Workspace (clients) ---------------------------------------------------
 ipcMain.handle('ws:list', safe(() => workspace.listClients()));

@@ -23,7 +23,7 @@ tools: Read, Write, Glob, Grep, Bash
 | **Ad Storyboard 레인** | 캠페인/광고 스팟 (Notes에 campaign context가 있거나 Objective가 sales인 프로모션 슬롯) | `~/.claude/skills/ad-storyboard/SKILL.md` | `outputs/storyboards/` |
 | **Reels-script 레인** | 디렉터가 클래식 타임코드 장면 대본을 명시적으로 요청 | `~/.claude/skills/reels-script/SKILL.md` | `outputs/videos/` |
 
-- **기본은 slide-video입니다.** 영상 슬롯에 별도 지시가 없으면 slide-video로 진행합니다 — 앱이 자체 렌더하는 슬라이드형 영상 매니페스트를 만듭니다. 실사/AI 영상은 디렉터가 명시적으로 지시할 때만 video-guide로 갑니다.
+- **기본은 slide-video입니다.** 영상 슬롯에 별도 지시가 없으면 slide-video로 진행합니다. slide-video 안에서 **렌더 엔진을 슬롯별로 고릅니다**: 기본은 **HyperFrames**(설치된 `hyperframes` 에이전트 스킬로 HTML 장면 저작 → `npx hyperframes render`), Format에 `-pro`/`프리미엄`이 있거나 Notes에 고급 지시가 있으면 **Remotion**(설치된 `remotion` 스킬로 React 저작 → `npx remotion render`), 두 스킬/Node22가 없으면 **앱 내장 캡처 폴백**(매니페스트만 저장하면 앱이 렌더). 실사/AI 영상은 디렉터가 명시적으로 지시할 때만 video-guide로 갑니다.
 - 모든 산출물(매니페스트·대본·시트)은 문서에 **`Calendar slot: #n`**을 반드시 표기해 대상 캘린더 슬롯을 명시합니다 — 보드가 이 인용으로 슬롯에 연결합니다.
 - 레인 배정이 없거나 위 표에 없는 값이면: 영상 슬롯은 기본값 slide-video로 진행하고, 그 외에는 디렉터에게 "레인 배정이 애매합니다. slide-video(기본) / video-guide / ad-storyboard / reels-script 중 하나와 대상 캘린더 슬롯을 지정해 주세요."라고 반환합니다.
 - 하나의 호출 = 하나의 레인. 두 레인이 모두 필요하면 디렉터가 당신을 레인별로 따로 호출합니다. 출력 폴더가 겹치지 않으므로 이미지 레인(creative-designer)과의 병렬 실행도 안전합니다.

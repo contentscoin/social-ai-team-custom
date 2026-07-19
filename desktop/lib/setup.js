@@ -196,4 +196,45 @@ async function installIma2(onLine) {
   return runCmd('npm', ['install', '-g', 'ima2-gen'], onLine, { timeoutMs: 300000 });
 }
 
-module.exports = { checkEnvironment, installSkills, installCodexCli, codexOAuthLogin, registerCodexMcp, registerQrMcp, installIma2, payloadPaths };
+// 영상 렌더 에이전트 스킬 — 코딩 에이전트(코덱스/클로드)가 코드로 영상을 짜서 로컬 렌더한다.
+// HyperFrames(HTML, Apache-2.0)를 기본, Remotion(React, 최고 품질)을 고급 레인으로 설치.
+// `npx skills add`(vercel-labs/skills)로 ~/.claude/skills에 설치 → 모든 클라이언트 폴더에서 사용.
+// 실제 렌더는 Node 22+ 와 ffmpeg 필요(앱 번들 ffmpeg는 앱 전용이라 CLI 렌더는 시스템/프로젝트 ffmpeg 사용).
+const VIDEO_SKILLS = [
+  { name: 'hyperframes', repo: 'heygen-com/hyperframes', extra: ['--all'], label: 'HyperFrames (HTML, 기본)' },
+  { name: 'remotion', repo: 'remotion', extra: [], label: 'Remotion (React, 고급)' },
+];
+function nodeMajor(versionStr) {
+  const m = /v?(\d+)\./.exec(String(versionStr || ''));
+  return m ? Number(m[1]) : 0;
+}
+async function installVideoSkills(onLine) {
+  const node = await cliVersion('node');
+  if (!node.found) return { ok: false, needNode: true, tail: 'Node.js가 없습니다 — https://nodejs.org 에서 LTS(22+) 설치 후 다시 시도하세요.' };
+  const major = nodeMajor(node.version);
+  const results = [];
+  for (const s of VIDEO_SKILLS) {
+    onLine && onLine(`영상 스킬 설치 중: ${s.label} …`);
+    // ~/.claude/skills에 설치되도록 홈에서 실행 (npx skills는 CWD의 .claude/skills에 기록)
+    const args = ['-y', 'skills', 'add', s.repo, ...s.extra];
+    const r = await runCmd('npx', args, onLine, { cwd: HOME, timeoutMs: 300000 });
+    results.push({ name: s.name, ok: r.ok, tail: r.ok ? undefined : (r.tail || '').slice(-200) });
+  }
+  const okCount = results.filter((r) => r.ok).length;
+  const nodeWarn = major && major < 22
+    ? `설치는 됐지만 현재 Node ${major}입니다 — CLI 영상 렌더에는 Node 22+ 가 필요합니다. https://nodejs.org 에서 22 LTS로 올리세요.`
+    : null;
+  return { ok: okCount > 0, results, installed: okCount, total: VIDEO_SKILLS.length, nodeMajor: major, nodeWarn };
+}
+// 설치 여부·렌더 전제 감지 (설정 화면 배지용)
+function videoSkillsStatus() {
+  const skillsDir = path.join(CLAUDE_DIR, 'skills');
+  const has = (frag) => { try { return fs.readdirSync(skillsDir).some((n) => n.toLowerCase().includes(frag)); } catch { return false; } };
+  return {
+    hyperframes: has('hyperframe'),
+    remotion: has('remotion'),
+    ffmpeg: !!resolveCmd('ffmpeg'),
+  };
+}
+
+module.exports = { checkEnvironment, installSkills, installCodexCli, codexOAuthLogin, registerCodexMcp, registerQrMcp, installIma2, installVideoSkills, videoSkillsStatus, payloadPaths };

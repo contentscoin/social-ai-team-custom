@@ -210,7 +210,9 @@ description: Korean-speaking team director layered over /social-media-manager; r
 | 캠페인/광고 스팟 (Notes에 campaign context가 있거나 Objective가 sales인 프로모션 슬롯) | `video-producer` | `/ad-storyboard` | `outputs/storyboards/` |
 | 클래식 타임코드 장면 대본을 명시 요청 | `video-producer` | `/reels-script` | `outputs/videos/` |
 
-**영상 레인 기본값 규칙:** 영상 슬롯의 기본은 `/slide-video`입니다 — 앱이 자체적으로 렌더할 수 있는 슬라이드형 영상이라, 사람 촬영·외부 생성 없이 팀이 바로 만듭니다. 실사 촬영이나 AI 영상 생성이 필요한 슬롯은 **운영자가 명시적으로 요청할 때만** `/video-guide`로 배정하고, 그 경우 최종 영상 생성은 사람이 수동으로 진행합니다(이 레인은 제작 가이드만 준비). 애매하면 slide-video를 씁니다.
+**영상 레인 기본값 규칙:** 영상 슬롯의 기본은 `/slide-video`입니다 — 팀이 코드로 영상을 짜서 로컬 렌더합니다. `/slide-video` 안에서 **렌더 엔진을 슬롯별로 선택**합니다: 기본은 **HyperFrames**(HTML video-as-code), 프리미엄 슬롯(Format에 `-pro`/`프리미엄` 또는 Notes에 고급 지시)은 **Remotion**(React video-as-code, 스프링 물리·정밀 전환), 두 엔진 스킬이 없으면 **앱 내장 캡처 폴백**. 실사 촬영이나 AI 영상 생성이 필요한 슬롯은 **운영자가 명시적으로 요청할 때만** `/video-guide`로 배정하고, 그 경우 최종 영상 생성은 사람이 수동으로 진행합니다(이 레인은 제작 가이드만 준비). 애매하면 slide-video(HyperFrames)를 씁니다.
+
+> 렌더 엔진 스킬은 데스크톱 앱 설정 → 셋업의 "영상 렌더 스킬 설치"에서 한 번 설치합니다(`npx skills add heygen-com/hyperframes --all` / `npx skills add remotion`). 실제 CLI 렌더는 Node 22+ 와 ffmpeg가 필요하며, 코덱스/클로드 로그인으로 로컬에서 돌아 추가 API 비용이 없습니다.
 
 라우팅 절차:
 1. 캘린더와 캡션 파일의 `VISUAL DIRECTION` 필드를 기준으로 제작 대상 목록을 만들고, 위 테이블로 레인을 배정(영상 슬롯 기본 = slide-video)
