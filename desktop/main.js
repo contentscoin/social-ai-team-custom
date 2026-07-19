@@ -23,6 +23,8 @@ const pubdirect = require('./lib/pubdirect');
 const opencrabBindings = require('./lib/opencrab-bindings');
 const visualAssets = require('./lib/visual-assets');
 const orchestrator = require('./lib/orchestrator');
+const schema = require('./lib/schema');
+const backup = require('./lib/backup');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -146,6 +148,12 @@ app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   initAutoUpdate();
+  // 스키마 마이그레이션 — 스케줄러가 큐 파일을 읽기 전에. 실패가 부팅을 막지 않는다.
+  try {
+    const rep = schema.migrateAll(workspace.listClients().map((c) => c.dir));
+    const changed = rep.filter((r) => r.result === 'stamped' || r.result === 'migrated');
+    if (changed.length) applog.write('schema', `${changed.length}개 파일 스탬프/마이그레이션: ` + changed.map((r) => r.key).join(', '));
+  } catch (e) { applog.write('schema', '마이그레이션 실패: ' + String(e && e.message || e)); }
   pubdirect.startScheduler({ send, notify, pushBoard: () => pushBoard() });
 }).catch((e) => {
   applog.write('boot-fail', (e && e.stack) || String(e));
@@ -761,6 +769,21 @@ ipcMain.handle('cfg:getModels', safe(() => config.getModels()));
 ipcMain.handle('cfg:setModel', safe((_e, engine, model) => config.setModel(engine, model)));
 ipcMain.handle('cfg:getBudget', safe(() => config.getBudget()));
 ipcMain.handle('cfg:setBudget', safe((_e, usd) => config.setBudget(usd)));
+
+// ---- 워크스페이스 백업·복원 -----------------------------------------------------
+ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));
+ipcMain.handle('bk:list', safe(() => backup.listBackups()));
+ipcMain.handle('bk:restore', async (_e, name, dir) => {
+  const lock = locks.acquire(dir, 'restore'); // 복원 중 파이프라인/채팅이 파일을 밟지 않게
+  if (!lock.ok) return { ok: false, error: locks.busyMessage(dir) };
+  try {
+    const r = backup.restoreBackup(name, dir);
+    setTimeout(pushBoard, 300); // 복원된 outputs/context를 보드에 즉시 반영
+    return r;
+  } finally { locks.release(dir, 'restore'); }
+});
+ipcMain.handle('bk:delete', safe((_e, name) => backup.deleteBackup(name)));
+ipcMain.handle('bk:open', () => { shell.openPath(backup.BACKUPS); return { ok: true }; });
 ipcMain.handle('chat:send', async (_e, dir, msg) => {
   const lock = locks.acquire(dir, 'chat');
   if (!lock.ok) return { ok: false, text: locks.busyMessage(dir), engine: config.getEngine() };

@@ -65,6 +65,13 @@ contextBridge.exposeInMainWorld('api', {
   hist: {
     list: (dir) => ipcRenderer.invoke('hist:list', dir),
   },
+  backup: {
+    create: (dir) => ipcRenderer.invoke('bk:create', dir),
+    list: () => ipcRenderer.invoke('bk:list'),
+    restore: (name, dir) => ipcRenderer.invoke('bk:restore', name, dir),
+    remove: (name) => ipcRenderer.invoke('bk:delete', name),
+    open: () => ipcRenderer.invoke('bk:open'),
+  },
   render: {
     providers: (envHint) => ipcRenderer.invoke('render:providers', envHint),
     generate: (dir, job) => ipcRenderer.invoke('render:generate', dir, job),
