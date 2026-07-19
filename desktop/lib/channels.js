@@ -12,7 +12,7 @@ const PRIMARY_CHANNELS = Object.freeze([
 
 /** @type {Record<string, { name: string, mono: string, chId: string, lane: string, publishRoute: 'api'|'manual', primary?: boolean }>} */
 const REGISTRY = Object.freeze({
-  instagram: { name: '인스타그램', mono: 'IG', chId: 'ig', lane: 'captions', publishRoute: 'manual', primary: true },
+  instagram: { name: '인스타그램', mono: 'IG', chId: 'ig', lane: 'captions', publishRoute: 'api', primary: true },
   threads: { name: '스레드', mono: 'TH', chId: 'th', lane: 'threads', publishRoute: 'api', primary: true },
   naver: { name: '네이버 블로그', mono: 'NB', chId: 'nb', lane: 'naver', publishRoute: 'manual', primary: true },
   naver_clip: { name: '네이버 클립', mono: 'NC', chId: 'nc', lane: 'naver_clip', publishRoute: 'manual', primary: true },

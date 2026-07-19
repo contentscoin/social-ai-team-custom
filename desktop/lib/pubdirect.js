@@ -228,9 +228,71 @@ async function testLinkedIn() {
   return r.ok ? { ok: true, detail: r.json && r.json.name } : { ok: false, error: `HTTP ${r.status}` };
 }
 
+// ---- Instagram (Graph API) -----------------------------------------------------------
+// 프로(비즈니스/크리에이터) 계정 전용. 이 API는 이미지 바이너리 업로드가 불가능하고
+// '공개 URL'만 받는다 — uploader(qrcoding /v1/uploads)로 렌더 파일을 노출한 뒤
+// 컨테이너 생성 → media_publish. 여러 장이면 자식 컨테이너 → CAROUSEL 부모.
+// 토큰 권한: instagram_business_basic + instagram_business_content_publish.
+const IG_VER = 'v25.0';
+async function igCall(pathname, params) {
+  const q = new URLSearchParams(params);
+  return http(`https://graph.facebook.com/${IG_VER}/${pathname}?${q.toString()}`, { method: 'POST' });
+}
+// 캐러셀/대용량 컨테이너는 처리에 시간이 걸린다 — FINISHED까지 짧게 폴링
+async function igWaitReady(c, creationId) {
+  for (let i = 0; i < 5; i++) {
+    const r = await http(`https://graph.facebook.com/${IG_VER}/${creationId}?fields=status_code&access_token=${encodeURIComponent(c.token)}`, {});
+    const s = r.json && r.json.status_code;
+    if (s === 'FINISHED') return true;
+    if (s === 'ERROR') return false;
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+  return true; // IN_PROGRESS여도 publish를 시도 — 실패하면 오류로 표면화된다
+}
+async function publishInstagram({ text, imageAbs, imagesAbs }) {
+  const c = secrets.get('instagram');
+  if (!c.userId || !c.token) return fail('instagram', 'IG User ID와 액세스 토큰이 필요합니다 — 설정 → 채널');
+  const files = (Array.isArray(imagesAbs) && imagesAbs.length ? imagesAbs : (imageAbs ? [imageAbs] : [])).slice(0, 10);
+  if (!files.length) return fail('instagram', 'Instagram은 이미지가 필수입니다 — 컴포저에서 이미지를 첨부하세요');
+  const uploader = require('./uploader');
+  const urls = [];
+  for (const f of files) {
+    const u = await uploader.uploadPublic(f);
+    if (!u.ok) return fail('instagram', '공개 이미지 업로드 실패: ' + u.error);
+    urls.push(u.url);
+  }
+  try {
+    const mk = async (params) => {
+      const r = await igCall(`${c.userId}/media`, { ...params, access_token: c.token });
+      if (!r.ok || !r.json || !r.json.id) throw new Error((r.json && r.json.error && r.json.error.message) || `HTTP ${r.status}`);
+      return r.json.id;
+    };
+    let creationId;
+    if (urls.length === 1) {
+      creationId = await mk({ image_url: urls[0], caption: (text || '').trim() });
+    } else {
+      const children = [];
+      for (const u of urls) children.push(await mk({ image_url: u, is_carousel_item: 'true' }));
+      creationId = await mk({ media_type: 'CAROUSEL', children: children.join(','), caption: (text || '').trim() });
+    }
+    await igWaitReady(c, creationId);
+    const pub = await igCall(`${c.userId}/media_publish`, { creation_id: creationId, access_token: c.token });
+    if (!pub.ok || !pub.json || !pub.json.id) {
+      return fail('instagram', (pub.json && pub.json.error && pub.json.error.message) || `HTTP ${pub.status}`);
+    }
+    return { ok: true, channel: 'instagram', id: pub.json.id, count: urls.length };
+  } catch (e) { return fail('instagram', e.message); }
+}
+async function testInstagram() {
+  const c = secrets.get('instagram');
+  if (!c.userId || !c.token) return { ok: false, error: '키 없음' };
+  const r = await http(`https://graph.facebook.com/${IG_VER}/${c.userId}?fields=username&access_token=${encodeURIComponent(c.token)}`, {});
+  return r.ok ? { ok: true, detail: r.json && ('@' + r.json.username) } : { ok: false, error: (r.json && r.json.error && r.json.error.message) || `HTTP ${r.status}` };
+}
+
 // ---- 디스패치 + 상태 ----------------------------------------------------------------------
-const PUBLISHERS = { x: publishX, facebook: publishFacebook, threads: publishThreads, linkedin: publishLinkedIn };
-const TESTERS = { x: testX, facebook: testFacebook, threads: testThreads, linkedin: testLinkedIn };
+const PUBLISHERS = { x: publishX, facebook: publishFacebook, threads: publishThreads, linkedin: publishLinkedIn, instagram: publishInstagram };
+const TESTERS = { x: testX, facebook: testFacebook, threads: testThreads, linkedin: testLinkedIn, instagram: testInstagram };
 
 // 채널별 직접 발행 가능 여부 (허브 배지·발행 패널이 소비)
 function status() {
@@ -239,22 +301,28 @@ function status() {
     facebook: { connected: secrets.has('facebook', ['pageId', 'pageToken']), image: true },
     threads: { connected: secrets.has('threads', ['userId', 'token']), image: false, chain: true, imageNote: 'Threads API는 공개 이미지 URL만 받아 이미지 포스트는 수동 발행. 텍스트는 댓글형 체인(스토리라인) 발행 지원' },
     linkedin: { connected: secrets.has('linkedin', ['personId', 'token']), image: true },
-    instagram: { connected: false, manualOnly: true, note: 'Instagram API는 공개 이미지 URL + 비즈니스 계정 필수 — 수동 발행 체크리스트 사용' },
+    instagram: {
+      connected: secrets.has('instagram', ['userId', 'token']) && secrets.has('qrcoding', ['apiKey']),
+      image: true, imageRequired: true,
+      imageNote: '이미지 필수 — 공개 URL은 qrcoding 업로드로 자동 처리됩니다 (렌더 탭의 QR Agent Studio API 키 필요). 여러 장 선택 시 캐러셀로 발행',
+    },
     naver: { connected: false, manualOnly: true, note: '네이버 블로그는 공개 API 미제공 — 수동 발행 체크리스트 사용' },
   };
 }
 
-async function publishNow(dir, { uid, channel, text, imageRel, segments, chainState }) {
+async function publishNow(dir, { uid, channel, text, imageRel, imageRels, segments, chainState }) {
   const fn = PUBLISHERS[channel];
   if (!fn) return fail(channel, '이 채널은 직접 발행을 지원하지 않습니다 — 수동 체크리스트를 사용하세요');
   const hasSegs = Array.isArray(segments) && segments.length > 1;
   if ((!text || !text.trim()) && !hasSegs) return fail(channel, '발행할 본문이 비어 있습니다');
-  let imageAbs = null;
-  if (imageRel) {
-    const abs = path.resolve(dir, imageRel);
-    if (abs.startsWith(path.resolve(dir) + path.sep) && fs.existsSync(abs)) imageAbs = abs;
-  }
-  const r = await fn({ text: (text || '').trim(), imageAbs, segments, resume: chainState || null });
+  const resolveImg = (rel) => {
+    const abs = path.resolve(dir, rel);
+    return abs.startsWith(path.resolve(dir) + path.sep) && fs.existsSync(abs) ? abs : null;
+  };
+  const imageAbs = imageRel ? resolveImg(imageRel) : null;
+  // 캐러셀(인스타그램) — 여러 장을 워크스페이스 안에서만 해석
+  const imagesAbs = Array.isArray(imageRels) ? imageRels.map(resolveImg).filter(Boolean).slice(0, 10) : [];
+  const r = await fn({ text: (text || '').trim(), imageAbs, imagesAbs, segments, resume: chainState || null });
   if (r.ok && uid) {
     try {
       const log = publishlog.mark(dir, uid, true);

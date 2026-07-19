@@ -2200,6 +2200,10 @@ async function openCompose(chKey, p, direct) {
   const payload = () => {
     const useImg = $('#cmp-img') && $('#cmp-img').checked;
     const base = { uid: p.uid, channel: chKey, text: ta.value, imageRel: useImg ? imageRel : null };
+    // 인스타그램은 선택 이미지를 앞세운 전체 렌더 세트를 캐러셀로 — 1장이면 단일 발행
+    if (chKey === 'instagram' && useImg) {
+      base.imageRels = (imageRel ? [imageRel, ...renders.filter((r) => r !== imageRel)] : renders).slice(0, 10);
+    }
     if (chained()) base.segments = splitChain(ta.value);
     return base;
   };
@@ -2550,6 +2554,8 @@ async function openSettings(section) {
 
 // ---- 시크릿 폼 (채널 토큰 · 렌더 키) ---------------------------------------------------------
 const CH_SECRET_FORMS = [
+  { ns: 'instagram', title: 'Instagram (Graph API)', test: 'instagram', hint: '비즈니스/크리에이터 계정 전용. Meta 앱에서 instagram_business_basic + instagram_business_content_publish 권한 토큰 발급, IG User ID는 /me/accounts→instagram_business_account. 이미지는 공개 URL이 필수라 렌더 탭의 QR Agent Studio(qrcoding) API 키로 자동 업로드됩니다. 여러 장 선택 시 캐러셀 발행.',
+    fields: [['userId', 'IG User ID'], ['token', '액세스 토큰']] },
   { ns: 'x', title: 'X (Twitter)', test: 'x', hint: 'console.x.com에서 앱 생성 → Keys and tokens 4종. 텍스트+이미지 발행. 2026년부터 종량제(포스트당 $0.015)라 크레딧 충전 필요.',
     fields: [['apiKey', 'API Key'], ['apiSecret', 'API Key Secret'], ['accessToken', 'Access Token'], ['accessSecret', 'Access Token Secret']] },
   { ns: 'facebook', title: 'Facebook 페이지', test: 'facebook', hint: 'developers.facebook.com 앱(개발 모드로 내 페이지 발행 가능) → 장기 사용자 토큰 → /me/accounts의 페이지 토큰(만료 없음). 텍스트+이미지.',
@@ -2577,7 +2583,7 @@ const RD_SECRET_FORMS = [
   { ns: 'opencrab', title: 'OpenCrab MCP (프롬프트 팩)', hint: 'opencrab.sh의 내 MCP 엔드포인트(https://opencrab.sh/api/mcp/…)를 넣으면 아래 팩 섹션에서 프롬프트·이미지·영상 팩을 검색해 컴파일러에 로드할 수 있습니다.',
     fields: [['endpoint', 'MCP 엔드포인트 URL']] },
   { ns: 'qrcoding', title: 'QR Agent Studio MCP (qrcoding)', hint: 'QR 생성·합성·스캔 검증 도구를 팀 에이전트에 제공합니다. 대시보드의 Skills & MCP 패널에서 API 키를 발급해 저장하고, 설정 → 환경의 "QR MCP 등록" 버튼으로 claude에 등록하세요. URL을 비우면 기본 게이트웨이(qrcoding-skill-mcp.vercel.app)를 씁니다.',
-    fields: [['apiKey', 'API Key (x-api-key)'], ['url', 'MCP URL (선택 — 기본 게이트웨이 /mcp)']] },
+    fields: [['apiKey', 'API Key (x-api-key)'], ['url', 'MCP URL (선택 — 기본 게이트웨이 /mcp)'], ['apiUrl', '서비스 URL (선택 — 인스타 이미지 업로드용 /v1/uploads 배포)']] },
 ];
 
 // ---- OpenCrab 연결 (설정 → OpenCrab 탭) -----------------------------------------------
