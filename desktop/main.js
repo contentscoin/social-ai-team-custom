@@ -27,6 +27,7 @@ const schema = require('./lib/schema');
 const backup = require('./lib/backup');
 const runreport = require('./lib/runreport');
 const variants = require('./lib/variants');
+const comments = require('./lib/comments');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -456,6 +457,28 @@ ipcMain.handle('pub:copy', safe((_e, dir, lane, topic) => {
   clipboard.writeText(r.text);
   return { ok: true, chars: r.text.length, file: r.file, title: r.title || null };
 }));
+
+// ---- 댓글 확인 + 맥락 답글 — 초안 → 운영자 검토 → 게시 (자동 게시 없음) ------------
+ipcMain.handle('cmt:list', safe((_e, dir, uid) => comments.fetchComments(dir, uid)));
+ipcMain.handle('cmt:draft', async (_e, dir, payload) => {
+  const lock = locks.acquire(dir, 'reply');
+  if (!lock.ok) return { ok: false, error: locks.busyMessage(dir) };
+  const startedAt = Date.now();
+  try {
+    const r = await comments.draftReply(dir, payload || {}, (line) => send('log', { source: 'reply', line, dir }));
+    const prevCost = history.monthCost(dir);
+    history.append({
+      dir, kind: 'stage', stage: 'reply-draft', engine: 'claude', model: config.getModels().claude,
+      ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
+      startedAt, note: String((payload && payload.comment) || '').slice(0, 60),
+    });
+    budgetNotify(dir, prevCost);
+    return r;
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  } finally { locks.release(dir, 'reply'); }
+});
+ipcMain.handle('cmt:reply', safe((_e, dir, payload) => comments.postReply(dir, payload || {})));
 
 // ---- 직접 발행 (Blotato 대체) ------------------------------------------------------
 // 발행 초안 — CAPTION/POST COPY/BODY만 추출, VISUAL DIRECTION·프롬프트 메타 제거.
