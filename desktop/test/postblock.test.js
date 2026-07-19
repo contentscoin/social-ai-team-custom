@@ -85,3 +85,22 @@ test('extractPublishBody — 라벨 없는 스레드 스타일은 메타만 제�
   const { text } = extractPublishBody('THREAD 1\n오늘도 좋은 하루.\nVISUAL DIRECTION: none\nWORD COUNT: 9\n');
   assert.equal(text, '오늘도 좋은 하루.');
 });
+
+test('extractPublishBody — 프롬프트 블록(영문·한글 라벨)이 발행 본문에 새지 않는다', () => {
+  const { text } = extractPublishBody([
+    'POST 1 — 라떼 아트',
+    'CAPTION: 오늘의 라떼 아트',
+    '',
+    'IMAGE PROMPT: warm cafe interior, 50mm lens,',
+    'soft morning light, photoreal texture',
+    '',
+    '비주얼 디렉션: 클로즈업, 따뜻한 톤',
+    '프롬프트: 크레마 디테일 강조',
+    'NEGATIVE PROMPT: text, watermark',
+    '',
+    'HASHTAGS: #홈카페',
+  ].join('\n'));
+  assert.match(text, /오늘의 라떼 아트/);
+  assert.match(text, /#홈카페/);
+  assert.doesNotMatch(text, /PROMPT|프롬프트|비주얼 디렉션|50mm|watermark/i);
+});

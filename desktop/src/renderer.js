@@ -892,7 +892,7 @@ function renderBoardViews(flip, moved) {
     });
   }
 }
-const INDEX_PROMPT = 'context/content-calendar.md를 읽고, 앱 보드가 파싱할 수 있게 context/calendar-index.json과 context/calendar-meta.json을 만들어줘. index 형식: {"posts":[{"id":"IG-1","week":1,"day":"화","scheduledDate":"2026-07-15","scheduledTime":"10:00","platform":"Instagram","pillar":"...","format":"single image","objective":"...","topic":"...","angle":"...","visual":"...","notes":"..."}]}. meta 형식: {"year":2026,"month":7,"anchor":"2026-07-01","weekStartsOn":"monday"}. 메인 채널: Instagram, Threads, Naver Blog, Naver Clip, Kakao Channel. 같은 날 여러 채널 포스트는 scheduledDate를 같게 두고 scheduledTime으로 구분. JSON 외 다른 내용은 파일에 넣지 마.';
+const INDEX_PROMPT = 'context/content-calendar.md를 읽고, 앱 보드가 파싱할 수 있게 context/calendar-index.json과 context/calendar-meta.json을 만들어줘. index 형식: {"posts":[{"id":"IG-1","week":1,"day":"화","scheduledDate":"YYYY-MM-DD","scheduledTime":"HH:mm","platform":"Instagram","pillar":"...","format":"multi-image","objective":"...","topic":"...","angle":"...","visual":"...","notes":"..."}]}. meta 형식: {"year":숫자,"month":숫자,"anchor":"YYYY-MM-DD","weekStartsOn":"monday"}. scheduledDate는 캘린더 본문의 주차·요일을 실제 달력 날짜로 환산해 채워 — 예시 문자열을 복사하지 말고, 캘린더에 명시된 월이 없으면 오늘 날짜 기준 미래 날짜로. 메인 채널: Instagram, Threads, Naver Blog, Naver Clip, Kakao Channel. 같은 날 여러 채널 포스트는 scheduledDate를 같게 두고 scheduledTime으로 구분. JSON 외 다른 내용은 파일에 넣지 마.';
 function renderHero() {
   const b = S.board;
   const hero = $('#hero');
