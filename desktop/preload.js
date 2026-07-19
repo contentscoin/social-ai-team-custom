@@ -77,6 +77,9 @@ contextBridge.exposeInMainWorld('api', {
     providers: (envHint) => ipcRenderer.invoke('render:providers', envHint),
     generate: (dir, job) => ipcRenderer.invoke('render:generate', dir, job),
     batch: (dir, opts) => ipcRenderer.invoke('render:batch', dir, opts),
+    variants: (dir, job) => ipcRenderer.invoke('render:variants', dir, job),
+    listVariants: (dir, uid) => ipcRenderer.invoke('render:listVariants', dir, uid),
+    pickVariant: (dir, uid, name, slot) => ipcRenderer.invoke('render:pickVariant', dir, uid, name, slot),
   },
   prompt: {
     compile: (dir, job) => ipcRenderer.invoke('prompt:compile', dir, job),

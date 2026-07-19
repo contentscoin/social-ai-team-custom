@@ -175,7 +175,7 @@ POST [n]
 Week: [1-4] | Day: [Mon/Tue/Wed/Thu/Fri/Sat/Sun]
 Platform: [platform]
 Pillar: [pillar name]
-Format: [single image / carousel / reel / poll / text]
+Format: [multi-image (2-4 images) / carousel / single image / reel / poll / text]
 Objective: [awareness / engagement / enquiries / sales]
 
 Topic: [specific topic — not vague. "3 things clients wish they knew before their first appointment" not "educational post"]
@@ -183,6 +183,8 @@ Angle: [the specific hook direction or POV — what makes this take interesting 
 VISUAL DIRECTION: [1 sentence on what the image/video should show — handoff for /social-creative-designer]
 Notes: [any special instructions, timing, or campaign context]
 ```
+
+**Image posts default to multi-image.** Plan image slots as `multi-image` (2-4 images) or `carousel` sets — one image with one caption is the exception, used only when there is a specific reason (e.g., a single poster announcement). Write the VISUAL DIRECTION so it describes a cohesive set, not a lone shot.
 
 Build the full set of posts before presenting. Do not present one at a time.
 
