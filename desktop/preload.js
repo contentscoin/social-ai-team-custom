@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld('api', {
     stop: (dir) => ipcRenderer.invoke('pipe:stop', dir),
     openTerminal: (dir) => ipcRenderer.invoke('pipe:openTerminal', dir),
   },
+  slidevideo: {
+    render: (dir, manifestRel) => ipcRenderer.invoke('slidevideo:render', dir, manifestRel),
+    list: (dir) => ipcRenderer.invoke('slidevideo:list', dir),
+  },
   engine: {
     get: () => ipcRenderer.invoke('cfg:getEngine'),
     set: (engine) => ipcRenderer.invoke('cfg:setEngine', engine),

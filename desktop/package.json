@@ -17,6 +17,9 @@
   "dependencies": {
     "electron-updater": "^6.3.0"
   },
+  "optionalDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0"
@@ -42,6 +45,9 @@
       "lib/**",
       "src/**",
       "assets/**"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
     ],
     "extraResources": [
       {
