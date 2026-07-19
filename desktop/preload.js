@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld('api', {
   onUpdate: (cb) => subscribe('update', cb),
   onBoard: (cb) => subscribe('board:update', cb),
   onStage: (cb) => subscribe('stage', cb),
+  onStageResult: (cb) => subscribe('stage:result', cb),
   onChatStream: (cb) => subscribe('chat:stream', cb),
   onAuto: (cb) => subscribe('auto', cb),
 });

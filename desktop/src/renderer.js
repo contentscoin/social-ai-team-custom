@@ -2741,6 +2741,27 @@ window.api.onStage(({ state, stage, dir }) => {
   if (state === 'start') setRunning(stage);
   else if (stage === S.running) setRunning(null); // 지연 도착한 이전 스테이지 end 무시
 });
+// 실행 결과 리포트 — 단계가 끝나면 "무엇이 바뀌었나"를 로그에 구조화 블록으로 남긴다.
+// 오토파일럿 중에는 단계마다 토스트를 띄우지 않는다 (로그 블록 + 종료 알림으로 충분).
+window.api.onStageResult((r) => {
+  if (r.dir && S.client && r.dir !== S.client.dir) return;
+  const c = r.changes || { created: [], modified: [] };
+  const cost = typeof r.costUsd === 'number' ? ` · $${r.costUsd.toFixed(3)}` : '';
+  const head = `${r.ok ? '✅' : '❌'} ${r.stage} ${r.ok ? '완료' : '실패'} — 생성 ${c.created.length} · 수정 ${c.modified.length}${cost} · ${Math.round(r.ms / 1000)}s`;
+  logLine('결과', head);
+  for (const f of c.created.slice(0, 20)) logLine('결과', `  + ${f}`);
+  for (const f of c.modified.slice(0, 20)) logLine('결과', `  ~ ${f}`);
+  const shown = Math.min(c.created.length, 20) + Math.min(c.modified.length, 20);
+  const more = c.created.length + c.modified.length - shown;
+  if (more > 0) logLine('결과', `  … 외 ${more}개`);
+  if (r.ok && !c.created.length && !c.modified.length) logLine('결과', '  변경된 파일 없음 — 이미 산출물이 있었거나 파일을 만들지 않는 단계입니다');
+  if (!r.ok && r.error) logLine('결과', `  원인: ${r.error}`);
+  if (r.compliance) {
+    logLine('결과', `  판정 요약: PASS ${r.compliance.pass} · WARN ${r.compliance.warn} · BLOCK ${r.compliance.block}`);
+    for (const p of (r.compliance.posts || [])) logLine('결과', `    [${p.verdict}] ${p.uid} — ${p.topic}`);
+  }
+  if (!S.auto) toast(head.slice(0, 120));
+});
 let updErrToasted = false;
 window.api.onUpdate(async (u) => {
   if (u.state === 'ready') { $('#tb-update').classList.remove('hidden'); }
