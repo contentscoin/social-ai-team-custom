@@ -48,14 +48,25 @@ npm run dist:win      # Windows NSIS (Windows에서, 또는 CI)
 npm run dist:mac      # macOS DMG (macOS에서)
 ```
 
-권장: `desktop/**`가 바뀐 커밋이 `main`에 푸시되면 GitHub Actions(`.github/workflows/desktop-build.yml`)가 Windows/macOS/Linux 설치본을 빌드해 **GitHub Release로 자동 발행**합니다 — [Releases](https://github.com/contentscoin/social-ai-team-custom/releases)가 공식 다운로드 위치입니다 (Actions 아티팩트에도 사본 업로드).
+권장: `desktop/**`가 바뀐 커밋이 `main`에 푸시되면 GitHub Actions(`.github/workflows/desktop-build.yml`)가 테스트 통과 후 Windows/macOS/Linux 설치본을 빌드해 **GitHub Release로 자동 발행**합니다 — [Releases](https://github.com/contentscoin/social-ai-team-custom/releases)가 공식 다운로드 위치입니다.
+
+**Actions 사용량 한도/장애 시 — 로컬 릴리즈:** CI 없이 이 PC에서 빌드부터 Release 업로드까지 한 번에:
+
+```bash
+# Windows: 더블클릭 또는
+release-local.bat
+# macOS/Linux:
+GH_TOKEN=<repo 권한 PAT> ./release-local.sh        # --mac / --linux 지정 가능
+```
+
+`npm install → npm test(실패 시 중단) → electron-builder --publish always` 순서로 돌며, Release v(package.json 버전) 생성과 인스톨러 + `latest*.yml`(자동업데이트 피드) 업로드까지 처리합니다. OS별 인스톨러는 해당 OS에서 실행해야 합니다(Windows exe는 Windows에서, dmg는 macOS에서).
 
 ## 자동 업데이트
 
 앱은 `electron-updater`로 GitHub Releases를 업데이트 피드로 사용합니다:
 - 실행 시 자동으로 최신 릴리스를 확인하고 백그라운드에서 다운로드 → 사이드바 "업데이트" 패널에 "재시작하고 설치" 버튼이 나타납니다. 앱 종료 시에도 자동 적용됩니다.
 - 수동 확인: 설정 → 업데이트 → 업데이트 확인.
-- **Private 저장소**: `social-ai-team-custom`이 Private이면 `releases.atom`이 404입니다. 저장소를 **Public**으로 두거나, 설정→업데이트에 GitHub PAT(`repo` 권한)를 저장하세요. 토큰은 `~/.social-ai-team/secrets.json`에만 보관됩니다.
+- **Private 저장소**: `social-ai-team-custom`이 Private이면 `releases.atom`이 404입니다. 저장소를 **Public**으로 두거나, 설정→업데이트에 GitHub PAT(`repo` 권한)를 저장하세요. 토큰은 로컬에서 OS 키체인으로 암호화(`~/.social-ai-team/secrets.enc`)되어 보관됩니다.
 - **macOS 주의**: 코드사이닝 없는 빌드는 macOS가 업데이트 적용을 막습니다(Squirrel 서명 요구) — 업데이트 패널에 오류로 표시되며, 새 dmg를 받아 수동 설치하세요. Apple 개발자 인증서를 CI secret으로 넣으면 자동 업데이트가 활성화됩니다. Windows/Linux는 서명 없이도 동작합니다.
 
 ## 요구사항
