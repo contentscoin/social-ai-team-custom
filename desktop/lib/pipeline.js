@@ -22,7 +22,10 @@ const STAGES = {
     label: '콘텐츠 캘린더 생성',
     prompt:
       'content-director 스킬의 Route B 1단계만 수행: content-calendar 스킬을 인라인 실행해 context/content-calendar.md를 생성하라. ' +
-      '완료 후 반드시 기계 판독용 인덱스도 저장하라: context/calendar-index.json — 형식 {"posts":[{"id","week","day","platform","pillar","format","objective","topic","angle","visual","notes"}]} 로 모든 포스트를 빠짐없이 포함 (JSON 외 다른 내용 금지). ' +
+      '스케줄 규칙(엄수): 위에 주입된 오늘 날짜를 기준으로 모든 포스트를 오늘 이후(오늘 포함)의 실제 달력 날짜에 배정하라 — 과거 날짜 금지. ' +
+      '이번 달 잔여일이 14일 미만이면 다음 달 캘린더를 기획하라(제목·파일에 해당 월 명시). ' +
+      '완료 후 반드시 기계 판독용 인덱스도 저장하라: context/calendar-index.json — 형식 {"posts":[{"id","week","day","scheduledDate","scheduledTime","platform","pillar","format","objective","topic","angle","visual","notes"}]} 로 모든 포스트를 빠짐없이 포함하고, scheduledDate는 YYYY-MM-DD 실제 날짜, scheduledTime은 HH:mm (JSON 외 다른 내용 금지). ' +
+      'context/calendar-meta.json도 저장하라: {"year","month","anchor","weekStartsOn"} — anchor는 첫 포스트가 속한 주의 시작일(YYYY-MM-DD). ' +
       '운영자 승인 게이트에서 대기하지 말고 캘린더를 완성해 요약만 출력하고 종료하라 (승인은 앱에서 진행한다). ' +
       'context/brand-style.md가 없으면 아무것도 만들지 말고 BRAND MISSING 한 줄만 출력하라.',
   },
@@ -81,7 +84,11 @@ function runStage(dir, stage, opts = {}, onLine) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--add-dir', dir];
   const model = config.getModels().claude; // 파이프라인은 항상 Claude — 모델만 선택 적용
   if (model) args.push('--model', model);
-  const stdinText = spec.prompt + extra;
+  // 오늘 날짜를 모든 단계에 주입 — 특히 캘린더가 과거 날짜에 스케줄되는 것을 막는 앵커
+  const now = new Date();
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][now.getDay()];
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + spec.prompt + extra;
   const AUTH_FAIL = /Invalid authentication credentials|Failed to authenticate|status.?401/i;
   let parser;
   const prettyFeed = () => {

@@ -168,6 +168,8 @@ Build the full month calendar. Use a 4-week structure unless specific dates were
 - Leave at least one "breathing" post between promotional slots
 - If multiple platforms: vary the content so it does not feel like copy-paste across channels
 
+**Anchor the schedule to the actual current date.** Check today's real date before laying out the month. Every slot must land on a real calendar date **on or after today** — never schedule posts in the past. If fewer than ~2 weeks remain in the current month, plan next month instead (and say so in the calendar title). Map Week/Day labels to the actual dates they represent.
+
 **For each post, define:**
 
 ```

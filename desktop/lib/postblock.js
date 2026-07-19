@@ -42,8 +42,11 @@ function findVisualDirection(dir, lane, topic) {
 
 /** 게시 본문 섹션(서로 peer) — 여기서만 섹션을 끊는다. VISUAL DIRECTION은 끊지 않음 */
 const PEER_SECTION = /^(?:CAPTION|POST COPY|BODY|TITLE(?:\s*\([^)]*\))?|HASHTAGS?|HASH\s*TAGS?|CTA|TAGS?|본문|제목|해시태그)\s*[:：]/i;
-const META_LINE = /^(?:PLATFORM|OBJECTIVE|FRAMEWORK|TYPE|WORD COUNT|CHAR COUNT|글자수|문자수|MAIN KEYWORD|SUB KEYWORDS?|SPONSORED|HOOK|ANGLE|PILLAR|FORMAT|NOTES?|BLOTATO FLAG|INFOGRAPHIC)\s*[:：]/i;
-const CONTRACT_START = /^(?:\[?\s*IMAGE SLOT\b|(?:\*\*)?VISUAL DIRECTION\b)/i;
+const META_LINE = /^(?:PLATFORM|OBJECTIVE|FRAMEWORK|TYPE|WORD COUNT|CHAR COUNT|글자수|문자수|MAIN KEYWORD|SUB KEYWORDS?|SPONSORED|HOOK|ANGLE|PILLAR|FORMAT|NOTES?|BLOTATO FLAG|INFOGRAPHIC|SCHEDULED\s*(?:DATE|TIME)|STYLE|MOOD|무드|스타일)\s*[:：]/i;
+// 계약/프롬프트 블록 시작 — 여기부터 빈 줄까지는 게시 본문이 아니다. 렌더용 프롬프트가
+// 발행 본문에 딸려 나가는 유출을 막기 위해 영문·한글 라벨과 PROMPT 계열을 전부 잡는다.
+// 주의: 한글 라벨 뒤에는 \b를 쓰지 않는다 — JS \b는 ASCII 단어 경계라 한글 다음에서 매칭 실패
+const CONTRACT_START = /^(?:\[?\s*(?:IMAGE\s+SLOT\b|이미지\s*슬롯)|(?:\*\*)?(?:VISUAL\s+DIRECTION\b|비주얼\s*디렉션)|(?:\*\*)?(?:IMAGE\s+|FINAL\s+|NEGATIVE\s+)?PROMPT\s*[:：]|(?:\*\*)?(?:이미지\s*|네거티브\s*)?프롬프트\s*[:：])/i;
 
 function sectionBody(text, nameRe) {
   const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
@@ -84,14 +87,15 @@ function stripVisualAndSlots(text) {
   const out = [];
   let skip = false;
   for (const L of lines) {
-    if (/^\s*\[?\s*IMAGE SLOT\b/i.test(L) || /^\s*(?:\*\*)?VISUAL DIRECTION\b/i.test(L)) {
+    if (CONTRACT_START.test(L.trim())) {
       skip = true;
       continue;
     }
     if (skip) {
       // VISUAL DIRECTION 연속 줄 스킵 — 빈 줄·새 헤더·소제목에서 해제
       if (!L.trim()) { skip = false; continue; }
-      if (/^\s*##\s+/.test(L) || SECTION_HEAD.test(L.trim()) || /^\s*---+\s*$/.test(L)) {
+      // (SECTION_HEAD 미정의 잠복 버그 수정 — 의도는 게시 섹션 시작에서 스킵 해제)
+      if (/^\s*##\s+/.test(L) || PEER_SECTION.test(L.trim()) || /^\s*---+\s*$/.test(L)) {
         skip = false;
       } else {
         continue;
