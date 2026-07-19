@@ -56,7 +56,7 @@ async function renderAll(dir, opts, onLine) {
       if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
     } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
     try {
-      const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, stopped: opts.stopped }, onLine);
+      const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
       results.push({ uid: p.uid, id: cid, ok: !!r.ok, files: r.files || [], count: (r.files || []).length, error: r.error });
       onLine && onLine(r.ok ? `[비주얼] ✔ ${cid} — ${(r.files || []).length}장` : `[비주얼] ✖ ${cid} — ${r.error}`);
     } catch (e) {

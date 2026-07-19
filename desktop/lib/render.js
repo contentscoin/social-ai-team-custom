@@ -542,7 +542,8 @@ function availability(env) {
 function slideDirective(i, n) {
   return `\n\n(Carousel slide ${i} of ${n}: keep the SAME subject, brand palette, lighting, camera character and material finish as one cohesive premium series, but vary the camera angle / crop / composition so the slides read as a set — not identical duplicates. Maintain sharp focus and photoreal texture. No text or logos in the image.)`;
 }
-async function generate(dir, job, onLine) {
+// 단일 프로바이더 1회 시도 — 캐스케이드는 generate()가 담당
+async function generateOnce(dir, job, onLine) {
   const table = job.kind === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS;
   const fn = table[job.provider];
   if (!fn) return err(job.provider, '알 수 없는 프로바이더');
@@ -580,6 +581,46 @@ async function generate(dir, job, onLine) {
   catch (e) { return err(job.provider, e && e.message || e); }
 }
 
+// ---- 자동 캐스케이드 --------------------------------------------------------------
+// 인프라성 실패(키 미설정·만료, 크레딧/쿼터, 네트워크·타임아웃, 429/5xx)만 폴백 대상.
+// 콘텐츠성 실패(세이프티 거부, 프롬프트 문제)는 다른 프로바이더도 같은 결과이거나
+// 사람이 고쳐야 하므로 그대로 반환한다. 프로바이더별 오류 형태가 제각각이라 문자열 분류.
+const INFRA_FAIL_RE = /api\s*키|api\s*key|키가 없습니다|키.{0,6}필요|토큰이 필요|설정 →|401|403|429|5\d\d|quota|rate\s*limit|billing|credit|크레딧|fetch failed|network|socket|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|abort|timed?\s*out|타임아웃|연결(?:하지 못|실패|할 수 없)|unavailable/i;
+function isInfraFailure(error) { return INFRA_FAIL_RE.test(String(error || '')); }
+
+// 폴백 순위 — availability 선언 순서가 곧 우선순위(데스크톱 레인의 단일 정본).
+// 가용(ok)하고 아직 시도하지 않은 프로바이더만. claude-svg는 사진이 아니라 타이포
+// 카드(SVG) 레인이라 스타일 계약이 다르다 — 지명했을 때만 쓰고 자동 폴백에선 제외.
+function fallbackRank(kind, env, tried) {
+  const av = availability(env || {});
+  const table = kind === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS;
+  return Object.entries(kind === 'video' ? av.video : av.image)
+    .filter(([k, v]) => v.ok && table[k] && !tried.includes(k) && k !== 'claude-svg')
+    .map(([k]) => k);
+}
+
+const MAX_FALLBACK_HOPS = 2; // 비용 연쇄 방지 — 지명 프로바이더 + 폴백 2회까지
+
+async function generate(dir, job, onLine) {
+  let last = await generateOnce(dir, job, onLine);
+  if (last.ok || job.noFallback) return last;
+  const tried = [job.provider];
+  // 멀티슬라이드 배치도 통째로 재시도 — top-up이 이미 만든 슬라이드는 건너뛰므로 안전
+  while (tried.length <= MAX_FALLBACK_HOPS && isInfraFailure(last.error)) {
+    const next = fallbackRank(job.kind, job.env, tried)[0];
+    if (!next) break;
+    onLine && onLine(`[render] ${tried[tried.length - 1]} 실패(${String(last.error).slice(0, 80)}) → ${next}(으)로 자동 폴백`);
+    last = await generateOnce(dir, { ...job, provider: next }, onLine);
+    tried.push(next);
+  }
+  if (tried.length > 1) {
+    return last.ok
+      ? { ...last, fellBackFrom: job.provider, tried }
+      : { ...last, tried, error: `${last.error} (시도: ${tried.join(' → ')})` };
+  }
+  return last;
+}
+
 // 기본 이미지 프로바이더 — availability 순서상 첫 번째 사용 가능 항목 (Codex 이미지 우선, 없으면 claude-svg)
 function defaultImageProvider(env) {
   const av = availability(env || {});
@@ -587,4 +628,8 @@ function defaultImageProvider(env) {
   return hit ? hit[0] : 'claude-svg';
 }
 
-module.exports = { generate, availability, SIZES, defaultImageProvider };
+module.exports = {
+  generate, availability, SIZES, defaultImageProvider,
+  // 테스트 전용 내부 노출
+  _isInfraFailure: isInfraFailure, _fallbackRank: fallbackRank,
+};

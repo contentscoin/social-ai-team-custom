@@ -623,10 +623,11 @@ ipcMain.handle('render:generate', async (_e, dir, job) => {
       if (!abs.startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(abs)) return { ok: false, error: '참조 이미지를 찾을 수 없습니다' };
       job.refAbs = abs;
     }
-    const r = await render.generate(dir, job, (line) => send('log', { source: 'render', line, dir }));
+    const r = await render.generate(dir, { env: envHint(), ...job }, (line) => send('log', { source: 'render', line, dir }));
     history.append({
-      dir, kind: 'stage', stage: `render-${job.kind}`, engine: job.provider, model: '',
-      ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: (job.prompt || '').slice(0, 60),
+      dir, kind: 'stage', stage: `render-${job.kind}`, engine: r.provider || job.provider, model: '',
+      ok: !!r.ok, ms: Date.now() - startedAt, startedAt,
+      note: (r.fellBackFrom ? `[${r.fellBackFrom}→${r.provider}] ` : '') + (job.prompt || '').slice(0, 60),
     });
     if (r.ok) {
       send('log', { source: 'render', line: `✔ ${r.rel}`, dir });
