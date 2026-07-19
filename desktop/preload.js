@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
     installCodex: () => ipcRenderer.invoke('setup:installCodex'),
     codexLogin: () => ipcRenderer.invoke('setup:codexLogin'),
     registerMcp: () => ipcRenderer.invoke('setup:registerMcp'),
+    registerQrMcp: () => ipcRenderer.invoke('setup:registerQrMcp'),
     installIma2: () => ipcRenderer.invoke('setup:installIma2'),
     ima2Setup: () => ipcRenderer.invoke('setup:ima2Setup'),
   },

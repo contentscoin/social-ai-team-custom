@@ -50,6 +50,11 @@ async function checkEnvironment() {
   }
   // ima2 setup writes ~/.ima2 — presence is the "configured" signal (OAuth details live inside)
   const ima2Configured = ima2.found && fs.existsSync(path.join(HOME, '.ima2'));
+  // CLI 등록도 user-scope는 ~/.claude.json의 mcpServers에 남는다 — 존재 여부가 등록 신호
+  let qrMcpRegistered = false;
+  try {
+    qrMcpRegistered = !!(JSON.parse(fs.readFileSync(CLAUDE_USER_CONFIG, 'utf8')).mcpServers || {}).qrcoding;
+  } catch { /* 설정 파일 없음/깨짐 — 미등록으로 표시 */ }
   return {
     platform: process.platform,
     node: node.found,
@@ -60,6 +65,7 @@ async function checkEnvironment() {
     ima2Configured,
     skillsInstalled: fs.existsSync(path.join(CLAUDE_DIR, 'skills', 'content-director', 'SKILL.md')),
     agentsInstalled: fs.existsSync(path.join(CLAUDE_DIR, 'agents', 'copywriter.md')),
+    qrMcpRegistered,
     paths: { claude: claude.path, codex: codex.path, node: node.path, ima2: ima2.path },
     versions: { claude: claude.version, codex: codex.version, node: node.version, ima2: ima2.version },
     claudeInstallUrl: 'https://code.claude.com/docs/en/quickstart',
@@ -124,6 +130,19 @@ async function codexOAuthLogin(onLine) {
   return { ...r2, urls };
 }
 
+// ~/.claude.json에 MCP 서버 항목 직접 병합 — CLI 등록 실패 시 공용 폴백 (백업 후)
+function writeMcpServerConfig(name, entry, onLine) {
+  let cfg = {};
+  if (fs.existsSync(CLAUDE_USER_CONFIG)) {
+    fs.copyFileSync(CLAUDE_USER_CONFIG, CLAUDE_USER_CONFIG + '.bak');
+    cfg = JSON.parse(fs.readFileSync(CLAUDE_USER_CONFIG, 'utf8'));
+  }
+  cfg.mcpServers = cfg.mcpServers || {};
+  cfg.mcpServers[name] = entry;
+  fs.writeFileSync(CLAUDE_USER_CONFIG, JSON.stringify(cfg, null, 2));
+  onLine && onLine(`기록 완료: ${CLAUDE_USER_CONFIG} (백업: .bak)`);
+}
+
 // user-scope MCP 등록: CLI 우선, 실패하면 ~/.claude.json에 직접 병합 (백업 후).
 async function registerCodexMcp(onLine) {
   const codexPath = resolveCmd('codex') || 'codex';
@@ -132,16 +151,36 @@ async function registerCodexMcp(onLine) {
 
   onLine && onLine('claude CLI 등록 실패 — ~/.claude.json에 직접 기록합니다.');
   try {
-    let cfg = {};
-    if (fs.existsSync(CLAUDE_USER_CONFIG)) {
-      fs.copyFileSync(CLAUDE_USER_CONFIG, CLAUDE_USER_CONFIG + '.bak');
-      cfg = JSON.parse(fs.readFileSync(CLAUDE_USER_CONFIG, 'utf8'));
-    }
-    cfg.mcpServers = cfg.mcpServers || {};
-    cfg.mcpServers.codex = { type: 'stdio', command: codexPath, args: ['mcp-server'], env: {} };
-    fs.writeFileSync(CLAUDE_USER_CONFIG, JSON.stringify(cfg, null, 2));
-    onLine && onLine(`기록 완료: ${CLAUDE_USER_CONFIG} (백업: .bak)`);
+    writeMcpServerConfig('codex', { type: 'stdio', command: codexPath, args: ['mcp-server'], env: {} }, onLine);
     return { ok: true, via: 'config', command: codexPath };
+  } catch (e) {
+    return { ok: false, tail: `CLI(${r.tail}) / 직접 기록(${e.message}) 모두 실패` };
+  }
+}
+
+// QR Agent Studio (qrcoding) MCP — HTTP 트랜스포트. 팀 에이전트가 QR 생성·합성·스캔 검증
+// 도구(create_qr_code, compose_qr_overlay, validate_qr_scanability 등)를 쓸 수 있게 한다.
+// 인증은 대시보드 Skills & MCP 패널에서 발급한 API 키를 x-api-key 헤더로. 키 없이도 등록은
+// 되지만 무료 한도/공개 기능만 동작한다. URL·키는 설정 → 렌더의 qrcoding 폼에 저장.
+const QR_MCP_DEFAULT_URL = 'https://qrcoding-skill-mcp.vercel.app/mcp';
+async function registerQrMcp(onLine) {
+  const secrets = require('./secrets');
+  const c = secrets.get('qrcoding');
+  const url = (c.url || QR_MCP_DEFAULT_URL).trim();
+  // 재등록 = 갱신 — 기존 항목을 지우고 현재 URL·키로 다시 추가한다 (없으면 조용히 실패)
+  await runCmd('claude', ['mcp', 'remove', '-s', 'user', 'qrcoding'], null, { timeoutMs: 30000 });
+  const args = ['mcp', 'add', '-s', 'user', '--transport', 'http', 'qrcoding', url];
+  if (c.apiKey) args.push('--header', `x-api-key: ${c.apiKey}`);
+  const r = await runCmd('claude', args, onLine, { timeoutMs: 60000 });
+  if (r.ok) return { ok: true, via: 'cli', url, authed: !!c.apiKey };
+
+  onLine && onLine('claude CLI 등록 실패 — ~/.claude.json에 직접 기록합니다.');
+  try {
+    writeMcpServerConfig('qrcoding', {
+      type: 'http', url,
+      ...(c.apiKey ? { headers: { 'x-api-key': c.apiKey } } : {}),
+    }, onLine);
+    return { ok: true, via: 'config', url, authed: !!c.apiKey };
   } catch (e) {
     return { ok: false, tail: `CLI(${r.tail}) / 직접 기록(${e.message}) 모두 실패` };
   }
@@ -157,4 +196,4 @@ async function installIma2(onLine) {
   return runCmd('npm', ['install', '-g', 'ima2-gen'], onLine, { timeoutMs: 300000 });
 }
 
-module.exports = { checkEnvironment, installSkills, installCodexCli, codexOAuthLogin, registerCodexMcp, installIma2, payloadPaths };
+module.exports = { checkEnvironment, installSkills, installCodexCli, codexOAuthLogin, registerCodexMcp, registerQrMcp, installIma2, payloadPaths };

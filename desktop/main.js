@@ -331,6 +331,7 @@ ipcMain.handle('setup:registerMcp', safe(async () => {
   channelCache = { at: 0, data: null }; // ~/.claude.json changed — re-detect channel connections
   return r;
 }));
+ipcMain.handle('setup:registerQrMcp', safe(() => setup.registerQrMcp((line) => send('log', { source: 'setup', line }))));
 ipcMain.handle('setup:installIma2', safe(() => setup.installIma2((line) => send('log', { source: 'setup', line }))));
 ipcMain.handle('setup:ima2Setup', safe(() => pipeline.openInteractiveTerminal(app.getPath('home'), 'ima2 setup')));
 
