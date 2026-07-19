@@ -40,6 +40,10 @@ button:disabled { opacity:.4; cursor:default; }
 #rail-clients { display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; }
 .avatar { width:36px; height:36px; border-radius:50%; background:var(--card); border:2px solid var(--line); color:var(--text); font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
 .avatar.active { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-subtle); }
+/* 백그라운드 실행 중인 클라이언트 아바타 — 우상단 맥동 점 */
+.avatar.running-avatar { position:relative; }
+.avatar.running-avatar::after { content:''; position:absolute; top:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:var(--accent); border:2px solid var(--bg); animation:pulse 2s infinite; }
+#tb-bg-runs:not(.hidden) { background:var(--accent-subtle); border-color:var(--accent); color:var(--accent-hover); cursor:pointer; }
 .rail-btn { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:none; border:1px solid transparent; color:var(--muted); position:relative; }
 .rail-btn:hover:not(:disabled) { color:var(--text); border-color:var(--line); }
 .rail-spacer { flex:1; }
@@ -242,7 +246,7 @@ button:disabled { opacity:.4; cursor:default; }
 .verdict-row.WARN { border-color:var(--warn); } .verdict-row.BLOCK { border-color:var(--bad); }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse-dot, .gate-node.current .gn-circle, .wire.auto, .post-card.running-card { animation:none !important; }
+  .pulse-dot, .gate-node.current .gn-circle, .wire.auto, .post-card.running-card, .avatar.running-avatar::after { animation:none !important; }
   * { transition:none !important; }
 }
 

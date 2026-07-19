@@ -60,8 +60,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   auto: {
     run: (dir) => ipcRenderer.invoke('auto:run', dir),
-    stop: () => ipcRenderer.invoke('auto:stop'),
-    status: () => ipcRenderer.invoke('auto:status'),
+    stop: (dir) => ipcRenderer.invoke('auto:stop', dir),
+    status: (dir) => ipcRenderer.invoke('auto:status', dir),
+    runningDirs: () => ipcRenderer.invoke('auto:runningDirs'),
   },
   hist: {
     list: (dir) => ipcRenderer.invoke('hist:list', dir),

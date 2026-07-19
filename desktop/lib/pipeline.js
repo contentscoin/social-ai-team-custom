@@ -12,7 +12,9 @@ const { makeParser, finalText } = require('./stream');
 
 const isMac = process.platform === 'darwin';
 
-let current = null;
+// 클라이언트(폴더)별 실행 중인 child — 서로 다른 클라이언트는 동시 실행된다.
+// 같은 폴더의 중복 실행은 main.js의 워크스페이스 잠금이 막는다.
+const current = new Map(); // dir → child
 
 // Stage prompts speak the team's contract language: the director skill defines
 // the real behavior; these prompts just select the route and forbid gate-waiting
@@ -76,7 +78,7 @@ const STAGES = {
 function runStage(dir, stage, opts = {}, onLine) {
   const spec = STAGES[stage];
   if (!spec) return Promise.resolve({ ok: false, code: -1, out: `unknown stage: ${stage}`, tail: `unknown stage: ${stage}` });
-  if (current) return Promise.resolve({ ok: false, code: -1, out: '다른 단계가 이미 실행 중입니다', tail: '다른 단계가 이미 실행 중입니다' });
+  if (current.has(dir)) return Promise.resolve({ ok: false, code: -1, out: '이 클라이언트에서 다른 단계가 이미 실행 중입니다', tail: '이 클라이언트에서 다른 단계가 이미 실행 중입니다' });
 
   const extra = opts.extraContext ? `\n\n추가 지시: ${opts.extraContext}` : '';
   // 프롬프트는 stdin으로 (Windows 개행 안전 — proc.js 참조).
@@ -108,9 +110,9 @@ function runStage(dir, stage, opts = {}, onLine) {
     env,
     stdinText,
     timeoutMs: STAGE_TIMEOUT_MS,
-    onSpawn: (child) => { current = child; },
+    onSpawn: (child) => { current.set(dir, child); },
   }).then((r) => {
-    current = null;
+    current.delete(dir);
     // 최종 result 이벤트에서 비용/소요/응답 텍스트를 결과에 부착
     const st = parser && parser.state;
     const resultText = st ? finalText(st) : '';
@@ -144,11 +146,19 @@ function runStage(dir, stage, opts = {}, onLine) {
   });
 }
 
-function stopCurrent() {
-  if (!current) return { ok: true, wasRunning: false };
-  killTree(current); // 플랫폼별 트리/그룹 종료는 proc.killTree 한 곳에서
-  current = null;
-  return { ok: true, wasRunning: true };
+// dir 지정 시 그 클라이언트만 중지. dir 없으면(레거시 호출) 전부 중지.
+function stopCurrent(dir) {
+  if (dir) {
+    const child = current.get(dir);
+    if (!child) return { ok: true, wasRunning: false };
+    killTree(child); // 플랫폼별 트리/그룹 종료는 proc.killTree 한 곳에서
+    current.delete(dir);
+    return { ok: true, wasRunning: true };
+  }
+  const wasRunning = current.size > 0;
+  for (const child of current.values()) killTree(child);
+  current.clear();
+  return { ok: true, wasRunning };
 }
 
 // Interactive stages (brand onboarding interview, free-form direction) — open a real terminal.

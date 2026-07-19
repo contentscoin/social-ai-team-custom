@@ -593,7 +593,7 @@ ipcMain.handle('pipe:runStage', async (_e, dir, stage, opts) => {
   try { return await execStage(dir, stage, opts); }
   finally { locks.release(dir, 'stage'); }
 });
-ipcMain.handle('pipe:stop', (_e, dir) => { stopRender(dir); return pipeline.stopCurrent(); });
+ipcMain.handle('pipe:stop', (_e, dir) => { stopRender(dir); return pipeline.stopCurrent(dir); });
 // 일괄 비주얼 렌더 — "일괄 비주얼 생성" 버튼 (오토파일럿 없이 수동으로 전 포스트 이미지 생성)
 ipcMain.handle('render:batch', async (_e, dir, opts) => {
   const lock = locks.acquire(dir, 'stage');
@@ -648,8 +648,10 @@ ipcMain.handle('auto:run', async (_e, dir) => {
     return { ok: false, error: String(e && e.message || e) };
   } finally { locks.release(dir, 'autopilot'); }
 });
-ipcMain.handle('auto:stop', () => autopilot.stop(() => { stopRender(autopilot.status().dir); pipeline.stopCurrent(); }));
-ipcMain.handle('auto:status', () => autopilot.status());
+ipcMain.handle('auto:stop', (_e, dir) => autopilot.stop(dir, () => { stopRender(dir); pipeline.stopCurrent(dir); }));
+ipcMain.handle('auto:status', (_e, dir) => autopilot.status(dir));
+// 실행 중인 클라이언트 dir 목록 — 렌더러 백그라운드 배너용
+ipcMain.handle('auto:runningDirs', () => autopilot.runningDirs());
 
 // ---- 실행 기록 ----------------------------------------------------------------
 ipcMain.handle('hist:list', safe((_e, dir) => history.forDir(dir)));
