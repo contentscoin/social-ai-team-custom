@@ -274,8 +274,18 @@ function buildBoard(dir) {
   const meta = calendarDates.loadCalendarMeta(dir);
   const cards = calendarDates.enrichPostsWithDates(posts, dir).map((post) => {
     const lane = laneOf(post.platform);
-    const isReel = /reel|video|영상|릴스|shorts|tiktok/i.test(post.format + ' ' + (post.headerRaw || ''));
-    const copyDone = topicIn(lanes[lane].norm, post.topic);
+    const isReel = /reel|video|영상|릴스|shorts|tiktok|슬라이드|slide|클립|clip/i.test(post.format + ' ' + (post.headerRaw || ''));
+    // 릴/영상 슬롯의 '카피' 산출물은 캡션이 아니라 대본·스토리보드·슬라이드 가이드다.
+    // 대본이 슬롯을 인용하거나(Calendar slot:#n / REEL n) 토픽이 일치하면 카피 단계로 인정 —
+    // 이게 없어서 대본이 있어도 릴 카드가 planned에 머물고 릴스/보드 게이트가 영원히 안 열렸다.
+    // 대본의 명시적 캘린더 슬롯 인용만 인정한다 (reels-script/slide-video의 "Calendar slot: #n").
+    // 릴 내부 인덱스(REEL 1, 씬 2…)는 캘린더 슬롯 번호와 다를 수 있어 오탐 방지 차원에서 제외.
+    const scriptCitesSlot = (raw) => new RegExp(`(?:Calendar\\s*slot|캘린더\\s*슬롯)[\\s:#]*0*${post.n}(?![0-9])`, 'i').test(raw || '');
+    const scriptDone = isReel && (
+      topicIn(lanes.videos.norm, post.topic) || topicIn(lanes.storyboards.norm, post.topic)
+      || scriptCitesSlot(lanes.videos.text) || scriptCitesSlot(lanes.storyboards.text)
+    );
+    const copyDone = isReel ? scriptDone : topicIn(lanes[lane].norm, post.topic);
     // 렌더 엔진 산출물 — `${chId}-${n}` / `${MONO}-${n}` / 토픽 키워드 파일명 매칭
     const chKey = channelKey(post.platform);
     const chId = CH_ID[chKey] || 'etc';
@@ -309,8 +319,10 @@ function buildBoard(dir) {
       }
     }
     const videoRenders = (lanes.videos.files || []).filter((f) => matchRenderName(f.name) && /\.(mp4|webm|mov)$/i.test(f.name));
+    // 릴의 'visual' 단계 = 실제 렌더된 영상(mp4)이 존재. 대본만 있으면 copy 단계에 머문다.
+    // (슬라이드형은 앱이 자동 렌더 → mp4 생성 시 visual, 수동 제작형은 외부 생성 후 mp4 배치 시 visual)
     const visualDone = isReel
-      ? videoRenders.length > 0 || topicIn(lanes.videos.norm, post.topic) || topicIn(lanes.storyboards.norm, post.topic)
+      ? videoRenders.length > 0
       : renders.length > 0 || (lanes.creatives.files.length > 0 && topicIn(norm(lanes.creatives.text), post.topic));
     const verdict = verdictFor(lanes.compliance.text, { ...post, lane });
 

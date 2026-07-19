@@ -97,6 +97,34 @@ test('buildBoard — PASS 판정은 카피 증거가 있는 포스트만 ready�
   assert.equal(p2.verdict, null);
 });
 
+test('buildBoard — 릴 슬롯은 대본만 있어도 copy 단계로 전진 (캡션 불필요, 맴돔 방지)', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'POST 1 — 바리스타의 아침 루틴\nPlatform: Instagram Reels\nFormat: reel\nTopic: 바리스타의 아침 루틴\n');
+  // 캡션 없음, 릴스 대본만 존재 — 대본이 카피 증거가 되어야 한다
+  writeLane(dir, 'videos', 'acme-reels-july-2026.md', 'REEL 1 — 바리스타의 아침 루틴\nHOOK (0-2s): ...\n');
+  const b = buildBoard(dir);
+  assert.equal(b.posts[0].isReel, true);
+  assert.equal(b.posts[0].stage, 'copy');
+});
+
+test('buildBoard — 대본 토픽이 달라도 "Calendar slot: #n" 인용이면 릴이 copy로 전진', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'POST 2 — 바리스타의 아침 루틴\nPlatform: Instagram Reels\nFormat: reel\nTopic: 바리스타의 아침 루틴\n');
+  writeLane(dir, 'videos', 'acme-reels-july-2026.md', 'REEL 1 — 아침을 여는 커피\nCalendar slot: #2\nHOOK (0-2s): ...\n');
+  const b = buildBoard(dir);
+  assert.equal(b.posts[0].stage, 'copy'); // 토픽 불일치여도 슬롯 인용으로 매칭
+});
+
+test('buildBoard — 클립/슬라이드 포맷도 릴로 인식', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'POST 1 — 매장 클립\nPlatform: 네이버 클립\nFormat: 클립\nTopic: 매장 클립\n');
+  const b = buildBoard(dir);
+  assert.equal(b.posts[0].isReel, true);
+});
+
 test('buildBoard — naver_clip 레인이 보드 레인 집합에 존재한다 (채널 배선 전제)', () => {
   const dir = tmpWorkspace();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');

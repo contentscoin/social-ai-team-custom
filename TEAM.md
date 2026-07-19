@@ -204,7 +204,7 @@ For manual publishing, use the Monthly Handoff Summary from /social-media-manage
 bash install.sh
 ```
 
-- **스킬 19종** → `~/.claude/skills/` (기존 10 + content-director, reels-script, ad-storyboard, kr-guardrail-check, kr-voice-localizer, naver-blog-writer, naver-clip-writer, kakao-channel-writer, ima2)
+- **스킬 21종** → `~/.claude/skills/` (기존 10 + content-director, reels-script, ad-storyboard, kr-guardrail-check, kr-voice-localizer, naver-blog-writer, naver-clip-writer, kakao-channel-writer, ima2)
 - **에이전트 4종** → `~/.claude/agents/` (copywriter, creative-designer, video-producer, compliance-reviewer)
 - Windows는 `install.bat`.
 

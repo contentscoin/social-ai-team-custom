@@ -39,10 +39,14 @@ const STAGES = {
       '전부 돌아오면 Phase 3 핸드오프 검증을 수행하고 플랫폼별 결과 요약만 출력하고 종료하라. 승인 게이트는 앱에서 진행한다.',
   },
   shortform: {
-    label: '릴스/스토리보드 제작',
+    label: '릴스/영상 제작',
     prompt:
-      'content-director 스킬의 Route G만 수행: 캘린더의 Format 컬럼으로 레인을 배정하고 video-producer 에이전트를 디스패치하라 ' +
-      '(reel 슬롯 → reels-script, 캠페인/광고 스팟 → ad-storyboard). 이미지 생성 레인은 실행하지 말라. ' +
+      'content-director 스킬의 Route G만 수행: 캘린더의 Format 컬럼으로 영상 슬롯의 레인을 배정하고 video-producer 에이전트를 디스패치하라. ' +
+      '레인 배정 규칙(기본값 우선): ' +
+      '① 영상 슬롯(reel/video/clip/slide/릴스/클립/슬라이드)의 **기본은 slide-video** — 앱이 자체 렌더하는 슬라이드형 영상 매니페스트를 만든다. ' +
+      '② 캠페인/광고 스팟(Notes에 campaign context 또는 Objective가 sales)은 ad-storyboard. ' +
+      '③ 실사 촬영이나 AI 영상 생성이 필요하다는 **디렉터의 명시적 지시가 이 프롬프트에 포함된 경우에만** 해당 슬롯을 video-guide(마스터·캐릭터·장면 시트 + 프롬프트 + 대본 + TTS, 생성은 수동)로 배정한다. 지시가 없으면 slide-video를 쓴다. ' +
+      '각 대본/매니페스트는 반드시 "Calendar slot: #n"으로 대상 슬롯을 명시해야 한다(보드 연결). 이미지·영상 생성은 실행하지 말라. ' +
       '결과가 돌아오면 핸드오프 검증 후 요약만 출력하고 종료하라.',
   },
   visuals: {
