@@ -1,5 +1,6 @@
 // Social AI Team Desktop — Electron main process
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Notification, protocol } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const setup = require('./lib/setup');
 const workspace = require('./lib/workspace');
@@ -28,6 +29,8 @@ const backup = require('./lib/backup');
 const runreport = require('./lib/runreport');
 const variants = require('./lib/variants');
 const comments = require('./lib/comments');
+const slidevideorender = require('./lib/slidevideorender');
+const ffmpegResolver = require('./lib/ffmpeg');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -526,6 +529,41 @@ function envHint() {
   return { ima2 };
 }
 
+// ffmpeg로 슬라이드 영상 매니페스트를 mp4로 인코딩. ffmpeg 부재 시 매니페스트+이미지만
+// 남기고 건너뛴다(발행은 어차피 사람 승인). onLine으로 진행을 로그 탭에 흘린다.
+function encodeOne(ffmpegPath, args) {
+  return new Promise((resolve) => {
+    let child;
+    try { child = spawn(ffmpegPath, args, { env: proc.envWithPath() }); }
+    catch (e) { return resolve({ ok: false, error: String(e && e.message || e) }); }
+    let err = '';
+    child.stderr && child.stderr.on('data', (d) => { err += d.toString(); if (err.length > 4000) err = err.slice(-4000); });
+    child.on('error', (e) => resolve({ ok: false, error: String(e && e.message || e) }));
+    child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: (err.slice(-300) || `ffmpeg exit ${code}`) }));
+  });
+}
+async function renderSlideVideos(dir, onLine) {
+  const manifests = slidevideorender.listManifests(dir);
+  if (!manifests.length) return { ok: true, rendered: 0, total: 0, note: '슬라이드 영상 매니페스트 없음' };
+  const ff = ffmpegResolver.resolve();
+  if (!ff.path) {
+    onLine && onLine('[슬라이드 영상] ffmpeg가 없어 mp4 인코딩을 건너뜁니다 — 매니페스트+슬라이드 이미지까지 준비됨. (설치본은 ffmpeg 번들, 개발 실행은 npm install 후 ffmpeg-static)');
+    return { ok: true, rendered: 0, total: manifests.length, note: 'ffmpeg 없음 — 인코딩 생략', needsFfmpeg: true };
+  }
+  let rendered = 0; const skipped = [];
+  for (const rel of manifests) {
+    if (isRenderStopped(dir)) break;
+    const prep = slidevideorender.prepare(dir, rel);
+    if (!prep.ok) { skipped.push(`${rel}: ${prep.reason}`); onLine && onLine(`[슬라이드 영상] 건너뜀 — ${prep.reason}`); continue; }
+    onLine && onLine(`[슬라이드 영상] 렌더 중 (${ff.source}) → ${prep.plan.outRel}`);
+    const r = await encodeOne(ff.path, prep.plan.argsFor());
+    try { fs.unlinkSync(prep.plan.concatPath); } catch { /* best effort */ }
+    if (r.ok) { rendered++; onLine && onLine(`[슬라이드 영상] 완료 → ${prep.plan.outRel}`); }
+    else { skipped.push(`${rel}: ${r.error}`); onLine && onLine(`[슬라이드 영상] 실패 — ${r.error}`); }
+  }
+  return { ok: true, rendered, total: manifests.length, skipped, source: ff.source };
+}
+
 // 공용 실행기 — 수동 실행(pipe:runStage)과 오토파일럿이 같은 계측(이벤트/기록/알림)을 쓴다.
 // 잠금은 호출자 책임: 수동은 'stage', 오토파일럿은 런 전체에 'autopilot'을 잡고 들어온다.
 async function execStage(dir, stage, opts) {
@@ -553,7 +591,12 @@ async function execStage(dir, stage, opts) {
       const r = await autovisual.renderAll(dir, {
         ...envHint(), count: (opts && opts.count) || 0, stopped: () => isRenderStopped(dir),
       }, (line) => send('log', { source: stage, line, dir }));
-      const fin = finish({ ...r, tail: r.resultText || r.note, startedAt });
+      // 슬라이드 이미지가 준비됐으니 slide-video 매니페스트를 mp4로 자동 인코딩(ffmpeg 있으면).
+      // 최종 mp4가 생기면 릴 카드가 visual 단계로 전진한다 — 발행은 여전히 사람 승인.
+      let sv = { rendered: 0, total: 0 };
+      try { sv = await renderSlideVideos(dir, (line) => send('log', { source: stage, line, dir })); } catch { /* 렌더 실패가 단계를 죽이지 않게 */ }
+      const svNote = sv.total ? ` · 슬라이드영상 ${sv.rendered}/${sv.total}` : '';
+      const fin = finish({ ...r, tail: (r.resultText || r.note || '') + svNote, startedAt });
       history.append({
         dir, kind: 'stage', stage, engine: r.provider || 'render', model: '',
         ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: `${changeNote(fin.changes)} — ${r.resultText || r.note || ''}`.slice(0, 120),
@@ -594,6 +637,28 @@ ipcMain.handle('pipe:runStage', async (_e, dir, stage, opts) => {
   finally { locks.release(dir, 'stage'); }
 });
 ipcMain.handle('pipe:stop', (_e, dir) => { stopRender(dir); return pipeline.stopCurrent(dir); });
+// 슬라이드 영상 렌더 — 수동 트리거(전체 매니페스트) 또는 단일 매니페스트 렌더
+ipcMain.handle('slidevideo:render', async (_e, dir, manifestRel) => {
+  const lock = locks.acquire(dir, 'stage');
+  if (!lock.ok) return { ok: false, error: locks.busyMessage(dir) };
+  armRender(dir);
+  try {
+    if (manifestRel) {
+      const ff = ffmpegResolver.resolve();
+      if (!ff.path) return { ok: false, needsFfmpeg: true, error: 'ffmpeg가 없습니다 — 설치본은 번들됩니다. 개발 실행은 npm install 후 ffmpeg-static이 필요합니다.' };
+      const prep = slidevideorender.prepare(dir, manifestRel);
+      if (!prep.ok) return { ok: false, error: prep.reason, needsImages: prep.needsImages };
+      const r = await encodeOne(ff.path, prep.plan.argsFor());
+      try { fs.unlinkSync(prep.plan.concatPath); } catch { /* best effort */ }
+      setTimeout(pushBoard, 300);
+      return r.ok ? { ok: true, outRel: prep.plan.outRel, source: ff.source } : { ok: false, error: r.error };
+    }
+    const r = await renderSlideVideos(dir, (line) => send('log', { source: 'slide-video', line, dir }));
+    setTimeout(pushBoard, 300);
+    return r;
+  } finally { locks.release(dir, 'stage'); }
+});
+ipcMain.handle('slidevideo:list', safe((_e, dir) => slidevideorender.listManifests(dir)));
 // 일괄 비주얼 렌더 — "일괄 비주얼 생성" 버튼 (오토파일럿 없이 수동으로 전 포스트 이미지 생성)
 ipcMain.handle('render:batch', async (_e, dir, opts) => {
   const lock = locks.acquire(dir, 'stage');
