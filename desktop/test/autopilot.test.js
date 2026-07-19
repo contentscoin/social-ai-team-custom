@@ -47,10 +47,11 @@ test('증거가 있는 단계는 재실행하지 않는다(skip), 도장이 있�
   // calendar는 증거 있음 → skip, copy부터 실행 시작
   assert.ok(events.includes('skip'));
   assert.deepEqual(ranStages, ['copy']);
-  // shortform/visuals는 포스트 0개라 공허참 증거로 skip — done 검사가 도장 검사보다
-  // 먼저라 copy 도장은 확인되지 않고, 실행이 필요한 visuals-generate 앞(visuals 도장)에서 멈춘다
+  // shortform은 포스트 0개라 공허참 증거로 skip. 다음은 사실 검증(verify) — 증거(리포트)가
+  // 없어 실행이 필요한데, verify는 copy 도장을 요구하므로(교체될 콘텐츠에 검증 낭비 방지)
+  // copy 도장이 없어 copy 도장 대기로 멈춘다.
   assert.equal(r.state, 'paused');
-  assert.equal(r.needStamp, 'visuals');
+  assert.equal(r.needStamp, 'copy');
 });
 
 test('단계 실패 시 failed로 종료하고 이후 단계를 실행하지 않는다', async () => {

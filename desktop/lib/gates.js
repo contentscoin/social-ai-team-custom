@@ -9,6 +9,7 @@ const NODES = [
   { key: 'calendar', label: '캘린더', stage: 'calendar' },
   { key: 'copy', label: '카피', stage: 'copy' },
   { key: 'shortform', label: '릴스/보드', stage: 'shortform' },
+  { key: 'verify', label: '사실 검증', stage: 'verify' },
   { key: 'visuals', label: '비주얼 브리프', stage: 'visuals' },
   { key: 'visuals-generate', label: '비주얼 생성', stage: 'visuals-generate' },
   { key: 'compliance', label: '컴플라이언스', stage: 'compliance' },
@@ -57,6 +58,8 @@ function computeGates(board, gatesData) {
     // 따라서 모든 릴 슬롯에 대본 증거(planned 넘어섬)가 있으면 done. 릴이 없으면 공허참으로 done.
     // (예전엔 'visual'=렌더된 mp4를 요구해 대본이 있어도 노드가 안 열리고 오토파일럿이 맴돌았다)
     shortform: !posts.some((p) => p.isReel) || posts.filter((p) => p.isReel).every((p) => p.stage !== 'planned'),
+    // 사실 검증 리포트가 존재하면 done (판정이 하나라도 기록됨). 교체 루프는 디렉터가 처리.
+    verify: !!(board.verify && (board.verify.pass + board.verify.revise) > 0),
     visuals: at('visual') > 0 || posts.every((p) => !p.visual),
     'visuals-generate': (board.lanes && board.lanes.creatives || []).length > 0 || at('visual') > 0,
     compliance: !!(board.compliance && (board.compliance.pass + board.compliance.warn + board.compliance.block) > 0),
@@ -72,7 +75,7 @@ function computeGates(board, gatesData) {
   let current = 0;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    const needsStamp = ['calendar', 'copy', 'compliance'].includes(n.key);
+    const needsStamp = ['calendar', 'copy', 'verify', 'compliance'].includes(n.key);
     const cleared = n.done && (!needsStamp || n.approved);
     if (cleared) current = Math.min(i + 1, nodes.length - 1);
     else break;

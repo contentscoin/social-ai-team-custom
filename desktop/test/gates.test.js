@@ -82,6 +82,28 @@ test('approvedSet — 해시 없는 도장은 항상 유효, 해시 불일치만
   assert.equal(s.has('compliance'), false);
 });
 
+test('verify 노드 — 검증 리포트(board.verify)가 있으면 done, 도장 전엔 visuals로 못 넘어간다', () => {
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [{ stage: 'copy', isReel: false, visual: '' }],
+    verify: { pass: 3, revise: 0, file: { rel: 'outputs/verify/x.md' } },
+  });
+  // calendar·copy 도장은 있지만 verify 도장은 없음 → verify에서 current가 멈춘다(visuals 잠금)
+  const appr = { approvals: [{ node: 'calendar', calendarHash: 'abc123' }, { node: 'copy', calendarHash: 'abc123' }] };
+  const g = gates.computeGates(b, appr);
+  assert.equal(nodeOf(g, 'verify').done, true);
+  const verifyIdx = g.nodes.findIndex((n) => n.key === 'verify');
+  assert.equal(g.current, verifyIdx); // verify 도장 대기 — 다음(visuals)으로 못 감
+  // verify 도장을 찍으면 전진
+  appr.approvals.push({ node: 'verify', calendarHash: 'abc123' });
+  assert.equal(gates.computeGates(b, appr).current > verifyIdx, true);
+});
+
+test('verify 노드 — 리포트 없으면 done=false', () => {
+  const b = board({ foundation: { brand: true }, hasCalendar: true, posts: [{ stage: 'copy', isReel: false, visual: '' }] });
+  assert.equal(nodeOf(gates.computeGates(b, empty), 'verify').done, false);
+});
+
 test('BLOCK이 있으면 publish 노드가 blocked', () => {
   const b = board({ compliance: { pass: 1, warn: 0, block: 2 } });
   const g = gates.computeGates(b, empty);

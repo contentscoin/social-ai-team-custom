@@ -125,6 +125,23 @@ test('buildBoard — 클립/슬라이드 포맷도 릴로 인식', () => {
   assert.equal(b.posts[0].isReel, true);
 });
 
+test('buildBoard — 사실 검증 리포트의 Overall 줄을 board.verify로 파싱', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');
+  writeLane(dir, 'verify', 'acme-verify-july-2026.md', '# Content Verification\n\n## Summary\n\nOverall: PASS 4 / REVISE 2\n');
+  const b = buildBoard(dir);
+  assert.equal(b.verify.pass, 4);
+  assert.equal(b.verify.revise, 2);
+  assert.ok(b.verify.file);
+});
+
+test('buildBoard — 검증 리포트 없으면 board.verify는 0', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');
+  const b = buildBoard(dir);
+  assert.deepEqual({ pass: b.verify.pass, revise: b.verify.revise }, { pass: 0, revise: 0 });
+});
+
 test('buildBoard — naver_clip 레인이 보드 레인 집합에 존재한다 (채널 배선 전제)', () => {
   const dir = tmpWorkspace();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');

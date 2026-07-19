@@ -55,4 +55,13 @@ function complianceSummary(dir) {
   } catch { return null; }
 }
 
-module.exports = { snapshot, diff, complianceSummary };
+// 사실 검증 실행 직후 요약 — 보드가 파싱한 PASS/REVISE
+function verifySummary(dir) {
+  try {
+    const b = board.buildBoard(dir);
+    const v = b.verify || { pass: 0, revise: 0 };
+    return { pass: v.pass, revise: v.revise, file: v.file ? v.file.rel || v.file.name : null };
+  } catch { return null; }
+}
+
+module.exports = { snapshot, diff, complianceSummary, verifySummary };

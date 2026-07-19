@@ -306,6 +306,7 @@ Make any requested changes. Then confirm:
 
 **Supporting outputs:**
 - `[Client-Name]-Brand-Onboarding.md` — client-facing doc (in project root)
+- `context/source-of-truth/` — **product/service facts used for later fact-checking.** Create this folder and save verifiable facts about the client's product, service, or app: features, specs, pricing/plans, policies, guarantees, real numbers (e.g. `pricing.md`, `features.md`, `specs.md`). `/content-verify` checks every product claim in published content against this folder — the more current and specific it is, the fewer false or made-up facts slip through. If the client is an application, this is where its documented facts live.
 - `assets/website-homepage.png`
 - `assets/instagram-profile.png`
 - `assets/products/` — hero product photos
