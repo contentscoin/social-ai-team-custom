@@ -66,7 +66,8 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 
 규칙:
 - `calendarSlot`은 대상 캘린더 슬롯 번호(정수). 사람이 읽는 헤더에도 **`Calendar slot: #n`**을 반드시 표기 — 보드가 이 인용으로 대본을 슬롯에 연결합니다.
-- 슬라이드마다 `image.rel`(기존 렌더가 있으면) **또는** `prompt`(없으면 creative-designer가 렌더할 영문 프롬프트, `sop/creative-designer/prompt-packs/` 골격, 이미지 내 한글 텍스트 금지). 둘 중 하나는 필수.
+- **화면 텍스트(`head`/`sub`)는 앱이 HTML로 네이티브 렌더**합니다 — 한글이 이미지에 굽히지 않고 깨끗하게 나옵니다. 그래서 슬라이드는 **텍스트만으로도 렌더됩니다**(배경 이미지는 선택). `head`는 짧은 헤드라인(12자 내외), `sub`는 보조 문구(20자 내외).
+- `image.rel`(배경 이미지, 선택): 있으면 배경으로 깔리고 텍스트가 하단에 얹힙니다. 없으면 브랜드색 그라디언트 배경에 중앙 텍스트. 배경 이미지를 쓰려면 creative-designer가 먼저 렌더한 파일의 rel을 넣습니다(이미지 내 한글 텍스트 금지 — 텍스트는 앱이 얹습니다). `prompt`는 그 배경 이미지를 나중에 렌더할 때 쓸 영문 프롬프트로 남겨둘 수 있습니다(선택).
 - `durationSec` 합이 플랫폼 상한을 넘지 않게(릴스/클립 ≤ 60초 권장, 훅 슬라이드는 3초 이하).
 - JSON 외 다른 내용을 이 파일에 넣지 않습니다.
 
@@ -93,12 +94,12 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 
 ## Phase 5 — 앱 자동 렌더 (렌더 레인)
 
-이 스킬의 산출물(매니페스트 + 슬라이드 이미지)은 앱이 자동으로 mp4로 렌더할 수 있습니다:
-- 슬라이드에 `prompt`만 있고 `image.rel`이 없으면, 먼저 creative-designer 레인이 각 슬라이드 이미지를 렌더합니다(이미지 내 한글 텍스트 금지 — 화면 텍스트는 렌더 단계에서 오버레이).
-- 이후 앱의 슬라이드 렌더 엔진(Remotion/Hyperframe 계열 또는 ffmpeg 슬라이드쇼)이 매니페스트의 슬라이드·전환·지속시간·나레이션을 합쳐 `outputs/videos/[…].mp4`를 만듭니다.
+이 스킬의 산출물(매니페스트)은 앱이 자동으로 mp4로 렌더합니다 — 별도 도구 설치가 필요 없습니다:
+- 앱은 각 슬라이드의 `head`/`sub` 텍스트를 **HTML로 조판해 앱 내장 Chromium(오프스크린)으로 렌더**하고, 그 프레임들을 **번들된 ffmpeg**로 이어붙여 `outputs/videos/[…].mp4`를 만듭니다. (하이퍼프레임이 Puppeteer로 하는 HTML→영상 방식을, 앱에 이미 있는 Chromium으로 수행)
+- **배경 이미지는 선택**입니다 — 텍스트만 있는 슬라이드도 브랜드색 배경에 그대로 렌더됩니다. 배경 이미지를 쓰려면 creative-designer가 렌더한 파일의 rel을 `image.rel`에 넣습니다.
 - 최종 mp4가 생기면 보드에서 그 릴 카드가 visual 단계로 전진합니다. mp4는 사람 검토 후 발행 대기열로 갑니다 — **자동 렌더가 자동 발행을 뜻하지 않습니다.**
 
-렌더 엔진(ffmpeg/Remotion)이 설치돼 있지 않은 환경에서는 매니페스트 + 슬라이드 이미지 + HTML 미리보기까지가 산출물이며, 이 사실을 보고에 명시합니다.
+ffmpeg가 없는 환경(설치본은 번들되므로 정상 동작; 개발 실행은 `npm install` 후)에서는 매니페스트까지가 산출물이며, 이 사실을 보고에 명시합니다.
 
 ---
 
