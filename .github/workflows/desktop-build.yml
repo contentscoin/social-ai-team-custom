@@ -6,6 +6,10 @@ on:
     paths:
       - 'desktop/**'
       - '.github/workflows/desktop-build.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +20,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 배포 전 게이트 — lib 테스트가 깨지면 인스톨러를 만들지 않는다
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # lib 모듈은 순수 Node — 의존성 설치 없이 내장 test runner로 실행
+      - name: Run tests
+        working-directory: desktop
+        run: npm test
+
   build:
+    needs: test
+    # PR에서는 테스트만 — 릴리스 업로드가 있는 빌드는 main 푸시/수동 실행에서만
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       # Serialize publishes so release asset uploads don't race

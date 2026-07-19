@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('api', {
     set: (engine) => ipcRenderer.invoke('cfg:setEngine', engine),
     getModels: () => ipcRenderer.invoke('cfg:getModels'),
     setModel: (engine, model) => ipcRenderer.invoke('cfg:setModel', engine, model),
+    getBudget: () => ipcRenderer.invoke('cfg:getBudget'),
+    setBudget: (usd) => ipcRenderer.invoke('cfg:setBudget', usd),
   },
   chat: {
     send: (dir, msg) => ipcRenderer.invoke('chat:send', dir, msg),
@@ -62,6 +64,13 @@ contextBridge.exposeInMainWorld('api', {
   },
   hist: {
     list: (dir) => ipcRenderer.invoke('hist:list', dir),
+  },
+  backup: {
+    create: (dir) => ipcRenderer.invoke('bk:create', dir),
+    list: () => ipcRenderer.invoke('bk:list'),
+    restore: (name, dir) => ipcRenderer.invoke('bk:restore', name, dir),
+    remove: (name) => ipcRenderer.invoke('bk:delete', name),
+    open: () => ipcRenderer.invoke('bk:open'),
   },
   render: {
     providers: (envHint) => ipcRenderer.invoke('render:providers', envHint),

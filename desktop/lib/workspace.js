@@ -71,7 +71,7 @@ function readStatus(dir) {
   };
 }
 
-const OUTPUT_LANES = ['captions', 'linkedin', 'threads', 'x', 'naver', 'creatives', 'videos', 'storyboards', 'compliance', 'reviews'];
+const OUTPUT_LANES = ['captions', 'linkedin', 'threads', 'x', 'naver', 'naver_clip', 'kakao', 'creatives', 'videos', 'storyboards', 'compliance', 'reviews'];
 
 function listOutputs(dir) {
   const lanes = {};

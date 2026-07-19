@@ -243,7 +243,7 @@ Present the captions and summary table. Offer:
 
 - **Best-performers are the highest-value input** — if a client has an active Instagram, push to get their top 10 posts by saves or reach before writing anything. The signal is in what already worked for their audience.
 - **Batch writing is the real workflow** — SMBs need a month of content, not one caption. Default to batch mode unless they ask for a single post.
-- **Visual direction field matters** — this is the handoff note to `/social-creative-designer`. Keep it brief and visual: "close-up of finished result, warm tones, clean background" — not "a beautiful photo showing the amazing transformation."
+- **`VISUAL DIRECTION` field matters** — this is the handoff note to `/social-creative-designer`. Keep it brief and visual: "close-up of finished result, warm tones, clean background" — not "a beautiful photo showing the amazing transformation."
 - **Hashtag best practice (2025/2026)** — 3-10 targeted hashtags on Instagram. The 30-hashtag approach is dead. Quality over quantity.
 - **If no brand-style.md exists** — run `/brand-onboarding` first. Writing without brand context produces generic output that won't match the brand's real voice.
 - **No tools available?** — Baseline mode still produces strong output from brand-style.md and best-performers alone. State the assumption and move forward.
@@ -254,5 +254,5 @@ Present the captions and summary table. Offer:
 
 - `/brand-onboarding` — Run first to create brand-style.md if it doesn't exist
 - `/content-calendar` — Produces the post topics this skill writes captions for
-- `/social-creative-designer` — Turns captions into visual assets (uses the Visual Direction field)
+- `/social-creative-designer` — Turns captions into visual assets (uses the `VISUAL DIRECTION` field)
 - `/social-content` — General social media strategy and platform advice

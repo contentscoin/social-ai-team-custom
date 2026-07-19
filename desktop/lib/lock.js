@@ -15,12 +15,12 @@ function release(dir, owner) {
 function holder(dir) { return locks.get(dir) || null; }
 
 // 사용자 안내문 — 누가 잡고 있는지 한국어로
-const OWNER_LABEL = { chat: '디렉터 채팅', stage: '파이프라인 단계', autopilot: '오토파일럿', onboard: '질문지 온보딩', reference: '레퍼런스 사이트 분석' };
+const OWNER_LABEL = { chat: '디렉터 채팅', stage: '파이프라인 단계', autopilot: '오토파일럿', onboard: '질문지 온보딩', reference: '레퍼런스 사이트 분석', restore: '백업 복원' };
 function busyMessage(dir) {
   const h = holder(dir);
   if (!h) return null;
   const mins = Math.round((Date.now() - h.since) / 60000);
-  return `${OWNER_LABEL[h.owner] || h.owner}이(가) 이미 실행 중입니다${mins >= 1 ? ` (${mins}분째)` : ''}. 끝나면 다시 시도하세요.`;
+  return `${OWNER_LABEL[h.owner] || h.owner}이(가) 이미 실행 중입니다${mins >= 1 ? ` (${mins}분째)` : ''}. 끝나면 다시 시도하세요. 멈춘 것 같으면 해당 실행의 중지 버튼으로 해제할 수 있습니다.`;
 }
 
 module.exports = { acquire, release, holder, busyMessage };

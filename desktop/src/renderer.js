@@ -2194,7 +2194,7 @@ async function openSettings(section) {
   sheet.innerHTML = `
     <div class="sheet-head"><h2>설정</h2><button class="icon-btn" id="set-close"><svg><use href="#i-close"/></svg></button></div>
     <div class="settings-nav">
-      <button data-sec="env" class="active">환경</button><button data-sec="engine">엔진</button><button data-sec="channels">채널</button><button data-sec="opencrab">OpenCrab</button><button data-sec="render">렌더</button><button data-sec="update">업데이트</button><button data-sec="about">정보</button>
+      <button data-sec="env" class="active">환경</button><button data-sec="engine">엔진</button><button data-sec="channels">채널</button><button data-sec="opencrab">OpenCrab</button><button data-sec="render">렌더</button><button data-sec="backup">백업</button><button data-sec="update">업데이트</button><button data-sec="about">정보</button>
     </div>
     <div class="sheet-body">
       <div data-body="env">${envRows(s)}${envButtons()}</div>
@@ -2232,6 +2232,20 @@ async function openSettings(section) {
           <option value="gpt-5-codex"></option>
         </datalist>
         <p class="muted small" style="margin-top:10px">Claude 모델은 파이프라인 단계 실행과 Claude 대화에, Codex 모델은 Codex 대화에 적용됩니다. 목록에 없는 모델명도 직접 입력할 수 있습니다.</p>
+        <div style="margin-top:18px;display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center">
+          <b class="small">월 예산 (USD)</b>
+          <input id="set-budget" type="number" min="0" step="1" placeholder="0 — 예산 없음"
+            style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px">
+        </div>
+        <p class="muted small" style="margin-top:6px">이번 달 Claude CLI 비용이 예산을 넘으면 오토파일럿이 새 단계를 시작하지 않고, 80%·100% 도달 시 알림이 옵니다. 렌더·Codex 비용은 아직 집계되지 않아 실제 지출의 하한선입니다.</p>
+      </div>
+      <div data-body="backup" class="hidden">
+        <p class="muted" style="margin-bottom:10px;line-height:1.55">클라이언트 워크스페이스(컨텍스트·산출물·에셋·SOP)를 폴더 사본으로 백업합니다. 토큰·API 키는 워크스페이스 밖에 있어 백업에 포함되지 않습니다. 복원하면 현재 상태가 <code>pre-restore</code> 스냅샷으로 자동 보관되어 한 번 더 복원하면 되돌릴 수 있습니다.</p>
+        <div class="btn-grid">
+          <button id="bk-create">현재 클라이언트 백업</button>
+          <button id="bk-open" type="button">백업 폴더 열기</button>
+        </div>
+        <div id="bk-list" style="margin-top:12px"></div>
       </div>
       <div data-body="update" class="hidden">
         <p>현재 버전 <b>v${esc(v)}</b></p>
@@ -2255,7 +2269,7 @@ async function openSettings(section) {
       </div>
       <div data-body="about" class="hidden">
         <p><b>Social AI Team — 온에어 데스크</b></p>
-        <p class="muted" style="margin-top:6px;line-height:1.7">스킬 17종 + 서브에이전트 4종으로 구성된 소셜 콘텐츠 팀의 컨트롤타워.<br>카드는 드래그로 옮기는 것이 아니라, 팀의 산출물 파일이 생기면 스스로 이동합니다.</p>
+        <p class="muted" style="margin-top:6px;line-height:1.7">스킬 19종 + 서브에이전트 4종으로 구성된 소셜 콘텐츠 팀의 컨트롤타워.<br>카드는 드래그로 옮기는 것이 아니라, 팀의 산출물 파일이 생기면 스스로 이동합니다.</p>
       </div>
     </div>`;
   $('#set-close').onclick = closeOverlay;
@@ -2283,6 +2297,62 @@ async function openSettings(section) {
   };
   bindModel('#set-model-claude', 'claude');
   bindModel('#set-model-codex', 'codex');
+  // 월 예산 — 입력 후 포커스 아웃/Enter 시 저장 (0 또는 빈값 = 해제)
+  {
+    const inp = $('#set-budget');
+    let cur = await window.api.engine.getBudget();
+    if (seq !== settingsSeq) return;
+    inp.value = cur || '';
+    const saveBudget = async () => {
+      const v = Number(inp.value) || 0;
+      if (v === cur) return;
+      cur = await window.api.engine.setBudget(v);
+      inp.value = cur || '';
+      toast(cur ? `월 예산: $${cur}` : '월 예산 해제');
+    };
+    inp.addEventListener('change', saveBudget);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBudget(); });
+  }
+  // 백업 — 목록 렌더 + 생성/복원/삭제
+  {
+    const listEl = $('#bk-list');
+    const fmtDate = (iso) => String(iso || '').slice(0, 16).replace('T', ' ');
+    const renderBackups = async () => {
+      const items = await window.api.backup.list();
+      if (seq !== settingsSeq || !listEl) return;
+      if (!items.length) { listEl.innerHTML = '<p class="muted small">백업이 없습니다.</p>'; return; }
+      listEl.innerHTML = items.map((b) => `
+        <div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
+          <div style="flex:1;min-width:0">
+            <b class="small">${esc(b.client)}</b>
+            <span class="muted small">${esc(fmtDate(b.createdAt))} · ${Number(b.files) || 0}개 파일${b.kind !== 'manual' ? ' · ' + esc(b.kind) : ''}</span>
+          </div>
+          <button class="small" data-bk-restore="${esc(b.name)}" data-bk-dir="${esc(b.sourceDir)}">복원</button>
+          <button class="small" data-bk-del="${esc(b.name)}">삭제</button>
+        </div>`).join('');
+      for (const btn of $$('[data-bk-restore]', listEl)) btn.onclick = async () => {
+        const dir = btn.dataset.bkDir;
+        if (!confirm(`이 백업으로 복원할까요?\n대상: ${dir}\n현재 상태는 pre-restore 스냅샷으로 보관됩니다.`)) return;
+        const r = await window.api.backup.restore(btn.dataset.bkRestore, dir);
+        toast(r.ok ? `복원 완료 — 스냅샷: ${r.snapshot}` : r.error);
+        renderBackups();
+      };
+      for (const btn of $$('[data-bk-del]', listEl)) btn.onclick = async () => {
+        if (!confirm('이 백업을 삭제할까요? 되돌릴 수 없습니다.')) return;
+        const r = await window.api.backup.remove(btn.dataset.bkDel);
+        toast(r.ok ? '백업 삭제됨' : r.error);
+        renderBackups();
+      };
+    };
+    $('#bk-create').onclick = async () => {
+      if (!S.client) { toast('먼저 클라이언트를 선택하세요'); return; }
+      const r = await window.api.backup.create(S.client.dir);
+      toast(r.ok ? `백업 완료 — ${r.files}개 파일` : r.error);
+      renderBackups();
+    };
+    $('#bk-open').onclick = () => window.api.backup.open();
+    renderBackups();
+  }
   const setUpdStatus = (text) => {
     const el = $('#set-upd-status');
     if (el) el.textContent = text;

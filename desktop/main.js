@@ -23,6 +23,8 @@ const pubdirect = require('./lib/pubdirect');
 const opencrabBindings = require('./lib/opencrab-bindings');
 const visualAssets = require('./lib/visual-assets');
 const orchestrator = require('./lib/orchestrator');
+const schema = require('./lib/schema');
+const backup = require('./lib/backup');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -146,6 +148,12 @@ app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   initAutoUpdate();
+  // 스키마 마이그레이션 — 스케줄러가 큐 파일을 읽기 전에. 실패가 부팅을 막지 않는다.
+  try {
+    const rep = schema.migrateAll(workspace.listClients().map((c) => c.dir));
+    const changed = rep.filter((r) => r.result === 'stamped' || r.result === 'migrated');
+    if (changed.length) applog.write('schema', `${changed.length}개 파일 스탬프/마이그레이션: ` + changed.map((r) => r.key).join(', '));
+  } catch (e) { applog.write('schema', '마이그레이션 실패: ' + String(e && e.message || e)); }
   pubdirect.startScheduler({ send, notify, pushBoard: () => pushBoard() });
 }).catch((e) => {
   applog.write('boot-fail', (e && e.stack) || String(e));
@@ -164,6 +172,22 @@ function notify(title, body) {
   try {
     if (win && !win.isDestroyed() && win.isFocused()) return; // 보고 있으면 토스트로 충분
     if (Notification.isSupported()) new Notification({ title, body: String(body || '').slice(0, 140) }).show();
+  } catch { /* 알림 실패는 치명적이지 않다 */ }
+}
+
+// 월 예산 임계 알림 — 비용이 80%/100% 선을 넘는 순간 1회씩만 울린다
+function budgetNotify(dir, prevCost) {
+  try {
+    const budgetUsd = config.getBudget();
+    if (!budgetUsd) return;
+    const now = history.monthCost(dir);
+    for (const [ratio, label] of [[1, '초과'], [0.8, '80% 도달']]) {
+      const line = budgetUsd * ratio;
+      if (prevCost < line && now >= line) {
+        notify(`월 API 예산 ${label}`, `이번 달 $${now} / 예산 $${budgetUsd} — 렌더·Codex 비용은 미집계라 실제 지출은 더 클 수 있습니다`);
+        break;
+      }
+    }
   } catch { /* 알림 실패는 치명적이지 않다 */ }
 }
 
@@ -498,10 +522,12 @@ async function execStage(dir, stage, opts) {
     }
     const r = await pipeline.runStage(dir, stage, opts, (line) => send('log', { source: stage, line, dir }));
     const label = (pipeline.STAGES[stage] || {}).label || stage;
+    const prevCost = history.monthCost(dir);
     history.append({
       dir, kind: 'stage', stage, engine: 'claude', model: config.getModels().claude,
       ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined, startedAt,
     });
+    budgetNotify(dir, prevCost);
     // 30초 넘게 걸린 작업만 OS 알림 — 즉시 끝난 것까지 울리면 소음
     if (Date.now() - startedAt > 30_000) notify(`${label} ${r.ok ? '완료' : '실패'}`, r.ok ? '보드에서 결과를 확인하세요.' : String(r.tail || '').slice(0, 140));
     return { ...r, startedAt };
@@ -553,6 +579,12 @@ ipcMain.handle('auto:run', async (_e, dir) => {
     const r = await autopilot.run(dir, {
       buildBoard: (d) => board.buildBoard(d),
       runStage: (d, s) => execStage(d, s, {}),
+      checkBudget: () => {
+        const budgetUsd = config.getBudget();
+        if (!budgetUsd) return null;
+        const monthCost = history.monthCost(dir);
+        return { over: monthCost >= budgetUsd, monthCost, budgetUsd };
+      },
       onEvent: (ev) => {
         send('auto', ev);
         if (ev.state === 'paused') notify('오토파일럿 대기', ev.message || '승인 도장이 필요합니다.');
@@ -591,10 +623,11 @@ ipcMain.handle('render:generate', async (_e, dir, job) => {
       if (!abs.startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(abs)) return { ok: false, error: '참조 이미지를 찾을 수 없습니다' };
       job.refAbs = abs;
     }
-    const r = await render.generate(dir, job, (line) => send('log', { source: 'render', line, dir }));
+    const r = await render.generate(dir, { env: envHint(), ...job }, (line) => send('log', { source: 'render', line, dir }));
     history.append({
-      dir, kind: 'stage', stage: `render-${job.kind}`, engine: job.provider, model: '',
-      ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: (job.prompt || '').slice(0, 60),
+      dir, kind: 'stage', stage: `render-${job.kind}`, engine: r.provider || job.provider, model: '',
+      ok: !!r.ok, ms: Date.now() - startedAt, startedAt,
+      note: (r.fellBackFrom ? `[${r.fellBackFrom}→${r.provider}] ` : '') + (job.prompt || '').slice(0, 60),
     });
     if (r.ok) {
       send('log', { source: 'render', line: `✔ ${r.rel}`, dir });
@@ -735,6 +768,23 @@ ipcMain.handle('cfg:getEngine', safe(() => config.getEngine()));
 ipcMain.handle('cfg:setEngine', safe((_e, engine) => config.setEngine(engine).engine));
 ipcMain.handle('cfg:getModels', safe(() => config.getModels()));
 ipcMain.handle('cfg:setModel', safe((_e, engine, model) => config.setModel(engine, model)));
+ipcMain.handle('cfg:getBudget', safe(() => config.getBudget()));
+ipcMain.handle('cfg:setBudget', safe((_e, usd) => config.setBudget(usd)));
+
+// ---- 워크스페이스 백업·복원 -----------------------------------------------------
+ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));
+ipcMain.handle('bk:list', safe(() => backup.listBackups()));
+ipcMain.handle('bk:restore', async (_e, name, dir) => {
+  const lock = locks.acquire(dir, 'restore'); // 복원 중 파이프라인/채팅이 파일을 밟지 않게
+  if (!lock.ok) return { ok: false, error: locks.busyMessage(dir) };
+  try {
+    const r = backup.restoreBackup(name, dir);
+    setTimeout(pushBoard, 300); // 복원된 outputs/context를 보드에 즉시 반영
+    return r;
+  } finally { locks.release(dir, 'restore'); }
+});
+ipcMain.handle('bk:delete', safe((_e, name) => backup.deleteBackup(name)));
+ipcMain.handle('bk:open', () => { shell.openPath(backup.BACKUPS); return { ok: true }; });
 ipcMain.handle('chat:send', async (_e, dir, msg) => {
   const lock = locks.acquire(dir, 'chat');
   if (!lock.ok) return { ok: false, text: locks.busyMessage(dir), engine: config.getEngine() };
@@ -747,11 +797,13 @@ ipcMain.handle('chat:send', async (_e, dir, msg) => {
       (ev) => send('chat:stream', { dir, ev }),
     );
     chatlog.append(dir, { role: 'dir', text: r.text, engine: r.engine, ok: r.ok });
+    const prevCost = history.monthCost(dir);
     history.append({
       dir, kind: 'chat', engine: r.engine, model: config.getModels()[r.engine] || '',
       ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
       startedAt, note: String(msg).slice(0, 80),
     });
+    budgetNotify(dir, prevCost);
     return r;
   } catch (e) {
     return { ok: false, text: String(e && e.message || e), engine: config.getEngine() };

@@ -190,7 +190,7 @@ You are a Korean Brand Voice Director — 당신은 10년 차 한국어 카피 �
 1. `context/kr-voice-profile.md`를 읽습니다. 없으면 모드 A부터 실행하도록 안내하고 중단합니다.
 2. 점검 대상 파일을 확인합니다. 운영자가 지정하지 않았으면 묻습니다:
    > "어떤 결과물을 점검할까요? `outputs/captions/`, `outputs/x/`, `outputs/threads/`, `outputs/linkedin/`, `outputs/storyboards/`, `outputs/videos/` 중 파일을 지정해 주세요. 폴더째 주시면 전부 돌립니다."
-3. 대상 파일에서 포스트 단위로 카피를 분해합니다. 계약 필드(`VISUAL DIRECTION:`, `BLOTATO FLAG:`, `Char count:`)는 **점검 대상에서 제외**하되, 필드가 임의로 번역·변형돼 있으면 그 자체를 FAIL로 보고합니다.
+3. 대상 파일에서 포스트 단위로 카피를 분해합니다. 계약 필드(`VISUAL DIRECTION:`, `BLOTATO FLAG:`, `Char count:`)는 **점검 대상에서 제외**하되, 필드가 임의로 번역·변형돼 있으면 그 자체를 FAIL로 보고합니다. 대소문자 차이(`Visual direction:` 등)는 변형으로 보지 않습니다 — 번역·철자 변형만 FAIL입니다.
 
 ### Phase B2 — 5차원 점검
 
@@ -318,7 +318,7 @@ Posts checked: [n]
 ## Related Skills
 
 - `/brand-onboarding` — 선행 필수. `context/brand-style.md`를 만들고, 그 직후 이 스킬의 모드 A 실행
-- `/caption-writer`, `/linkedin-writer`, `/threads-writer`, `/x-writer` — `context/kr-voice-profile.md`를 읽어 한국어 카피 작성; 모드 B의 수정 제안을 받아 리라이트
+- `/caption-writer`, `/linkedin-writer`, `/threads-writer`, `/x-writer` — 모드 B의 수정 제안을 받아 리라이트하는 라이터 스킬 (프로파일 적용은 카피라이터 에이전트가 저장 전에 수행 — 스킬 직접 호출 시에는 적용되지 않음)
 - 카피라이터 에이전트 (copywriter) — 배치 작성 시 프로파일을 채점 기준으로 사용
 - `/content-calendar` — 월간 브리핑에서 이 스킬의 시즌 커머스 캘린더 표를 인용
 - `/content-director` — 워크플로우 오케스트레이션; `context/workflow-status.md`의 유일한 작성자

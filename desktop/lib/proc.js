@@ -62,7 +62,12 @@ function killTree(child) {
   try {
     // Windows: 셸만 죽이면 손자(claude/codex/npm)가 살아남아 파이프를 물고 있다 — 트리째 종료
     if (isWin && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-    else child.kill();
+    else if (child.pid) {
+      // POSIX: detached로 띄운 프로세스 그룹째 종료 — 셸만 죽여 손자가 파이프를 무는 데드락 방지
+      try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill(); }
+      const t = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } }, 3000);
+      if (t.unref) t.unref();
+    } else child.kill();
   } catch { /* already gone */ }
 }
 function killAll() { for (const c of [...liveChildren]) killTree(c); }
@@ -91,6 +96,7 @@ function runCmd(name, args, onLine, opts = {}) {
       child = spawn(line, [], {
         shell: true,
         windowsHide: true,
+        detached: !isWin, // POSIX: 새 프로세스 그룹 — killTree가 셸+손자를 한 번에 종료할 수 있게
         env: envWithPath(opts.env || {}),
         cwd: opts.cwd,
         stdio: [hasStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],

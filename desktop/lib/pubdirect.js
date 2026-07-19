@@ -137,7 +137,7 @@ const TH_MARKER = /^\s*(?:post\s+)?\d+\s*\/\s*(?:\[[^\]]*\]\s*[:.)]?|\d+\s*[:.)]
 function cleanSeg(s) { return String(s).replace(TH_MARKER, '').trim(); }
 // 주의: 자동 분할은 하지 않는다 — 명시 segments(운영자가 체인 모드에서 나눈 것)만 체인으로.
 // 그래야 단일 글의 빈 줄·"3/4" 같은 정상 본문이 체인으로 오분할되지 않는다.
-async function publishThreads({ text, segments }) {
+async function publishThreads({ text, segments, resume }) {
   const c = secrets.get('threads');
   if (!c.userId || !c.token) return fail('threads', 'Threads 사용자 ID와 토큰이 필요합니다 — 설정 → 채널');
   const chain = Array.isArray(segments) && segments.length > 1;
@@ -146,9 +146,12 @@ async function publishThreads({ text, segments }) {
   // 500자 초과 세그먼트는 자르지 않고 실패시켜 운영자가 손보게
   const tooLong = parts.findIndex((p) => p.length > 500);
   if (tooLong >= 0) return fail('threads', `${tooLong + 1}번째 ${chain ? '조각' : '글'}이 500자를 초과합니다 (${parts[tooLong].length}자) — 나눠주세요`);
-  let firstId = null, prevId = null, published = 0;
+  // resume: 이전 시도의 부분 성공 지점부터 이어서 — 이미 게시된 앞 조각을 다시 올리지 않는다
+  let firstId = (resume && resume.firstId) || null;
+  let prevId = (resume && resume.prevId) || null;
+  let published = (resume && resume.published) || 0;
   try {
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = published; i < parts.length; i++) {
       const id = await threadsPost(c, parts[i], i === 0 ? null : prevId);
       if (i === 0) firstId = id;
       prevId = id; published++;
@@ -156,11 +159,11 @@ async function publishThreads({ text, segments }) {
     }
     return { ok: true, channel: 'threads', id: firstId, chain: published, url: firstId ? `https://www.threads.net/t/${firstId}` : null };
   } catch (e) {
-    // 체인 중간 실패 — 앞 조각들은 이미 라이브다. 부분 상태를 반드시 보고한다.
+    // 체인 중간 실패 — 앞 조각들은 이미 라이브다. 부분 상태를 반드시 보고한다 (lastId는 재개 지점).
     if (published > 0) {
-      return { ok: false, channel: 'threads', partial: true, published, total: parts.length, id: firstId,
+      return { ok: false, channel: 'threads', partial: true, published, total: parts.length, id: firstId, lastId: prevId,
         url: firstId ? `https://www.threads.net/t/${firstId}` : null,
-        error: `${parts.length}개 중 ${published}개까지 발행된 뒤 실패했습니다 (${published + 1}번째): ${e.message}. 앞 ${published}개는 이미 게시됨 — 나머지는 이어서 손수 올리세요.` };
+        error: `${parts.length}개 중 ${published}개까지 발행된 뒤 실패했습니다 (${published + 1}번째): ${e.message}. 앞 ${published}개는 이미 게시됨.` };
     }
     return fail('threads', e.message);
   }
@@ -241,7 +244,7 @@ function status() {
   };
 }
 
-async function publishNow(dir, { uid, channel, text, imageRel, segments }) {
+async function publishNow(dir, { uid, channel, text, imageRel, segments, chainState }) {
   const fn = PUBLISHERS[channel];
   if (!fn) return fail(channel, '이 채널은 직접 발행을 지원하지 않습니다 — 수동 체크리스트를 사용하세요');
   const hasSegs = Array.isArray(segments) && segments.length > 1;
@@ -251,7 +254,7 @@ async function publishNow(dir, { uid, channel, text, imageRel, segments }) {
     const abs = path.resolve(dir, imageRel);
     if (abs.startsWith(path.resolve(dir) + path.sep) && fs.existsSync(abs)) imageAbs = abs;
   }
-  const r = await fn({ text: (text || '').trim(), imageAbs, segments });
+  const r = await fn({ text: (text || '').trim(), imageAbs, segments, resume: chainState || null });
   if (r.ok && uid) {
     try {
       const log = publishlog.mark(dir, uid, true);
@@ -306,37 +309,88 @@ function cancel(dir, qid) {
   return { ok: true };
 }
 
+// ---- 재시도 정책 ---------------------------------------------------------------------------
+// 일시 오류(네트워크 단절·타임아웃·레이트리밋·서버 오류)만 자동 재시도한다.
+// 4xx 인증·검증 오류는 다시 보내도 같은 결과 — 즉시 failed로 확정해 사람이 고치게.
+const MAX_ATTEMPTS = 4; // 최초 1회 + 재시도 3회
+function isTransient(r) {
+  const m = String((r && r.error) || '');
+  return /fetch failed|network|socket|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|abort|timed?\s*out|HTTP 429|HTTP 5\d\d/i.test(m);
+}
+function backoffMs(attempt) { return Math.min(2 * 4 ** (attempt - 1), 60) * 60_000; } // 2분 → 8분 → 32분
+
+// 크래시 복구 — 'publishing' 채로 남은 아이템은 앱이 발행 도중 종료된 것.
+// 플랫폼에 이미 게시됐을 수 있어 자동 재시도하지 않는다(이중 게시 방지) — failed로 표면화.
+function recoverStale(dirs) {
+  for (const dir of dirs) {
+    let q;
+    try { q = loadQueue(dir); } catch { continue; }
+    let changed = false;
+    for (const it of q.items) {
+      if (it.status !== 'publishing') continue;
+      it.status = 'failed';
+      it.error = '앱이 발행 도중 종료되어 중단됨 — 플랫폼에서 게시 여부를 확인한 뒤 필요하면 다시 예약하세요';
+      changed = true;
+    }
+    if (changed) saveQueue(dir, q);
+  }
+}
+
+// 큐 처리 1회분 — 스케줄러 틱과 테스트가 공유한다. hooks._publishNow는 테스트 주입용.
+async function processQueues(dirs, hooks = {}) {
+  const doPublish = hooks._publishNow || publishNow;
+  for (const dir of dirs) {
+    let q;
+    try { q = loadQueue(dir); } catch { continue; }
+    let changed = false;
+    for (const it of q.items) {
+      if (it.status !== 'pending' || new Date(it.when).getTime() > Date.now()) continue;
+      if (it.nextAt && new Date(it.nextAt).getTime() > Date.now()) continue; // 백오프 대기 중
+      it.status = 'publishing'; changed = true;
+      saveQueue(dir, q);
+      const r = await doPublish(dir, it);
+      let retrying = false;
+      if (r.ok) {
+        it.status = 'done'; it.error = null; it.nextAt = null;
+        delete it.chainState;
+      } else {
+        it.attempts = (it.attempts || 0) + 1;
+        if (r.partial && r.published > 0) {
+          // Threads 체인 부분 성공 — 재개 지점을 보존해 재시도가 다음 조각부터 잇게 (앞 조각 재게시 금지)
+          it.chainState = { published: r.published, prevId: r.lastId || null, firstId: r.id || null };
+        }
+        retrying = isTransient(r) && it.attempts < MAX_ATTEMPTS;
+        if (retrying) {
+          it.status = 'pending';
+          it.nextAt = new Date(Date.now() + backoffMs(it.attempts)).toISOString();
+          it.error = `${r.error} — ${it.attempts}회 실패, 자동 재시도 예약됨`;
+        } else {
+          it.status = 'failed'; it.error = r.error; it.nextAt = null;
+        }
+      }
+      it.publishedAt = new Date().toISOString();
+      try {
+        hooks.send && hooks.send('pub2:done', { dir, qid: it.qid, uid: it.uid, channel: it.channel, ok: r.ok, retrying, error: it.error });
+        // OS 알림은 최종 상태에서만 — 백오프 재시도마다 울리지 않는다
+        if (!retrying) hooks.notify && hooks.notify(r.ok ? '예약 발행 완료' : '예약 발행 실패', `${it.channel} — ${r.ok ? '게시됨' : it.error}`);
+        hooks.pushBoard && hooks.pushBoard();
+      } catch { /* 훅 실패는 큐를 깨지 않는다 */ }
+    }
+    if (changed) saveQueue(dir, q);
+  }
+}
+
 let timer = null;
 let ticking = false;
 // hooks: { send(channel,payload), notify(title,body), pushBoard(), listDirs?() }
 function startScheduler(hooks) {
   const workspace = require('./workspace');
+  const dirsOf = () => (hooks.listDirs ? hooks.listDirs() : workspace.listClients().map((c) => c.dir));
+  try { recoverStale(dirsOf()); } catch { /* 복구 실패는 다음 부팅에서 재시도 */ }
   const tick = async () => {
     if (ticking) return; // 발행이 1분보다 오래 걸려도 중첩 실행 금지
     ticking = true;
-    try {
-      const dirs = (hooks.listDirs ? hooks.listDirs() : workspace.listClients().map((c) => c.dir));
-      for (const dir of dirs) {
-        let q;
-        try { q = loadQueue(dir); } catch { continue; }
-        let changed = false;
-        for (const it of q.items) {
-          if (it.status !== 'pending' || new Date(it.when).getTime() > Date.now()) continue;
-          it.status = 'publishing'; changed = true;
-          saveQueue(dir, q);
-          const r = await publishNow(dir, it);
-          it.status = r.ok ? 'done' : 'failed';
-          it.error = r.ok ? null : r.error;
-          it.publishedAt = new Date().toISOString();
-          try {
-            hooks.send && hooks.send('pub2:done', { dir, qid: it.qid, uid: it.uid, channel: it.channel, ok: r.ok, error: it.error });
-            hooks.notify && hooks.notify(r.ok ? '예약 발행 완료' : '예약 발행 실패', `${it.channel} — ${r.ok ? '게시됨' : it.error}`);
-            hooks.pushBoard && hooks.pushBoard();
-          } catch { /* 훅 실패는 큐를 깨지 않는다 */ }
-        }
-        if (changed) saveQueue(dir, q);
-      }
-    } catch { /* 다음 틱에 재시도 */ }
+    try { await processQueues(dirsOf(), hooks); } catch { /* 다음 틱에 재시도 */ }
     ticking = false;
   };
   clearInterval(timer);
@@ -350,4 +404,9 @@ async function test(channel) {
   try { return await fn(); } catch (e) { return { ok: false, error: e.message }; }
 }
 
-module.exports = { status, publishNow, schedule, listQueue, cancel, startScheduler, test, _oauth1Header: oauth1Header };
+module.exports = {
+  status, publishNow, schedule, listQueue, cancel, startScheduler, test,
+  _oauth1Header: oauth1Header,
+  // 테스트 전용 내부 노출
+  _processQueues: processQueues, _recoverStale: recoverStale, _isTransient: isTransient, _backoffMs: backoffMs,
+};
