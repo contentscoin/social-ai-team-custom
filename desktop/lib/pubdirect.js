@@ -407,6 +407,7 @@ async function test(channel) {
 module.exports = {
   status, publishNow, schedule, listQueue, cancel, startScheduler, test,
   _oauth1Header: oauth1Header,
+  _threadsPost: threadsPost, // comments.js 답글 게시가 재사용 (reply_to_id 지원)
   // 테스트 전용 내부 노출
   _processQueues: processQueues, _recoverStale: recoverStale, _isTransient: isTransient, _backoffMs: backoffMs,
 };

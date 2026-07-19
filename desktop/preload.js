@@ -121,6 +121,11 @@ contextBridge.exposeInMainWorld('api', {
     set: (ns, values) => ipcRenderer.invoke('sec:set', ns, values),
     invalidateChannels: () => ipcRenderer.invoke('sec:invalidateChannels'),
   },
+  cmt: {
+    list: (dir, uid) => ipcRenderer.invoke('cmt:list', dir, uid),
+    draft: (dir, payload) => ipcRenderer.invoke('cmt:draft', dir, payload),
+    reply: (dir, payload) => ipcRenderer.invoke('cmt:reply', dir, payload),
+  },
   pub2: {
     draft: (dir, lane, topic) => ipcRenderer.invoke('pub2:draft', dir, lane, topic),
     status: () => ipcRenderer.invoke('pub2:status'),

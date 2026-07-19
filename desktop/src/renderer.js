@@ -1606,9 +1606,11 @@ function openInspector(p) {
     <div class="insp-actions">
       <button id="insp-publish" class="accent">발행 검토</button>
       <button id="insp-render">🎨 비주얼 생성</button>
+      <button id="insp-comments-btn">💬 댓글</button>
       <button id="insp-chat">디렉터에게 지시</button>
       <button id="insp-folder">레인 폴더 열기</button>
     </div>
+    <div id="insp-comments" class="hidden" style="display:flex;flex-direction:column;gap:8px"></div>
     <div id="insp-render-panel" class="hidden"></div>`;
   $('#insp-back').onclick = () => switchDock('chat');
   $('#insp-publish').onclick = () => {
@@ -1618,6 +1620,7 @@ function openInspector(p) {
     setTimeout(() => openCompose(p.channel, p, direct), 0);
   };
   $('#insp-render').onclick = () => openRenderPanel(p);
+  $('#insp-comments-btn').onclick = () => openCommentsPanel(p);
   $('#insp-chat').onclick = () => { S.chips.push({ label: cardId(p), context: `[카드 ${cardId(p)} · ${p.topic} · 현재 단계 ${STAGE_LABEL[p.stage]}]` }); renderChips(); switchDock('chat'); $('#chat-input').focus(); };
   $('#insp-folder').onclick = () => window.api.ws.openFolder(S.client.dir + '/outputs/' + p.lane);
   for (const a of $$('.insp-file', box)) a.onclick = async (e) => {
@@ -1625,6 +1628,86 @@ function openInspector(p) {
     const r = await window.api.ws.readFile(S.client.dir, a.dataset.rel);
     if (r && r.ok && r.kind === 'text') r.text = r.text.slice(0, 6000);
     $('#insp-preview').innerHTML = `<div class="insp-prev-box">${previewHTML(r, a.dataset.rel)}</div>`;
+  };
+}
+
+// ---- 댓글 패널 (인스펙터 내부) — 확인 → 맥락 답글 초안 → 검토 → 게시/복사 ------------------
+async function openCommentsPanel(p) {
+  const box = $('#insp-comments');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.innerHTML = '<p class="muted small">댓글 확인 중…</p>';
+  const dir = S.client.dir;
+  const r = await window.api.cmt.list(dir, p.uid);
+  if (!r || (r.ok === false)) { box.innerHTML = `<p class="muted small">댓글 조회 실패: ${esc((r && r.error) || '알 수 없음')}</p>`; return; }
+
+  const draftBlock = (idx) => `
+    <div class="hidden" data-cdraft="${idx}" style="display:flex;flex-direction:column;gap:6px;margin:4px 0 8px">
+      <textarea class="rp-input" rows="3" data-ctext="${idx}"></textarea>
+      <div style="display:flex;gap:6px">
+        <button class="small accent" data-cpost="${idx}">답글 게시</button>
+        <button class="small" data-ccopy="${idx}">복사</button>
+        <span class="muted small" data-cflag="${idx}"></span>
+      </div>
+    </div>`;
+  const apiChannel = r.channel && !r.manual;
+  const rows = (r.comments || []).map((c, i) => `
+    <div style="border-top:1px solid var(--line);padding-top:6px">
+      <div class="small"><b>${esc(c.author)}</b> <span class="muted">${esc(String(c.at).slice(0, 16).replace('T', ' '))}</span></div>
+      <div class="small" style="margin:2px 0">${esc(c.text)}</div>
+      <button class="small" data-cdo="${i}" data-cid="${esc(c.id)}" data-cauthor="${esc(c.author)}">맥락 답글 초안</button>
+      ${draftBlock(i)}
+    </div>`).join('');
+
+  box.innerHTML = `
+    <div class="rp-head"><b>💬 댓글 — ${cardId(p)}</b></div>
+    ${apiChannel
+    ? (rows || '<p class="muted small">아직 댓글이 없습니다.</p>')
+    : '<p class="muted small">이 채널은 댓글 API가 없어 수동 확인입니다 — 받은 댓글을 아래에 붙여넣으면 맥락 답글 초안을 만들어 드립니다.</p>'}
+    <div style="border-top:1px solid var(--line);padding-top:6px">
+      <div class="small muted" style="margin-bottom:4px">댓글 직접 붙여넣기 (수동 채널·기타)</div>
+      <textarea class="rp-input" rows="2" id="cmt-paste" placeholder="받은 댓글을 붙여넣으세요"></textarea>
+      <button class="small" id="cmt-paste-go" style="margin-top:4px">맥락 답글 초안</button>
+      ${draftBlock('p')}
+    </div>`;
+
+  const makeDraft = async (idx, commentText, author, commentId) => {
+    const btnList = $$(`[data-cdo="${idx}"], #cmt-paste-go`, box);
+    btnList.forEach((b) => { b.disabled = true; });
+    toast('답글 초안 생성 중…');
+    const d = await window.api.cmt.draft(dir, { channel: r.channel || p.channel, topic: p.topic, lane: p.lane, author, comment: commentText });
+    btnList.forEach((b) => { b.disabled = false; });
+    const wrap = $(`[data-cdraft="${idx}"]`, box);
+    if (!d || !d.ok) { toast('초안 실패: ' + ((d && d.error) || '알 수 없음')); return; }
+    wrap.classList.remove('hidden');
+    $(`[data-ctext="${idx}"]`, box).value = d.reply;
+    $(`[data-cflag="${idx}"]`, box).textContent = d.needsReview ? '⚠ 민감 댓글 — 게시 전 반드시 검토' : '';
+    // 게시 버튼은 API 채널 + 대상 댓글이 있을 때만 — 나머지는 복사로
+    const postBtn = $(`[data-cpost="${idx}"]`, box);
+    if (!apiChannel || !commentId) postBtn.classList.add('hidden');
+    postBtn.onclick = async () => {
+      const txt = $(`[data-ctext="${idx}"]`, box).value.trim();
+      if (!txt) { toast('답글 내용이 비어 있습니다'); return; }
+      if (!confirm('이 답글을 게시할까요?\n\n' + txt.slice(0, 200))) return;
+      postBtn.disabled = true;
+      const pr = await window.api.cmt.reply(dir, { channel: r.channel, commentId, text: txt });
+      postBtn.disabled = false;
+      toast(pr && pr.ok ? '답글 게시됨' : '게시 실패: ' + ((pr && pr.error) || '알 수 없음'));
+      if (pr && pr.ok) openCommentsPanel(p); // 목록 갱신
+    };
+    $(`[data-ccopy="${idx}"]`, box).onclick = async () => {
+      await navigator.clipboard.writeText($(`[data-ctext="${idx}"]`, box).value);
+      toast('답글이 클립보드에 복사됐습니다');
+    };
+  };
+  for (const b of $$('[data-cdo]', box)) b.onclick = () => {
+    const i = Number(b.dataset.cdo);
+    makeDraft(i, (r.comments[i] || {}).text || '', b.dataset.cauthor, b.dataset.cid);
+  };
+  $('#cmt-paste-go').onclick = () => {
+    const t = $('#cmt-paste').value.trim();
+    if (!t) { toast('댓글을 붙여넣으세요'); return; }
+    makeDraft('p', t, null, null);
   };
 }
 
