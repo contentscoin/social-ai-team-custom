@@ -2,7 +2,11 @@
 // Automated stages run `claude -p` headless in the client folder and stream logs;
 // interview-style stages open an interactive terminal running /content-director.
 const { spawn } = require('child_process');
-const { runCmd, envWithPath, isWin } = require('./proc');
+const { runCmd, envWithPath, isWin, killTree } = require('./proc');
+
+// 스테이지 실행 상한 — 행(hang) 걸린 CLI가 워크스페이스 락을 무한 점유하는 유일한 데드락
+// 경로를 막는다. 정상 스테이지(캘린더·카피 팬아웃 포함)는 이 안에 끝난다.
+const STAGE_TIMEOUT_MS = 30 * 60 * 1000;
 const config = require('./config');
 const { makeParser, finalText } = require('./stream');
 
@@ -96,6 +100,7 @@ function runStage(dir, stage, opts = {}, onLine) {
     cwd: dir,
     env,
     stdinText,
+    timeoutMs: STAGE_TIMEOUT_MS,
     onSpawn: (child) => { current = child; },
   }).then((r) => {
     current = null;
@@ -134,10 +139,7 @@ function runStage(dir, stage, opts = {}, onLine) {
 
 function stopCurrent() {
   if (!current) return { ok: true, wasRunning: false };
-  try {
-    if (isWin && current.pid) spawn('taskkill', ['/pid', String(current.pid), '/T', '/F'], { windowsHide: true });
-    else current.kill();
-  } catch { /* already gone */ }
+  killTree(current); // 플랫폼별 트리/그룹 종료는 proc.killTree 한 곳에서
   current = null;
   return { ok: true, wasRunning: true };
 }

@@ -20,7 +20,7 @@ function busyMessage(dir) {
   const h = holder(dir);
   if (!h) return null;
   const mins = Math.round((Date.now() - h.since) / 60000);
-  return `${OWNER_LABEL[h.owner] || h.owner}이(가) 이미 실행 중입니다${mins >= 1 ? ` (${mins}분째)` : ''}. 끝나면 다시 시도하세요.`;
+  return `${OWNER_LABEL[h.owner] || h.owner}이(가) 이미 실행 중입니다${mins >= 1 ? ` (${mins}분째)` : ''}. 끝나면 다시 시도하세요. 멈춘 것 같으면 해당 실행의 중지 버튼으로 해제할 수 있습니다.`;
 }
 
 module.exports = { acquire, release, holder, busyMessage };
