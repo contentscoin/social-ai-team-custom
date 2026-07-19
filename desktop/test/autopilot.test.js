@@ -65,6 +65,31 @@ test('단계 실패 시 failed로 종료하고 이후 단계를 실행하지 않
   assert.deepEqual(ranStages, ['calendar']);
 });
 
+test('예산 초과 — 새 단계를 시작하지 않고 paused로 멈춘다', async () => {
+  const dir = tmpDir();
+  const ranStages = [];
+  const r = await autopilot.run(dir, {
+    buildBoard: () => boardWith({}),
+    runStage: async (_d, stage) => { ranStages.push(stage); return { ok: true }; },
+    checkBudget: () => ({ over: true, monthCost: 12.5, budgetUsd: 10 }),
+  });
+  assert.equal(r.state, 'paused');
+  assert.deepEqual(r.budget, { over: true, monthCost: 12.5, budgetUsd: 10 });
+  assert.deepEqual(ranStages, []); // 예산 초과 상태에서는 어떤 단계도 실행되지 않는다
+});
+
+test('예산 이내 — checkBudget이 있어도 정상 진행한다', async () => {
+  const dir = tmpDir();
+  const ranStages = [];
+  const r = await autopilot.run(dir, {
+    buildBoard: () => boardWith({}),
+    runStage: async (_d, stage) => { ranStages.push(stage); return { ok: false } ; },
+    checkBudget: () => ({ over: false, monthCost: 1, budgetUsd: 10 }),
+  });
+  assert.equal(r.state, 'failed'); // 예산이 아니라 단계 실패로 종료
+  assert.deepEqual(ranStages, ['calendar']);
+});
+
 test('stop() — 실행 중 중지하면 stopped로 종료한다', async () => {
   const dir = tmpDir();
   const r = await autopilot.run(dir, {

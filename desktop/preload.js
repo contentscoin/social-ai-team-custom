@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('api', {
     set: (engine) => ipcRenderer.invoke('cfg:setEngine', engine),
     getModels: () => ipcRenderer.invoke('cfg:getModels'),
     setModel: (engine, model) => ipcRenderer.invoke('cfg:setModel', engine, model),
+    getBudget: () => ipcRenderer.invoke('cfg:getBudget'),
+    setBudget: (usd) => ipcRenderer.invoke('cfg:setBudget', usd),
   },
   chat: {
     send: (dir, msg) => ipcRenderer.invoke('chat:send', dir, msg),

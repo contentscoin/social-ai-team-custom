@@ -167,6 +167,22 @@ function notify(title, body) {
   } catch { /* 알림 실패는 치명적이지 않다 */ }
 }
 
+// 월 예산 임계 알림 — 비용이 80%/100% 선을 넘는 순간 1회씩만 울린다
+function budgetNotify(dir, prevCost) {
+  try {
+    const budgetUsd = config.getBudget();
+    if (!budgetUsd) return;
+    const now = history.monthCost(dir);
+    for (const [ratio, label] of [[1, '초과'], [0.8, '80% 도달']]) {
+      const line = budgetUsd * ratio;
+      if (prevCost < line && now >= line) {
+        notify(`월 API 예산 ${label}`, `이번 달 $${now} / 예산 $${budgetUsd} — 렌더·Codex 비용은 미집계라 실제 지출은 더 클 수 있습니다`);
+        break;
+      }
+    }
+  } catch { /* 알림 실패는 치명적이지 않다 */ }
+}
+
 // ---- 렌더러 오류 수집 + 로그 파일 접근 --------------------------------------------
 ipcMain.handle('app:log', (_e, source, line) => { applog.write(source, line); return { ok: true }; });
 ipcMain.handle('app:openLogs', () => { shell.openPath(applog.DIR); return { ok: true }; });
@@ -498,10 +514,12 @@ async function execStage(dir, stage, opts) {
     }
     const r = await pipeline.runStage(dir, stage, opts, (line) => send('log', { source: stage, line, dir }));
     const label = (pipeline.STAGES[stage] || {}).label || stage;
+    const prevCost = history.monthCost(dir);
     history.append({
       dir, kind: 'stage', stage, engine: 'claude', model: config.getModels().claude,
       ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined, startedAt,
     });
+    budgetNotify(dir, prevCost);
     // 30초 넘게 걸린 작업만 OS 알림 — 즉시 끝난 것까지 울리면 소음
     if (Date.now() - startedAt > 30_000) notify(`${label} ${r.ok ? '완료' : '실패'}`, r.ok ? '보드에서 결과를 확인하세요.' : String(r.tail || '').slice(0, 140));
     return { ...r, startedAt };
@@ -553,6 +571,12 @@ ipcMain.handle('auto:run', async (_e, dir) => {
     const r = await autopilot.run(dir, {
       buildBoard: (d) => board.buildBoard(d),
       runStage: (d, s) => execStage(d, s, {}),
+      checkBudget: () => {
+        const budgetUsd = config.getBudget();
+        if (!budgetUsd) return null;
+        const monthCost = history.monthCost(dir);
+        return { over: monthCost >= budgetUsd, monthCost, budgetUsd };
+      },
       onEvent: (ev) => {
         send('auto', ev);
         if (ev.state === 'paused') notify('오토파일럿 대기', ev.message || '승인 도장이 필요합니다.');
@@ -735,6 +759,8 @@ ipcMain.handle('cfg:getEngine', safe(() => config.getEngine()));
 ipcMain.handle('cfg:setEngine', safe((_e, engine) => config.setEngine(engine).engine));
 ipcMain.handle('cfg:getModels', safe(() => config.getModels()));
 ipcMain.handle('cfg:setModel', safe((_e, engine, model) => config.setModel(engine, model)));
+ipcMain.handle('cfg:getBudget', safe(() => config.getBudget()));
+ipcMain.handle('cfg:setBudget', safe((_e, usd) => config.setBudget(usd)));
 ipcMain.handle('chat:send', async (_e, dir, msg) => {
   const lock = locks.acquire(dir, 'chat');
   if (!lock.ok) return { ok: false, text: locks.busyMessage(dir), engine: config.getEngine() };
@@ -747,11 +773,13 @@ ipcMain.handle('chat:send', async (_e, dir, msg) => {
       (ev) => send('chat:stream', { dir, ev }),
     );
     chatlog.append(dir, { role: 'dir', text: r.text, engine: r.engine, ok: r.ok });
+    const prevCost = history.monthCost(dir);
     history.append({
       dir, kind: 'chat', engine: r.engine, model: config.getModels()[r.engine] || '',
       ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
       startedAt, note: String(msg).slice(0, 80),
     });
+    budgetNotify(dir, prevCost);
     return r;
   } catch (e) {
     return { ok: false, text: String(e && e.message || e), engine: config.getEngine() };

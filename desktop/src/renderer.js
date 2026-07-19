@@ -2232,6 +2232,12 @@ async function openSettings(section) {
           <option value="gpt-5-codex"></option>
         </datalist>
         <p class="muted small" style="margin-top:10px">Claude 모델은 파이프라인 단계 실행과 Claude 대화에, Codex 모델은 Codex 대화에 적용됩니다. 목록에 없는 모델명도 직접 입력할 수 있습니다.</p>
+        <div style="margin-top:18px;display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center">
+          <b class="small">월 예산 (USD)</b>
+          <input id="set-budget" type="number" min="0" step="1" placeholder="0 — 예산 없음"
+            style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px">
+        </div>
+        <p class="muted small" style="margin-top:6px">이번 달 Claude CLI 비용이 예산을 넘으면 오토파일럿이 새 단계를 시작하지 않고, 80%·100% 도달 시 알림이 옵니다. 렌더·Codex 비용은 아직 집계되지 않아 실제 지출의 하한선입니다.</p>
       </div>
       <div data-body="update" class="hidden">
         <p>현재 버전 <b>v${esc(v)}</b></p>
@@ -2255,7 +2261,7 @@ async function openSettings(section) {
       </div>
       <div data-body="about" class="hidden">
         <p><b>Social AI Team — 온에어 데스크</b></p>
-        <p class="muted" style="margin-top:6px;line-height:1.7">스킬 17종 + 서브에이전트 4종으로 구성된 소셜 콘텐츠 팀의 컨트롤타워.<br>카드는 드래그로 옮기는 것이 아니라, 팀의 산출물 파일이 생기면 스스로 이동합니다.</p>
+        <p class="muted" style="margin-top:6px;line-height:1.7">스킬 19종 + 서브에이전트 4종으로 구성된 소셜 콘텐츠 팀의 컨트롤타워.<br>카드는 드래그로 옮기는 것이 아니라, 팀의 산출물 파일이 생기면 스스로 이동합니다.</p>
       </div>
     </div>`;
   $('#set-close').onclick = closeOverlay;
@@ -2283,6 +2289,22 @@ async function openSettings(section) {
   };
   bindModel('#set-model-claude', 'claude');
   bindModel('#set-model-codex', 'codex');
+  // 월 예산 — 입력 후 포커스 아웃/Enter 시 저장 (0 또는 빈값 = 해제)
+  {
+    const inp = $('#set-budget');
+    let cur = await window.api.engine.getBudget();
+    if (seq !== settingsSeq) return;
+    inp.value = cur || '';
+    const saveBudget = async () => {
+      const v = Number(inp.value) || 0;
+      if (v === cur) return;
+      cur = await window.api.engine.setBudget(v);
+      inp.value = cur || '';
+      toast(cur ? `월 예산: $${cur}` : '월 예산 해제');
+    };
+    inp.addEventListener('change', saveBudget);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBudget(); });
+  }
   const setUpdStatus = (text) => {
     const el = $('#set-upd-status');
     if (el) el.textContent = text;

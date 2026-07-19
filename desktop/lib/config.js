@@ -3,10 +3,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const DIR = path.join(os.homedir(), '.social-ai-team');
+// SAT_HOME: 테스트 훅 — 실제 홈 디렉터리를 건드리지 않고 저장 경로를 바꾼다
+const DIR = process.env.SAT_HOME || path.join(os.homedir(), '.social-ai-team');
 const FILE = path.join(DIR, 'settings.json');
 
-const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' } }; // engine: 'claude' | 'codex'; model '' = CLI 기본값
+const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0 }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
@@ -41,6 +42,19 @@ function setModel(engine, model) {
   return cfg.models;
 }
 
+// 월 API 예산(USD) — 0이면 비활성. claude CLI 비용만 집계되므로 하한선으로 취급.
+function getBudget() {
+  const v = Number(load().budgetUsd);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+function setBudget(usd) {
+  const cfg = load();
+  const v = Number(usd);
+  cfg.budgetUsd = Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : 0;
+  save(cfg);
+  return cfg.budgetUsd;
+}
+
 // 클라이언트 폴더별 × 엔진별 세션 — 과거 버전은 단일 문자열이었으므로 마이그레이션:
 // 'codex-started' 류는 codex 슬롯으로, 나머지는 claude 세션 id로 취급한다.
 function normSessions(v) {
@@ -66,4 +80,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getModels, setModel, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getModels, setModel, getBudget, setBudget, getSession, setSession, clearSession };

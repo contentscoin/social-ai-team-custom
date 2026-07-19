@@ -51,6 +51,16 @@ async function run(dir, deps) {
           });
         }
       }
+      // 비용 예산 게이트 — 예산 초과 상태에서는 새 단계를 시작하지 않는다 (진행 중 단계는 완주)
+      if (deps.checkBudget) {
+        const b = deps.checkBudget();
+        if (b && b.over) {
+          return finish({
+            state: 'paused', stage, budget: b,
+            message: `이번 달 API 비용 $${b.monthCost}가 예산 $${b.budgetUsd}를 넘었습니다 — 오토파일럿을 중지합니다. 설정에서 예산을 조정하거나 수동으로 진행하세요.`,
+          });
+        }
+      }
       state.stage = stage;
       emit({ state: 'stage', stage });
       const r = await deps.runStage(dir, stage);
