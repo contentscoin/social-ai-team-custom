@@ -25,6 +25,7 @@ const visualAssets = require('./lib/visual-assets');
 const orchestrator = require('./lib/orchestrator');
 const schema = require('./lib/schema');
 const backup = require('./lib/backup');
+const runreport = require('./lib/runreport');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -505,7 +506,21 @@ function envHint() {
 // 잠금은 호출자 책임: 수동은 'stage', 오토파일럿은 런 전체에 'autopilot'을 잡고 들어온다.
 async function execStage(dir, stage, opts) {
   const startedAt = Date.now();
+  const before = runreport.snapshot(dir); // 실행 결과 리포트 — 전후 산출물 비교의 기준점
   send('stage', { state: 'start', stage, startedAt, dir });
+  // 모든 종료 경로 공통: 생성·수정 파일과 (컴플라이언스면) 판정 요약을 결과에 첨부하고
+  // 렌더러에 'stage:result'로 푸시 — 실행이 끝나면 "무엇이 바뀌었나"가 항상 보이게.
+  const finish = (r) => {
+    const changes = runreport.diff(before, runreport.snapshot(dir));
+    const compliance = stage === 'compliance' ? runreport.complianceSummary(dir) : null;
+    send('stage:result', {
+      dir, stage, ok: !!r.ok, ms: Date.now() - startedAt,
+      costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
+      changes, compliance, error: r.ok ? null : String(r.tail || '').slice(-200),
+    });
+    return { ...r, changes, compliance };
+  };
+  const changeNote = (changes) => `+${changes.created.length}/~${changes.modified.length} 파일`;
   try {
     // visuals-generate 는 앱 렌더 엔진으로 라우팅 — 파이프라인 에이전트는 앱 설정의 키를
     // 못 보기 때문. 앱 엔진은 설정 키를 쓰고 포스트당 여러 장(캐러셀)을 만든다.
@@ -514,26 +529,32 @@ async function execStage(dir, stage, opts) {
       const r = await autovisual.renderAll(dir, {
         ...envHint(), count: (opts && opts.count) || 0, stopped: () => isRenderStopped(dir),
       }, (line) => send('log', { source: stage, line, dir }));
+      const fin = finish({ ...r, tail: r.resultText || r.note, startedAt });
       history.append({
         dir, kind: 'stage', stage, engine: r.provider || 'render', model: '',
-        ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: r.resultText || r.note,
+        ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: `${changeNote(fin.changes)} — ${r.resultText || r.note || ''}`.slice(0, 120),
       });
-      if (Date.now() - startedAt > 30_000) notify(`비주얼 생성 ${r.ok ? '완료' : '실패'}`, r.resultText || r.note || '');
-      return { ...r, tail: r.resultText || r.note, startedAt };
+      if (Date.now() - startedAt > 30_000) notify(`비주얼 생성 ${r.ok ? '완료' : '실패'}`, `${changeNote(fin.changes)} — ${r.resultText || r.note || ''}`.slice(0, 140));
+      return fin;
     }
     const r = await pipeline.runStage(dir, stage, opts, (line) => send('log', { source: stage, line, dir }));
     const label = (pipeline.STAGES[stage] || {}).label || stage;
+    const fin = finish({ ...r, startedAt });
+    const compNote = fin.compliance ? ` · PASS ${fin.compliance.pass}/WARN ${fin.compliance.warn}/BLOCK ${fin.compliance.block}` : '';
     const prevCost = history.monthCost(dir);
     history.append({
       dir, kind: 'stage', stage, engine: 'claude', model: config.getModels().claude,
       ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined, startedAt,
+      note: (changeNote(fin.changes) + compNote).slice(0, 120),
     });
     budgetNotify(dir, prevCost);
     // 30초 넘게 걸린 작업만 OS 알림 — 즉시 끝난 것까지 울리면 소음
-    if (Date.now() - startedAt > 30_000) notify(`${label} ${r.ok ? '완료' : '실패'}`, r.ok ? '보드에서 결과를 확인하세요.' : String(r.tail || '').slice(0, 140));
-    return { ...r, startedAt };
+    if (Date.now() - startedAt > 30_000) {
+      notify(`${label} ${r.ok ? '완료' : '실패'}`, r.ok ? `${changeNote(fin.changes)}${compNote} — 보드에서 확인하세요.` : String(r.tail || '').slice(0, 140));
+    }
+    return fin;
   } catch (e) {
-    return { ok: false, code: -1, out: String(e && e.message || e), tail: String(e && e.message || e), startedAt };
+    return finish({ ok: false, code: -1, out: String(e && e.message || e), tail: String(e && e.message || e), startedAt });
   } finally {
     send('stage', { state: 'end', stage, startedAt, dir });
     setTimeout(pushBoard, 300); // stages write files — refresh the board promptly
