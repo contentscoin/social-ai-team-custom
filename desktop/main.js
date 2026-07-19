@@ -26,6 +26,7 @@ const orchestrator = require('./lib/orchestrator');
 const schema = require('./lib/schema');
 const backup = require('./lib/backup');
 const runreport = require('./lib/runreport');
+const variants = require('./lib/variants');
 
 // 중복 실행 방지 — 두 인스턴스가 settings/gates/clients.json을 서로 밟는다
 if (!app.requestSingleInstanceLock()) {
@@ -632,6 +633,56 @@ ipcMain.handle('hist:list', safe((_e, dir) => history.forDir(dir)));
 
 // ---- 인앱 렌더 엔진 (이미지/영상 실물 생성) ----------------------------------------
 const renderInFlight = new Set();
+// ---- 시안(variant) 생성·선택 — 여러 안을 만들고 잘 나온 것을 골라 확정하는 워크플로우 ----
+// 시안마다 구도 지시를 달리해 서로 다른 안이 나오게 한다 (같은 피사체·팔레트·조명 유지)
+const VARIANT_LOOKS = [
+  'hero composition - subject centered with generous negative space',
+  'dynamic diagonal composition, closer crop, stronger depth of field',
+  'editorial mood - top-down or unexpected camera angle',
+  'wide environmental shot placing the subject in context',
+];
+const variantDirective = (k, K) =>
+  `\n\n(Proposal ${k} of ${K}: same subject, brand palette and lighting as the brief, but a distinctly different composition — ${VARIANT_LOOKS[(k - 1) % VARIANT_LOOKS.length]}. No text or logos in the image.)`;
+
+ipcMain.handle('render:variants', async (_e, dir, job) => {
+  const uid = path.basename(String((job && job.base) || ''));
+  if (!uid) return { ok: false, error: '카드 ID가 없습니다' };
+  const key = `${dir}::variants::${uid}`;
+  if (renderInFlight.has(key)) return { ok: false, error: '이 카드의 시안 생성이 이미 진행 중입니다' };
+  renderInFlight.add(key);
+  const startedAt = Date.now();
+  const K = Math.min(4, Math.max(2, Number(job.variants) || 3));
+  try {
+    variants.clear(dir, uid); // 새 시안 라운드 — 이전 라운드는 정리
+    variants.ensure(dir, uid);
+    const files = [];
+    let firstErr = null;
+    for (let k = 1; k <= K; k++) {
+      send('log', { source: 'render', line: `[시안] ${k}/${K}안 생성 중…`, dir });
+      const r = await render.generate(dir, {
+        kind: 'image', env: envHint(), provider: job.provider, size: job.size,
+        negative: job.negative || null, count: 1,
+        base: `variants/${uid}/v${k}`,
+        prompt: String(job.prompt || '') + variantDirective(k, K),
+      });
+      if (r && r.ok) files.push(r.rel);
+      else { firstErr = firstErr || (r && r.error); send('log', { source: 'render', line: `[시안] ${k}안 실패: ${(r && r.error) || '?'}`, dir }); }
+    }
+    history.append({
+      dir, kind: 'stage', stage: 'render-variants', engine: job.provider, model: '',
+      ok: files.length > 0, ms: Date.now() - startedAt, startedAt, note: `${files.length}/${K} 시안 — ${uid}`,
+    });
+    if (!files.length) return { ok: false, error: firstErr || '시안을 만들지 못했습니다' };
+    return { ok: true, files, requested: K };
+  } finally { renderInFlight.delete(key); }
+});
+ipcMain.handle('render:listVariants', safe((_e, dir, uid) => variants.list(dir, uid)));
+ipcMain.handle('render:pickVariant', safe((_e, dir, uid, name, slot) => {
+  const r = variants.pick(dir, uid, name, slot || 1);
+  if (r.ok) setTimeout(pushBoard, 300); // 승격된 파일이 카드 썸네일로 바로 반영되게
+  return r;
+}));
+
 ipcMain.handle('render:providers', safe((_e, envHint) => render.availability(envHint || {})));
 ipcMain.handle('render:generate', async (_e, dir, job) => {
   const key = `${dir}::${job && job.base}`;

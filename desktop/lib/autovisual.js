@@ -9,9 +9,11 @@ const render = require('./render');
 // 포맷 문자열로 캐러셀 여부·기본 장수 추정 — 대부분의 SNS는 여러 장을 쓴다
 function inferCount(post, fallback) {
   const f = String(post.format || '').toLowerCase() + ' ' + String(post.headerRaw || '');
-  if (/carousel|캐러셀|여러\s*장|다중|슬라이드|slide|묶음|album/i.test(f)) return 5;
+  if (/carousel|캐러셀|슬라이드|slide|album/i.test(f)) return 5;
+  if (/multi|여러\s*장|다중|묶음/i.test(f)) return 4;
   if (/single|단일|1\s*장|피드|feed/i.test(f)) return 1;
-  return fallback || 1;
+  // 기본값은 멀티이미지 — 1장 1텍스트가 아니라 여러 장 배치가 콘텐츠 기획의 기본
+  return fallback || 3;
 }
 // 세로 4:5가 인스타 피드 점유에 유리 — 스토리/릴스형은 9:16
 function inferSize(post) {
@@ -30,7 +32,7 @@ async function renderAll(dir, opts, onLine) {
   // 완료로 치면 2/5 상태 카드가 영영 안 채워진다. 부분 완성 카드는 대상에 포함해 top-up.
   const onlyMissing = opts.onlyMissing !== false;
   const renderCount = (p) => (p.files || []).filter((f) => f.kind === 'render').length;
-  const wantCount = (p) => Number(opts.count) > 0 ? Number(opts.count) : inferCount(p, 1);
+  const wantCount = (p) => Number(opts.count) > 0 ? Number(opts.count) : inferCount(p, 3);
   const targets = (b.posts || []).filter((p) =>
     !p.isReel &&
     ['copy', 'visual', 'review', 'ready'].includes(p.stage) &&

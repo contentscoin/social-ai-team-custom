@@ -1656,8 +1656,11 @@ async function openRenderPanel(p) {
         <option value="story">세로 9:16 (릴스/스토리)</option>
         <option value="landscape">가로 16:9</option>
       </select>
-      <select id="rp-imgcount" class="rp-input" style="width:96px" title="생성할 이미지 장수 (캐러셀)">
-        <option value="1">1장</option><option value="2">2장</option><option value="3">3장</option><option value="4">4장</option><option value="5">5장</option>
+      <select id="rp-imgcount" class="rp-input" style="width:96px" title="생성할 이미지 장수 — 여러 장 배치가 기본입니다">
+        <option value="1">1장</option><option value="2">2장</option><option value="3" selected>3장</option><option value="4">4장</option><option value="5">5장</option>
+      </select>
+      <select id="rp-variants" class="rp-input" style="width:100px" title="대표컷 시안 수 — 시안 중 하나를 고르면 1번으로 확정하고 나머지 장수를 이어 생성합니다">
+        <option value="3" selected>시안 3안</option><option value="2">시안 2안</option><option value="0">바로 생성</option>
       </select>
       <select id="rp-cards" class="rp-input hidden" style="width:90px" title="카드 수 (표지+본문+엔딩)">
         <option value="5">5장</option><option value="6">6장</option><option value="7">7장</option><option value="8">8장</option>
@@ -1675,6 +1678,10 @@ async function openRenderPanel(p) {
     <textarea id="rp-negative" class="rp-input hidden" rows="2" placeholder="네거티브 프롬프트 (지원 모델만)"></textarea>
     <div class="small muted" id="rp-ref">${p.thumb ? `키프레임: ${esc(p.thumb.split(/[\\/]/).pop())} 사용` : '키프레임 없음 — 영상 레인은 먼저 이미지를 생성하면 그걸 참조합니다'}</div>
     <button id="rp-go" class="accent" style="width:100%">▶ 생성</button>
+    <div id="rp-varea" class="hidden" style="margin-top:8px">
+      <p class="small muted" style="margin:4px 0">시안을 선택하면 대표컷(1번)으로 확정하고, 설정한 장수만큼 나머지를 이어서 생성합니다.</p>
+      <div id="rp-vlist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+    </div>
     <p class="muted small" style="margin-top:4px">컴파일러는 브랜드 팔레트·카피의 VISUAL DIRECTION·프롬프트 팩을 재료로 씁니다. 결과는 수정 가능합니다.</p>`;
   const syncKind = (kind) => {
     if (kind === 'cardnews') {
@@ -1691,6 +1698,7 @@ async function openRenderPanel(p) {
     }
     $('#rp-cards').classList.toggle('hidden', kind !== 'cardnews');
     $('#rp-imgcount').classList.toggle('hidden', kind !== 'image'); // 캐러셀 장수는 이미지 탭만
+    $('#rp-variants').classList.toggle('hidden', kind !== 'image'); // 시안 선택도 이미지 탭 전용
     $('#rp-dur').classList.toggle('hidden', kind !== 'video');
     if (kind === 'video' && p.isReel) $('#rp-size').value = 'story';
   };
@@ -1732,6 +1740,38 @@ async function openRenderPanel(p) {
     return compiled;
   };
   $('#rp-compile').onclick = doCompile;
+  // 시안 갤러리 — variants/ 폴더의 후보들을 보여주고, 선택하면 대표컷 확정 + 나머지 top-up
+  const rpUid = `${p.chId || 'etc'}-${p.n}`;
+  async function showVariants() {
+    const items = await window.api.render.listVariants(S.client.dir, rpUid);
+    const area = $('#rp-varea'), list = $('#rp-vlist');
+    if (!area || !list) return;
+    if (!items.length) { area.classList.add('hidden'); return; }
+    area.classList.remove('hidden');
+    list.innerHTML = items.map((v) => `
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <img src="${esc(satUrl(v.rel))}" style="width:100%;border-radius:8px;border:1px solid var(--line)" alt="${esc(v.name)}">
+        <button class="small" data-vpick="${esc(v.name)}">이 안 사용</button>
+      </div>`).join('');
+    for (const b of $$('[data-vpick]', list)) b.onclick = async () => {
+      const dir = S.client.dir;
+      $$('[data-vpick]', list).forEach((x) => { x.disabled = true; });
+      const count = Number($('#rp-imgcount').value) || 3;
+      const r = await window.api.render.pickVariant(dir, rpUid, b.dataset.vpick);
+      if (!r || !r.ok) { toast('선택 실패: ' + ((r && r.error) || '알 수 없음')); $$('[data-vpick]', list).forEach((x) => { x.disabled = false; }); return; }
+      toast(count > 1 ? `시안 확정 — 나머지 ${count - 1}장 생성 중…` : '시안 확정 완료');
+      if (count > 1) {
+        const g = await window.api.render.generate(dir, {
+          kind: 'image', provider: $('#rp-provider').value, prompt: $('#rp-prompt').value.trim(),
+          negative: $('#rp-negative').value.trim() || null, base: rpUid, size: $('#rp-size').value, count,
+        });
+        toast(g && g.ok ? `${(g.files || []).length}장 세트 완성` : '나머지 생성 실패: ' + ((g && g.error) || '알 수 없음'));
+      }
+      $('#rp-varea').classList.add('hidden');
+      if (S.client && S.client.dir === dir) refreshBoard(false);
+    };
+  }
+  showVariants(); // 이전 라운드의 시안이 남아 있으면 패널을 열 때 바로 보여준다
   $('#rp-go').onclick = async () => {
     const kind = $('#rp-kind button.active').dataset.k;
     const provider = $('#rp-provider').value;
@@ -1747,6 +1787,17 @@ async function openRenderPanel(p) {
     go.disabled = true; go.textContent = '생성 중… (로그 탭에서 진행 확인)';
     const dir = S.client.dir;
     try {
+      // 시안 모드(기본) — 대표컷 후보 K안을 먼저 만들고, 선택 후 나머지 장수를 잇는다
+      const wantVariants = kind === 'image' && Number($('#rp-variants').value) > 0;
+      if (wantVariants) {
+        const r = await window.api.render.variants(dir, {
+          provider, prompt, negative: $('#rp-negative').value.trim() || null,
+          base: rpUid, size: $('#rp-size').value, variants: Number($('#rp-variants').value),
+        });
+        if (r && r.ok) { toast(`시안 ${r.files.length}안 생성 — 아래에서 골라주세요`); await showVariants(); }
+        else toast('시안 생성 실패: ' + ((r && r.error) || '알 수 없음'));
+        return;
+      }
       const r = await window.api.render.generate(dir, {
         kind: kind === 'cardnews' ? 'image' : kind,
         provider, prompt,
