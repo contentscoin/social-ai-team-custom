@@ -338,8 +338,11 @@ function renderChannels() {
       badge.onclick = (e) => { e.stopPropagation(); openPublishPanel(ch.key); };
       pressable(badge);
     } else if (direct.connected) {
-      badge.textContent = 'API 연결됨'; badge.style.color = 'var(--ok)'; badge.style.cursor = 'pointer';
-      badge.title = '발행 패널 열기';
+      const tl = direct.tokenLevel;
+      badge.textContent = tl === 'expired' ? '토큰 만료 의심' : tl === 'warn' ? '토큰 갱신 임박' : 'API 연결됨';
+      badge.style.color = tl === 'expired' || tl === 'warn' ? 'var(--warn)' : 'var(--ok)';
+      badge.style.cursor = 'pointer';
+      badge.title = direct.tokenNote || '발행 패널 열기';
       badge.onclick = (e) => { e.stopPropagation(); openPublishPanel(ch.key); };
       pressable(badge);
     } else if (S.blotato) {
@@ -1986,6 +1989,7 @@ function openPublishPanel(chKey) {
       ? '<b>검토</b>에서 생성된 글·이미지를 확인한 뒤 바로 게시하거나 예약합니다.'
       : `<b>검토</b>에서 글·이미지를 확인 → 본문 복사·이미지 폴더 열기 → 플랫폼에 붙여넣기 → 발행 후 체크.`}</p>
     <div class="pub-howto muted small">${esc(publishHowTo(chKey))}${direct.note ? ` · ${esc(direct.note)}` : ''}</div>
+    ${direct.tokenNote ? `<div class="pub-howto small" style="color:var(--warn)">⚠ ${esc(direct.tokenNote)}</div>` : ''}
     ${posts.length ? '' : '<p class="muted">이 채널의 포스트가 없습니다</p>'}
     ${posts.map((p) => {
       const renders = postRenderRels(p);
