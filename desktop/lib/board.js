@@ -69,6 +69,10 @@ function readLane(dir, lane) {
 function norm(s) {
   return String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 }
+// 레지스트리 값(chId/mono)을 정규식에 삽입할 때 이스케이프 — etc 채널의 mono '?'가 크래시하지 않게
+function escRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 // does haystack contain a meaningful chunk of the topic?
 function topicIn(haystackNorm, topic) {
   const t = norm(topic);
@@ -278,11 +282,11 @@ function buildBoard(dir) {
     const mono = (channelRegistry.REGISTRY[chKey] && channelRegistry.REGISTRY[chKey].mono) || '';
     const n = post.n;
     const renderRes = [
-      new RegExp(`^${chId}-0*${n}(?![0-9])`, 'i'),
-      mono ? new RegExp(`^${mono}-0*${n}(?![0-9])`, 'i') : null,
-      new RegExp(`^${chKey}[_-]?0*${n}(?![0-9])`, 'i'),
+      new RegExp(`^${escRe(chId)}-0*${n}(?![0-9])`, 'i'),
+      mono ? new RegExp(`^${escRe(mono)}-0*${n}(?![0-9])`, 'i') : null,
+      new RegExp(`^${escRe(chKey)}[_-]?0*${n}(?![0-9])`, 'i'),
       // uid 형태: instagram-1 / ig_1
-      new RegExp(`^${chKey}-${n}(?![0-9])`, 'i'),
+      new RegExp(`^${escRe(chKey)}-${n}(?![0-9])`, 'i'),
     ].filter(Boolean);
     const isImageName = (name) => /\.(png|jpe?g|webp|gif)$/i.test(name || '');
     const matchRenderName = (name) => renderRes.some((re) => re.test(name));
