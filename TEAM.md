@@ -161,7 +161,7 @@ For manual publishing, use the Monthly Handoff Summary from /social-media-manage
 
 | 계약 요소 | 형식 | 쓰는 쪽 → 읽는 쪽 |
 |---|---|---|
-| `VISUAL DIRECTION:` | 캡션 파일 내 필드 | `/caption-writer` → `/social-creative-designer` (비주얼 브리핑 노트) |
+| `VISUAL DIRECTION:` | 캘린더 슬롯·캡션 파일·네이버 `IMAGE SLOT`·릴스 대본의 비주얼 핸드오프 필드. **표준 표기는 대문자** — 파서·검증은 대소문자를 무시하지만 라이터는 대문자로 쓴다 | `/content-calendar`·라이터들 → `/social-creative-designer`·비디오 레인 (비주얼 브리핑 노트) |
 | `BLOTATO FLAG:` | `BLOTATO FLAG: Yes — [type]` 또는 `BLOTATO FLAG: No` | `/linkedin-writer`, `/threads-writer`, `/x-writer` → `/publisher` (인포그래픽 필요 여부) |
 | `PASS` / `WARN` / `BLOCK` | 포스트별 판정값 | `/kr-guardrail-check` → `/content-director` (BLOCK=재작업, WARN=인간 사인오프, PASS=발행 가능) |
 | `Char count: [n]/280`, `[n]/500` | 글자 수 필드 | 플랫폼 라이터 (X는 CJK 2배 가중 → 실효 140자) |

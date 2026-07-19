@@ -88,7 +88,7 @@ Variants: [n]
 Product photo: [file path, or "n/a"]
 Style reference: [file path, or "n/a"]
 
-Visual direction:
+VISUAL DIRECTION:
 - [Scene, setting, mood, props]
 - [Composition and framing]
 - [Lighting approach]
@@ -337,7 +337,7 @@ A clean brief summarising the creative:
 **Look name:** [name]
 **Stylist:** [attribution]
 
-## Visual Direction
+## VISUAL DIRECTION
 [2-3 sentences describing the creative approach]
 
 ## Variants Produced

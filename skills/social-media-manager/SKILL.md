@@ -104,7 +104,7 @@ Steps:
 2. Pause — present the calendar summary. Ask: "Does this calendar look right before we write captions?"
 3. On approval, run `/caption-writer` → produces `outputs/captions/[client]-captions-[month]-[year].md`
 4. Pause — present the caption summary table. Ask: "Any captions you want adjusted before we move to visuals?"
-5. On approval, identify which posts need visual assets (posts with a Visual Direction field)
+5. On approval, identify which posts need visual assets (posts with a `VISUAL DIRECTION` field)
 6. Run `/social-creative-designer` for each post that needs a visual — sequentially, one post at a time
 7. After all visuals complete, produce the monthly handoff summary (Phase 5)
 
@@ -193,7 +193,7 @@ At each handoff, verify the output file from the completed skill before proceedi
 |---|---|---|
 | `/brand-onboarding` | `context/brand-style.md` exists and contains content pillars | `/content-calendar` |
 | `/content-calendar` | `context/content-calendar.md` exists with full post entries | `/caption-writer`, platform specialists |
-| `/caption-writer` | `outputs/captions/` file exists with all posts and Visual Direction fields | `/social-creative-designer` |
+| `/caption-writer` | `outputs/captions/` file exists with all posts and `VISUAL DIRECTION` fields | `/social-creative-designer` |
 | `/social-creative-designer` | `outputs/creatives/` contains the expected image files | Monthly handoff |
 | `/linkedin-writer` | `outputs/linkedin/` file exists with all posts and BLOTATO FLAG fields | `/publisher` |
 | `/threads-writer` | `outputs/threads/` file exists with all posts and BLOTATO FLAG fields | `/publisher` |
@@ -209,13 +209,13 @@ If an output file is missing or incomplete, resolve it before moving to the next
 
 `/social-creative-designer` is run per-post, not for the whole batch at once. After captions are approved:
 
-1. List all posts that have a Visual Direction field in the caption file
+1. List all posts that have a `VISUAL DIRECTION` field in the caption file
 2. Confirm with the operator: which posts need AI-generated visuals vs client photos (Brand mode)?
 3. Run `/social-creative-designer` for each post — one at a time, in calendar order
 4. After each image is approved, move to the next post
 5. Track which posts have completed visuals and which are still pending
 
-**Not all posts need a visual from this workflow.** Some clients produce their own photos. The Visual Direction field is still written in the caption file for those posts — it's a briefing note for the client, not a trigger to generate an image.
+**Not all posts need a visual from this workflow.** Some clients produce their own photos. The `VISUAL DIRECTION` field is still written in the caption file for those posts — it's a briefing note for the client, not a trigger to generate an image.
 
 ---
 

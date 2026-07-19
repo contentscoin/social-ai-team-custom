@@ -180,7 +180,7 @@ Objective: [awareness / engagement / enquiries / sales]
 
 Topic: [specific topic — not vague. "3 things clients wish they knew before their first appointment" not "educational post"]
 Angle: [the specific hook direction or POV — what makes this take interesting or scroll-stopping]
-Visual direction: [1 sentence on what the image/video should show — handoff for /social-creative-designer]
+VISUAL DIRECTION: [1 sentence on what the image/video should show — handoff for /social-creative-designer]
 Notes: [any special instructions, timing, or campaign context]
 ```
 
@@ -253,6 +253,6 @@ Regenerate the output file after any changes are accepted.
 
 - `/brand-onboarding` — Run first to create brand-style.md including content pillars
 - `/caption-writer` — Reads context/content-calendar.md and writes captions for each post
-- `/social-creative-designer` — Creates visual assets using the Visual Direction field from each post
+- `/social-creative-designer` — Creates visual assets using the `VISUAL DIRECTION` field from each post
 - `/social-content` — General social media strategy and platform advice
 - `/social-strategy` — (Planned) Platform strategy and pillar definition — will feed into this skill when built

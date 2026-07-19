@@ -37,7 +37,7 @@ description: Ad storyboard planner. Turns an ad brief or a campaign slot from co
 
 존재하면 읽기:
 - `context/brand-style.md` — 브랜드 보이스, 비주얼 바이브, do/don't (브랜드 톤과 must-avoid 제약의 1차 출처)
-- `context/content-calendar.md` — 이 스토리보드가 캘린더의 캠페인/광고 슬롯에서 왔다면 해당 POST 엔트리의 Topic / Angle / Visual direction / Notes를 브리프로 사용
+- `context/content-calendar.md` — 이 스토리보드가 캘린더의 캠페인/광고 슬롯에서 왔다면 해당 POST 엔트리의 Topic / Angle / VISUAL DIRECTION / Notes를 브리프로 사용
 - `context/kr-voice-profile.md` — 한국어 보이스/톤 프로파일 (CTA 문구와 대사 방향에 반영)
 - `.claude/product-marketing-context.md` — 제품, 오디언스, 포지셔닝
 - `references/pattern-matrix.md` — 패턴 매트릭스 (2,052개 정규화 레퍼런스 코퍼스 기반)
@@ -293,7 +293,7 @@ python3 ~/.claude/skills/ad-storyboard/scripts/storyboard_json_wrapper.py valida
 ## Related Skills
 
 ```
-/content-calendar ──(campaign/ad slot: Topic·Angle·Visual direction·Notes)──▶ /ad-storyboard
+/content-calendar ──(campaign/ad slot: Topic·Angle·VISUAL DIRECTION·Notes)──▶ /ad-storyboard
 /content-director ──(Route G: video-producer 에이전트로 디스패치)──────────▶ /ad-storyboard
                                                                                 │
                                               outputs/storyboards/[client]-storyboard-[slug]-[month]-[year].md (+.json)

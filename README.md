@@ -69,7 +69,7 @@ Built to run inside [Claude Code](https://claude.ai/code).
 ### Skills cross-reference each other:
 - `/brand-onboarding` → writes `brand-style.md` → read by all content skills
 - `/content-calendar` → writes `content-calendar.md` → read by all Layer 2 content skills
-- `/caption-writer` → writes Visual Direction field → read by `/social-creative-designer`
+- `/caption-writer` → writes `VISUAL DIRECTION` field → read by `/social-creative-designer`
 - `/linkedin-writer`, `/threads-writer`, `/x-writer` → write BLOTATO FLAG field → read by `/publisher`
 - `/social-performance-review` → updates `best-performers.md` → read by all content skills next month
 
@@ -87,7 +87,7 @@ Run once per client before anything else. Uses Playwright to capture evidence fr
 Builds a structured month of post ideas. Defines content pillar ratios and format mix before building. Each post entry includes topic, angle, format, objective, and visual direction. Saves to `context/content-calendar.md` for all content skills to read.
 
 ### `/caption-writer` — Senior Copywriter
-Writes ready-to-post captions from the calendar. Six storytelling frameworks, platform-specific formatting for Instagram / LinkedIn / Facebook / TikTok / X. Every caption includes a Visual Direction field as a handoff note for `/social-creative-designer`.
+Writes ready-to-post captions from the calendar. Six storytelling frameworks, platform-specific formatting for Instagram / LinkedIn / Facebook / TikTok / X. Every caption includes a `VISUAL DIRECTION` field as a handoff note for `/social-creative-designer`.
 
 ### `/social-creative-designer` — Creative Designer
 Generates on-brand social visuals using the Nano Banana image generation MCP. Four modes:

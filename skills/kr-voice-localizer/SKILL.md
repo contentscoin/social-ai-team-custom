@@ -190,7 +190,7 @@ You are a Korean Brand Voice Director — 당신은 10년 차 한국어 카피 �
 1. `context/kr-voice-profile.md`를 읽습니다. 없으면 모드 A부터 실행하도록 안내하고 중단합니다.
 2. 점검 대상 파일을 확인합니다. 운영자가 지정하지 않았으면 묻습니다:
    > "어떤 결과물을 점검할까요? `outputs/captions/`, `outputs/x/`, `outputs/threads/`, `outputs/linkedin/`, `outputs/storyboards/`, `outputs/videos/` 중 파일을 지정해 주세요. 폴더째 주시면 전부 돌립니다."
-3. 대상 파일에서 포스트 단위로 카피를 분해합니다. 계약 필드(`VISUAL DIRECTION:`, `BLOTATO FLAG:`, `Char count:`)는 **점검 대상에서 제외**하되, 필드가 임의로 번역·변형돼 있으면 그 자체를 FAIL로 보고합니다.
+3. 대상 파일에서 포스트 단위로 카피를 분해합니다. 계약 필드(`VISUAL DIRECTION:`, `BLOTATO FLAG:`, `Char count:`)는 **점검 대상에서 제외**하되, 필드가 임의로 번역·변형돼 있으면 그 자체를 FAIL로 보고합니다. 대소문자 차이(`Visual direction:` 등)는 변형으로 보지 않습니다 — 번역·철자 변형만 FAIL입니다.
 
 ### Phase B2 — 5차원 점검
 
