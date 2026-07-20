@@ -7,6 +7,7 @@ const path = require('path');
 const { runCmd } = require('./proc');
 const config = require('./config');
 const engine = require('./engine');
+const imagestyles = require('./imagestyles');
 const { findVisualDirection } = require('./postblock');
 
 // ---- 팩 로딩 ----------------------------------------------------------------------
@@ -307,9 +308,21 @@ function finalizeImagePrompt(prompt, negative) {
   return p.replace(/\s+/g, ' ').trim().slice(0, 3800);
 }
 
-// job: {kind:'image'|'video', provider, topic, channel, format, lane, prompt(운영자 브리프), size, duration, count?}
+// 선택된 스타일 프리셋을 최종 프롬프트 앞부분에 명시(컴파일러가 바꿔도 스타일은 보장).
+// 이미 같은 계열 단어가 있으면 중복하지 않는다.
+function applyStyle(c, styleKey, onLine) {
+  const dir = imagestyles.directiveFor(styleKey);
+  if (!dir || !c || !c.prompt) return c;
+  const head = dir.split(',')[0].trim().toLowerCase();
+  if (String(c.prompt).toLowerCase().includes(head)) return c;
+  onLine && onLine(`[prompt] 스타일 프리셋 적용 · ${imagestyles.labelFor(styleKey)}`);
+  return { ...c, prompt: `${dir}. ${c.prompt}`.replace(/\s+/g, ' ').trim().slice(0, 3800), style: styleKey };
+}
+
+// job: {kind:'image'|'video', provider, topic, channel, format, lane, prompt(운영자 브리프), size, duration, count?, style?}
 async function compile(dir, job, onLine) {
   const brand = brandContext(dir);
+  const styleKey = imagestyles.isValid(job.style) ? job.style : '';
   let vd = null;
   if (job.lane && job.topic) {
     try { vd = findVisualDirection(dir, job.lane, job.topic); } catch { /* 없음 */ }
@@ -317,15 +330,15 @@ async function compile(dir, job, onLine) {
   }
   // claude-svg 레인은 컴파일 대상이 아니다 — 자체 디자인 브리프를 쓴다 (render.js에서 팩 주입)
   if (job.provider === 'claude-svg') {
-    return { ok: true, prompt: job.prompt, negative: '', via: 'svg-passthrough', vd };
+    return applyStyle({ ok: true, prompt: job.prompt, negative: '', via: 'svg-passthrough', vd }, styleKey, onLine);
   }
   onLine && onLine('[prompt] 프롬프트 컴파일 중… (quality v2)');
   try {
     const c = await claudeCompile(dir, job, brand, vd, onLine);
-    if (c) return { ok: true, ...c, vd };
+    if (c) return applyStyle({ ok: true, ...c, vd }, styleKey, onLine);
   } catch { /* 폴백으로 */ }
   onLine && onLine('[prompt] claude 컴파일 실패 — 템플릿 폴백 사용');
-  return { ok: true, ...templateCompile(job, brand, vd), vd };
+  return applyStyle({ ok: true, ...templateCompile(job, brand, vd), vd }, styleKey, onLine);
 }
 
 module.exports = {

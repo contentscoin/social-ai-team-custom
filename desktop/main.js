@@ -522,6 +522,8 @@ ipcMain.handle('sec:invalidateChannels', () => { channelCache = { at: 0, data: n
 
 // ---- Pipeline stages -------------------------------------------------------
 const autovisual = require('./lib/autovisual');
+const imagestyles = require('./lib/imagestyles');
+const postassets = require('./lib/postassets');
 // 워크스페이스별 비주얼 렌더 중단 플래그 — 프로세스 전역 하나면 다른 dir의 렌더를 함께 죽인다.
 const renderStops = new Map(); // dir → true(중단 요청)
 const stopRender = (dir) => { if (dir) renderStops.set(dir, true); };
@@ -658,7 +660,8 @@ async function execStage(dir, stage, opts) {
     if (stage === 'visuals-generate') {
       armRender(dir);
       const r = await autovisual.renderAll(dir, {
-        ...envHint(), count: (opts && opts.count) || 0, stopped: () => isRenderStopped(dir),
+        ...envHint(), count: (opts && opts.count) || 0, style: (opts && opts.style) || config.getImageStyle(),
+        stopped: () => isRenderStopped(dir),
       }, (line) => send('log', { source: stage, line, dir }));
       // 슬라이드 이미지가 준비됐으니 slide-video 매니페스트를 mp4로 자동 인코딩(ffmpeg 있으면).
       // 최종 mp4가 생기면 릴 카드가 visual 단계로 전진한다 — 발행은 여전히 사람 승인.
@@ -733,7 +736,8 @@ ipcMain.handle('render:batch', async (_e, dir, opts) => {
   const startedAt = Date.now();
   send('stage', { state: 'start', stage: 'visuals-generate', startedAt, dir });
   try {
-    const r = await autovisual.renderAll(dir, { ...envHint(), ...(opts || {}), stopped: () => isRenderStopped(dir) }, (line) => send('log', { source: 'visuals-generate', line, dir }));
+    const style = (opts && opts.style != null) ? opts.style : config.getImageStyle();
+    const r = await autovisual.renderAll(dir, { ...envHint(), ...(opts || {}), style, stopped: () => isRenderStopped(dir) }, (line) => send('log', { source: 'visuals-generate', line, dir }));
     history.append({ dir, kind: 'stage', stage: 'visuals-generate', engine: r.provider || 'render', model: '', ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: r.resultText || r.note });
     return r;
   } catch (e) {
@@ -1001,6 +1005,16 @@ ipcMain.handle('cfg:getModels', safe(() => config.getModels()));
 ipcMain.handle('cfg:setModel', safe((_e, engine, model) => config.setModel(engine, model)));
 ipcMain.handle('cfg:getBudget', safe(() => config.getBudget()));
 ipcMain.handle('cfg:setBudget', safe((_e, usd) => config.setBudget(usd)));
+// 이미지 생성 스타일 프리셋 — 목록 + 기본값 get/set
+ipcMain.handle('render:styles', safe(() => imagestyles.list()));
+ipcMain.handle('cfg:getImageStyle', safe(() => config.getImageStyle()));
+ipcMain.handle('cfg:setImageStyle', safe((_e, key) => config.setImageStyle(key)));
+// 포스트별 이미지/본문 삭제 → 삭제한 부분을 기획 단계로 되돌린다(보드가 파일 증거로 재추론).
+ipcMain.handle('post:deleteAssets', safe((_e, dir, uid, opts) => {
+  const r = postassets.deleteAssets(dir, uid, opts || {});
+  if (r.ok) setTimeout(pushBoard, 200); // 카드가 planned/copy로 즉시 되돌아가게
+  return r;
+}));
 
 // ---- 워크스페이스 백업·복원 -----------------------------------------------------
 ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));

@@ -23,10 +23,11 @@ function inferSize(post) {
   return 'portrait';
 }
 
-// opts: { provider?, count?(고정 장수 강제), ima2?, stopped?(), onlyMissing?(기본 true) }
+// opts: { provider?, count?(고정 장수 강제), ima2?, stopped?(), onlyMissing?(기본 true), style?(이미지 스타일 프리셋) }
 async function renderAll(dir, opts, onLine) {
   const b = board.buildBoard(dir);
   const provider = opts.provider || render.defaultImageProvider({ ima2: opts.ima2 });
+  const style = opts.style || '';
   // 사진형 이미지가 필요한 포스트: 카피가 생겼고(stage ≥ copy) 릴스가 아닌 것.
   // onlyMissing이면 "필요한 장수만큼 이미 있는" 카드만 건너뛴다 — 썸네일 하나만 보고
   // 완료로 치면 2/5 상태 카드가 영영 안 채워진다. 부분 완성 카드는 대상에 포함해 top-up.
@@ -53,7 +54,7 @@ async function renderAll(dir, opts, onLine) {
     try {
       const c = await promptlab.compile(dir, {
         kind: 'image', provider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
-        prompt: brief, size, count,
+        prompt: brief, size, count, style,
       }, onLine);
       if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
     } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
