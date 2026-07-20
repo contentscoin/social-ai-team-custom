@@ -50,6 +50,16 @@ function computeGates(board, gatesData) {
   const ok = approvedSet(gatesData, board.calendarHash);
   const posts = board.posts || [];
   const at = (s) => posts.filter((p) => ['planned', 'copy', 'visual', 'review', 'ready'].indexOf(p.stage) >= ['planned', 'copy', 'visual', 'review', 'ready'].indexOf(s)).length;
+  // 비주얼 증거 — 브리프(프롬프트 로그·.md)와 "실제 렌더된 이미지"를 엄격히 구분한다.
+  // creatives 레인에 파일이 있다고 이미지가 생성된 게 아니다(브리프만 있어도 prompts-used.md가 생긴다).
+  // 실제 렌더는 카드의 render 파일(board.js가 이미지 파일만 kind:'render'로 첨부)로만 판정한다.
+  const creativeFiles = (board.lanes && board.lanes.creatives) || [];
+  const hasBriefFile = creativeFiles.some((f) => !/\.(png|jpe?g|webp|gif)$/i.test(f.name || ''));
+  const renderCount = (p) => (p.files || []).filter((f) => f.kind === 'render').length;
+  const isTextOnly = (p) => /^\s*(?:text|poll|텍스트|투표)\s*$/i.test(p.format || '');
+  // 이미지가 필요한 정적 포스트 = 릴/텍스트가 아니고 카피 산출물이 있는 것. 릴 영상은 별도 레인.
+  const imgPosts = posts.filter((p) => p.stage !== 'planned' && !p.isReel && !isTextOnly(p));
+  const anyCopy = posts.some((p) => p.stage !== 'planned');
   const evidence = {
     foundation: !!(board.foundation && board.foundation.brand),
     calendar: !!board.hasCalendar,
@@ -60,8 +70,12 @@ function computeGates(board, gatesData) {
     shortform: !posts.some((p) => p.isReel) || posts.filter((p) => p.isReel).every((p) => p.stage !== 'planned'),
     // 사실 검증 리포트가 존재하면 done (판정이 하나라도 기록됨). 교체 루프는 디렉터가 처리.
     verify: !!(board.verify && (board.verify.pass + board.verify.revise) > 0),
-    visuals: at('visual') > 0 || posts.every((p) => !p.visual),
-    'visuals-generate': (board.lanes && board.lanes.creatives || []).length > 0 || at('visual') > 0,
+    // 비주얼 브리프(1차 호출)가 나왔으면 done — 프롬프트 로그/브리프 파일 또는 이미 렌더된 이미지가 근거.
+    visuals: hasBriefFile || at('visual') > 0 || posts.every((p) => !p.visual),
+    // 실제 이미지 생성(2차)이 끝났는가 = 이미지가 필요한 모든 정적 포스트에 렌더 파일이 있다.
+    // 브리프만으로는 절대 done이 되지 않는다 — 오토파일럿이 생성 단계를 건너뛰고 "완료"로
+    // 보고하던 버그의 핵심 원인. autovisual.renderAll의 대상 판정(renderCount)과 동일 신호를 쓴다.
+    'visuals-generate': anyCopy && (imgPosts.length === 0 || imgPosts.every((p) => renderCount(p) > 0)),
     compliance: !!(board.compliance && (board.compliance.pass + board.compliance.warn + board.compliance.block) > 0),
     publish: posts.length > 0 && posts.every((p) => p.stage === 'ready'),
   };

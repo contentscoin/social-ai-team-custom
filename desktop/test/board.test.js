@@ -125,6 +125,28 @@ test('buildBoard — 클립/슬라이드 포맷도 릴로 인식', () => {
   assert.equal(b.posts[0].isReel, true);
 });
 
+test('buildBoard — 브리프/프롬프트 로그만 있는 creatives는 정적 포스트를 visual로 올리지 않는다', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'POST 1 — 라떼 아트\nPlatform: Instagram\nFormat: single image\nTopic: 라떼 아트\n');
+  writeLane(dir, 'captions', 'ig-1.md', 'POST 1\nCAPTION: 라떼 아트 소개\n');
+  // 브리프/프롬프트 로그(.md)만 있고 실제 이미지는 없음 — 토픽을 언급해도 visual 승격 금지
+  writeLane(dir, 'creatives', 'prompts-used.md', 'POST 1 라떼 아트 — SUBJECT: latte art close-up\n');
+  const b = buildBoard(dir);
+  assert.equal(b.posts[0].stage, 'copy');
+});
+
+test('buildBoard — creatives에 실제 이미지가 있으면 visual로 승격 + 썸네일', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'POST 1 — 라떼 아트\nPlatform: Instagram\nFormat: single image\nTopic: 라떼 아트\n');
+  writeLane(dir, 'captions', 'ig-1.md', 'POST 1\nCAPTION: 라떼 아트 소개\n');
+  writeLane(dir, 'creatives', 'ig-1.png', 'PNGDATA'); // 실제 이미지 파일
+  const b = buildBoard(dir);
+  assert.equal(b.posts[0].stage, 'visual');
+  assert.ok(b.posts[0].thumb);
+});
+
 test('buildBoard — 사실 검증 리포트의 Overall 줄을 board.verify로 파싱', () => {
   const dir = tmpWorkspace();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');
