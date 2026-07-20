@@ -104,6 +104,56 @@ test('verify 노드 — 리포트 없으면 done=false', () => {
   assert.equal(nodeOf(gates.computeGates(b, empty), 'verify').done, false);
 });
 
+test('visuals-generate — 브리프만 있고 렌더 이미지가 없으면 done=false (오토파일럿 스킵 버그 방지)', () => {
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [{ stage: 'copy', isReel: false, visual: 'shot A', format: 'single image', files: [{ rel: 'x', kind: 'copy' }] }],
+    lanes: { creatives: [{ name: 'prompts-used.md' }] }, // 브리프/프롬프트 로그만(이미지 아님)
+  });
+  const g = gates.computeGates(b, empty);
+  assert.equal(nodeOf(g, 'visuals').done, true);           // 브리프는 나왔다
+  assert.equal(nodeOf(g, 'visuals-generate').done, false); // 실제 이미지는 아직 없다
+});
+
+test('visuals-generate — 정적 포스트에 렌더 이미지가 있으면 done', () => {
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [{ stage: 'visual', isReel: false, visual: 'shot A', format: 'single image', files: [{ rel: 'ig-1.png', kind: 'render' }] }],
+    lanes: { creatives: [{ name: 'ig-1.png' }, { name: 'prompts-used.md' }] },
+  });
+  assert.equal(nodeOf(gates.computeGates(b, empty), 'visuals-generate').done, true);
+});
+
+test('visuals-generate — 일부 정적 포스트에 렌더가 없으면 done=false', () => {
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [
+      { stage: 'visual', isReel: false, visual: 'a', format: 'single image', files: [{ rel: 'ig-1.png', kind: 'render' }] },
+      { stage: 'copy', isReel: false, visual: 'b', format: 'single image', files: [] }, // 렌더 없음
+    ],
+  });
+  assert.equal(nodeOf(gates.computeGates(b, empty), 'visuals-generate').done, false);
+});
+
+test('visuals-generate — 릴/텍스트만 있으면 이미지 대상이 없어 공허참(카피 존재 시)', () => {
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [
+      { stage: 'copy', isReel: true, visual: '', format: 'reel', files: [] },
+      { stage: 'copy', isReel: false, visual: '', format: 'text', files: [] },
+    ],
+  });
+  assert.equal(nodeOf(gates.computeGates(b, empty), 'visuals-generate').done, true);
+});
+
+test('visuals-generate — 카피 산출물이 전혀 없으면 done=false', () => {
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [{ stage: 'planned', isReel: false, visual: 'a', format: 'single image', files: [] }],
+  });
+  assert.equal(nodeOf(gates.computeGates(b, empty), 'visuals-generate').done, false);
+});
+
 test('BLOCK이 있으면 publish 노드가 blocked', () => {
   const b = board({ compliance: { pass: 1, warn: 0, block: 2 } });
   const g = gates.computeGates(b, empty);

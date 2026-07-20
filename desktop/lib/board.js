@@ -321,9 +321,11 @@ function buildBoard(dir) {
     const videoRenders = (lanes.videos.files || []).filter((f) => matchRenderName(f.name) && /\.(mp4|webm|mov)$/i.test(f.name));
     // 릴의 'visual' 단계 = 실제 렌더된 영상(mp4)이 존재. 대본만 있으면 copy 단계에 머문다.
     // (슬라이드형은 앱이 자동 렌더 → mp4 생성 시 visual, 수동 제작형은 외부 생성 후 mp4 배치 시 visual)
-    const visualDone = isReel
-      ? videoRenders.length > 0
-      : renders.length > 0 || (lanes.creatives.files.length > 0 && topicIn(norm(lanes.creatives.text), post.topic));
+    // 정적 포스트의 'visual' = 실제 렌더된 이미지 파일 존재. 브리프/프롬프트 로그(creatives .md)만
+    // 있는 건 이미지가 아니므로 copy 단계에 머문다 — 브리프를 '생성 완료'로 오인해 보드가 잘못
+    // 보고하던 문제를 막는다. (파일명이 규칙과 달라 renders가 비어도, 아래 미사용 creatives 이미지
+    // 배분 블록이 실제 이미지가 있으면 copy→visual로 승격해 준다.)
+    const visualDone = isReel ? videoRenders.length > 0 : renders.length > 0;
     const verdict = verdictFor(lanes.compliance.text, { ...post, lane });
 
     let stage = 'planned';
