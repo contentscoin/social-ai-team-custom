@@ -81,8 +81,9 @@ async function genClaudeSvg(dir, job, onLine) {
     `- 출력은 SVG 코드만. 설명·코드펜스 금지.\n\n` +
     `[포스트]\n${job.prompt}` +
     (designPack ? `\n\n[디자인 팩]\n${designPack}` : '');
-  onLine && onLine(`[render] ${config.getEngine() === 'codex' ? 'Codex' : '클로드'} 디자인 — ${cards > 1 ? `카드뉴스 ${cards}장` : 'SVG'} 설계 중…`);
-  const r = await engine.runText(dir, prompt, { timeoutMs: (cards > 1 ? 12 : 5) * 60_000 });
+  const stageEng = config.getEngineFor('visuals-generate');
+  onLine && onLine(`[render] ${stageEng === 'codex' ? 'Codex' : '클로드'} 디자인 — ${cards > 1 ? `카드뉴스 ${cards}장` : 'SVG'} 설계 중…`);
+  const r = await engine.runText(dir, prompt, { engine: stageEng, timeoutMs: (cards > 1 ? 12 : 5) * 60_000 });
   const svgs = extractSvgAll(r.out);
   if (!svgs.length) return err('claude-svg', 'SVG를 받지 못했습니다: ' + (r.tail || '').slice(-200));
   if (cards > 1 && svgs.length < cards) onLine && onLine(`[render] 요청 ${cards}장 중 ${svgs.length}장만 수신 — 받은 만큼 렌더합니다`);

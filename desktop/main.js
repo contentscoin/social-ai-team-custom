@@ -995,6 +995,8 @@ ipcMain.handle('ob:finalize', async (_e, dir, answers, followupAnswers) => {
 // ---- Engine + in-app director chat -----------------------------------------
 ipcMain.handle('cfg:getEngine', safe(() => config.getEngine()));
 ipcMain.handle('cfg:setEngine', safe((_e, engine) => config.setEngine(engine).engine));
+ipcMain.handle('cfg:getStageEngines', safe(() => config.getStageEngines()));
+ipcMain.handle('cfg:setStageEngine', safe((_e, stage, engine) => config.setStageEngine(stage, engine)));
 ipcMain.handle('cfg:getModels', safe(() => config.getModels()));
 ipcMain.handle('cfg:setModel', safe((_e, engine, model) => config.setModel(engine, model)));
 ipcMain.handle('cfg:getBudget', safe(() => config.getBudget()));

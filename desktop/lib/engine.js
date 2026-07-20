@@ -14,7 +14,9 @@ const config = require('./config');
 async function runText(dir, prompt, opts = {}) {
   const timeoutMs = opts.timeoutMs || 120_000;
   const onLine = opts.onLine || null;
-  if (config.getEngine() === 'codex') {
+  // opts.engine 오버라이드(단계별 선택) 우선, 없으면 전역 토글
+  const eng = (opts.engine === 'claude' || opts.engine === 'codex') ? opts.engine : config.getEngine();
+  if (eng === 'codex') {
     const outFile = path.join(os.tmpdir(), `sat-engine-codex-${Date.now()}.txt`);
     const model = config.getModels().codex;
     const build = (extra = [], useModel = true) => {
