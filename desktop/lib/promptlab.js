@@ -182,7 +182,28 @@ function parseJsonLoose(out) {
   if (m) { try { return JSON.parse(m[0]); } catch { /* nope */ } }
   return null;
 }
+// 공냥 프롬프트 킷 — 설치돼 있으면 앱 이미지 프롬프트도 이 킷 문법으로 컴파일한다.
+const KIT_SKILL = path.join(os.homedir(), '.claude', 'skills', 'image-prompt', 'SKILL.md');
+const KIT_VALIDATOR = path.join(os.homedir(), '.claude', 'skills', 'image-prompt', 'scripts', 'check_prompt.mjs');
+function kitInstalled() { try { return fs.existsSync(KIT_SKILL); } catch { return false; } }
+
+// 킷 검증기(check_prompt.mjs)로 프롬프트 본문을 점검 — { ok, errors[] }. 실패해도 생성은 막지 않고 신호만.
+// 검증기는 인자 없이 실행하면 stdin(fd 0)을 읽는다. 앱 프롬프트는 킷의 Format A 평문이 아니라
+// 6요소 콤마형이라 형식 어휘 오류(E-*-LANG/E-AR-END/E-CAT-LANG 등)가 늘 뜬다 — 이는 품질 문제가
+// 아니므로 무시하고, 보편적으로 나쁜 오류(SD 구식 어휘·부정문 누수·슬롯 토큰 누수)만 신호로 남긴다.
+const KIT_CRITICAL = /SD-VOCAB|NEG-TIER|NEG-SECTION|SLOT-LEAK|WEIGHT|SLASH/i;
+async function validateWithKit(promptText) {
+  if (!fs.existsSync(KIT_VALIDATOR)) return null;
+  try {
+    const r = await runCmd('node', [KIT_VALIDATOR], null, { stdinText: promptText, timeoutMs: 20000 });
+    const j = JSON.parse((r.out || '').trim().split('\n').filter(Boolean).pop() || '{}');
+    const errors = (j.errors || []).map((e) => e.code || e.msg).filter((c) => KIT_CRITICAL.test(String(c)));
+    return { ok: errors.length === 0, errors: errors.slice(0, 6) };
+  } catch { return null; }
+}
+
 async function claudeCompile(dir, job, brand, vd, onLine) {
+  const kitOn = job.kind !== 'video' && kitInstalled();
   const packs = packContext(job.kind === 'video' ? 'video' : 'image', 12000, {
     format: job.format,
     carousel: /carousel|카드뉴스|cardnews|슬라이드/i.test(String(job.format || '')) || Number(job.count) > 1,
@@ -190,16 +211,28 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
   const target = job.kind === 'video'
     ? `${job.provider} (image-to-video/text-to-video 영상 모델)`
     : `${job.provider} (사진형 이미지 생성 모델)`;
+  const kitDirective = kitOn
+    ? `\n[공냥 프롬프트 킷 적용 — 필수]\n`
+      + `먼저 ${KIT_SKILL} 를 읽고 그 라우팅 표로 카테고리를 정한 뒤, 9 철칙을 지켜 컴파일하라:\n`
+      + `- 장면 배제는 전부 긍정형(부정문 금지 — 군중 대신 "인물 한 명, 단독", 빈 배경 대신 "깨끗한 단색 배경").\n`
+      + `- SD 구식 어휘 금지: masterpiece/best quality/8k/4k/uhd/ultra-detailed/highly detailed/"sharp focus" 나열/(word:1.3) 가중치/--ar/--v.\n`
+      + `- HEX 팔레트 3~5색을 색 이름과 함께 명시. 카메라·조명은 장비명(EXIF/렌즈명) 대신 결과로 서술(shallow DoF, warm key + cool rim).\n`
+      + `- 이상적 피부 금지 → natural skin texture, visible pores. 추상어는 구체 사물·제스처로 환원. 앞머리 [AR/SIZE] 브래킷 금지.\n`
+      + `단, 이 앱의 사진형 이미지 모델용이므로: 프롬프트는 영어, 이미지 내 텍스트/로고 렌더 금지(TEXT RULE — 텍스트는 앱이 따로 얹는다), negative는 아래 JSON의 negative 필드로 분리한다. SD 퀄리티 꼬리(sharp focus 등)는 붙이지 말고 킷 문법의 재질·조명·색으로 퀄리티를 낸다.\n\n`
+    : '';
   const instr =
-    `너는 시니어 비주얼 프롬프트 엔지니어다. 아래 재료로 ${target}에 넣을 **고퀄리티** 최종 생성 프롬프트를 만들어라.\n\n` +
+    `너는 시니어 비주얼 프롬프트 엔지니어다. 아래 재료로 ${target}에 넣을 **고퀄리티** 최종 생성 프롬프트를 만들어라.\n` +
+    kitDirective +
     `[규칙]\n` +
     `- 기획 언어(목표/필러/앵글/engagement)를 그대로 옮기지 말고 카메라가 찍을 수 있는 시각 언어로 번역하라.\n` +
     `- 프롬프트는 영어 (브랜드·제품 고유명사는 원문 유지).\n` +
     `- 이미지 프롬프트는 반드시 이 6요소를 한 문단(또는 콤마 연결)으로 포함:\n` +
     `  1) SUBJECT 구체 사물·수량·재질·상태  2) SETTING/장소·시간대  3) COMPOSITION 구도\n` +
     `  4) LIGHTING 조명  5) STYLE+렌즈감  6) COLOR(브랜드 팔레트 색 이름화)\n` +
-    `- 마지막에 TEXT RULE 필수: absolutely no text, letters, logos, or watermarks.\n` +
-    `- 퀄리티 앵커를 자연스럽게 포함: sharp focus, natural material texture, professional color grading, photorealistic campaign still.\n` +
+    (kitOn
+      ? `- 프롬프트 본문은 전부 긍정형 — "no text/no logo" 같은 부정문을 본문에 넣지 말라. 텍스트·로고·워터마크 회피는 JSON의 negative 필드에만 넣는다.\n`
+      : `- 마지막에 TEXT RULE 필수: absolutely no text, letters, logos, or watermarks.\n`
+      + `- 퀄리티 앵커를 자연스럽게 포함: sharp focus, natural material texture, professional color grading, photorealistic campaign still.\n`) +
     `- 추상 개념("따뜻한 브랜드 가치")은 구체 사물·제스처·소품으로 치환.\n` +
     `- 대상 사이즈 ${job.size || 'square'} — ${sizeCropNote(job.size)}.\n` +
     `- VISUAL DIRECTION이 있으면 최우선 재료. 팩의 COMPOSITION/LIGHTING/STYLE 뱅크에서 1개씩 고르되 장면과 맞을 것.\n` +
@@ -222,16 +255,26 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
   // claude json 모드는 {result: "..."} 래핑 — 내부 JSON을 다시 파싱 (codex는 원본 JSON이라 그대로)
   const inner = outer && typeof outer.result === 'string' ? parseJsonLoose(outer.result) : outer;
   if (inner && typeof inner.prompt === 'string' && inner.prompt.length > 20) {
-    onLine && onLine('[prompt] 컴파일 완료 (claude · quality v2)');
     let prompt = inner.prompt.trim();
-    // TEXT RULE / 퀄리티 꼬리 보강 (모델이 빠뜨린 경우)
-    if (!/no text|no letters|no logos/i.test(prompt)) {
-      prompt += ', absolutely no text, letters, logos, or watermarks in the image';
-    }
-    if (!/sharp focus|photoreal|ultra detailed|high detail/i.test(prompt)) {
-      prompt += `, ${QUALITY_TAIL}`;
+    if (kitOn) {
+      // 킷 켜짐: 본문은 긍정형 유지 — 텍스트/SD 꼬리를 본문에 안 붙인다. 검증기로 본문을 점검.
+      const v = await validateWithKit(prompt);
+      onLine && onLine(v ? `[prompt] 컴파일 완료 (공냥 킷 적용 · 검증 ${v.ok ? 'PASS' : 'WARN: ' + v.errors.join(',')})` : '[prompt] 컴파일 완료 (공냥 킷 적용)');
+    } else {
+      // 킷 꺼짐: 기존 동작 — 본문에 TEXT RULE·퀄리티 꼬리 보강
+      if (!/no text|no letters|no logos/i.test(prompt)) {
+        prompt += ', absolutely no text, letters, logos, or watermarks in the image';
+      }
+      if (!/sharp focus|photoreal|ultra detailed|high detail/i.test(prompt)) {
+        prompt += `, ${QUALITY_TAIL}`;
+      }
+      onLine && onLine('[prompt] 컴파일 완료 (claude · quality v2)');
     }
     let negative = String(inner.negative || '').trim();
+    // 킷 켜짐: 텍스트 회피를 본문 대신 negative 필드로 (본문 긍정형 유지, 제공자 negative 파라미터로 전달)
+    if (kitOn && !/text|letters|logo|watermark/i.test(negative)) {
+      negative = negative ? `${negative}, text, letters, logos, watermark` : 'text, letters, logos, watermark';
+    }
     if (!negative) negative = DEFAULT_NEGATIVE;
     else if (!/blurry|deformed|watermark/i.test(negative)) negative = `${negative}, ${DEFAULT_NEGATIVE}`;
     if (brand.donts) {
