@@ -20,7 +20,9 @@ async function runText(dir, prompt, opts = {}) {
     const outFile = path.join(os.tmpdir(), `sat-engine-codex-${Date.now()}.txt`);
     const model = config.getModels().codex;
     const build = (extra = [], useModel = true) => {
-      const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...extra];
+      // sandbox_mode=workspace-write: 워크스페이스 파일 쓰기 허용(read-only면 산출물을 못 씀).
+      const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never',
+        '-c', 'sandbox_mode="workspace-write"', '-o', outFile, ...extra];
       if (model && useModel) a.push('-c', `model="${model}"`);
       a.push('-');
       return a;

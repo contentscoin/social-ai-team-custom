@@ -97,12 +97,16 @@ function runStageCodex(dir, stdinText, onLine) {
   const CODEX_PREAMBLE =
     '너는 이 클라이언트 폴더의 소셜 콘텐츠 팀 실행자다. 아래 지시에 나오는 "스킬"은 '
     + `${path.join(os.homedir(), '.claude', 'skills')}/<이름>/SKILL.md 파일이다 — 먼저 그 파일을 읽고 그 절차·출력 규약을 그대로 따르라. `
-    + '서브에이전트/Task 도구가 없으면 해당 작업을 직접(인라인) 수행하라. 산출물은 지정된 outputs/ 폴더에 저장하고, '
-    + '운영자 승인이 필요한 발행·파괴적 작업은 하지 말고 요약만 출력하라.\n\n';
+    + '서브에이전트/Task 도구가 없으면 해당 작업을 직접(인라인) 수행하라. '
+    + '작업 산출물(캘린더 index/meta·캡션·판정 리포트 등)은 지정된 파일에 반드시 저장하라 — 파일을 쓰지 않고 분석만 하면 실패다. '
+    + '탐색은 최소화하고(필요한 파일만 읽고 바로 작업), 완료되면 짧은 요약만 출력하고 종료하라. '
+    + '운영자 승인이 필요한 발행·파괴적 작업은 하지 말라.\n\n';
   const outFile = path.join(os.tmpdir(), `sat-stage-codex-${Date.now()}.txt`);
   const model = config.getModels().codex;
   const buildArgs = (extra = [], useModel = true) => {
-    const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...extra];
+    // sandbox_mode=workspace-write: 워크스페이스 파일 쓰기 허용(read-only면 산출물을 못 씀).
+    const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never',
+      '-c', 'sandbox_mode="workspace-write"', '-o', outFile, ...extra];
     if (model && useModel) a.push('-c', `model="${model}"`);
     a.push('-');
     return a;
@@ -116,6 +120,14 @@ function runStageCodex(dir, stdinText, onLine) {
     current.delete(dir);
     let resultText = '';
     try { resultText = fs.readFileSync(outFile, 'utf8').trim(); fs.unlinkSync(outFile); } catch { /* no file */ }
+    // 타임아웃이면 codex의 중간 서술이 뒤엉킨 tail 대신 원인을 짚는 한 줄을 남긴다.
+    if (r.timedOut) {
+      const mins = Math.round(STAGE_TIMEOUT_MS / 60000);
+      const msg = `codex 단계 시간 초과(${mins}분) — 산출물을 저장하지 못했습니다. `
+        + '샌드박스가 read-only이거나(파일 쓰기 차단) 작업량이 과도할 수 있습니다. '
+        + '설정에서 이 단계를 Claude로 돌리거나, codex 세션을 workspace-write로 여세요.';
+      return { ...r, resultText: resultText || msg, tail: msg };
+    }
     if (!resultText) resultText = (r.tail || r.out || '').slice(-500);
     return { ...r, resultText, tail: resultText ? resultText.slice(-500) : r.tail };
   };

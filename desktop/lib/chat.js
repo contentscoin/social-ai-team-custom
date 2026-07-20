@@ -116,7 +116,10 @@ async function codexTurn(dir, userMsg, onLine, onEvent) {
   // exec 레벨 옵션(-C, -o 등)은 반드시 resume 서브커맨드 앞에 — 뒤에 두면
   // "unexpected argument '-C' found"로 죽는다. 프롬프트는 '-' 인자 + stdin (개행 안전).
   const buildArgs = (resumeArg, extra = [], useModel = true) => {
-    const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...extra];
+    // sandbox_mode=workspace-write: 디렉터가 캘린더/캡션 등 산출물을 직접 저장할 수 있게
+    // 워크스페이스 쓰기를 허용한다(read-only면 "권한 없음"으로 파일을 못 씀).
+    const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never',
+      '-c', 'sandbox_mode="workspace-write"', '-o', outFile, ...extra];
     if (model && useModel) a.push('-c', `model="${model}"`);
     if (resumeArg) a.push('resume', resumeArg);
     a.push('-');
