@@ -104,3 +104,70 @@ test('extractPublishBody — 프롬프트 블록(영문·한글 라벨)이 발�
   assert.match(text, /#홈카페/);
   assert.doesNotMatch(text, /PROMPT|프롬프트|비주얼 디렉션|50mm|watermark/i);
 });
+
+test('extractPublishBody — 섹션 사이 빈 줄이 있는 프롬프트 블록도 끝까지 제거 (공냥 Format A)', () => {
+  const { text } = extractPublishBody([
+    'POST 2 — 신메뉴',
+    'CAPTION: 새 메뉴가 나왔어요. 지금 매장에서 만나보세요.',
+    '',
+    'IMAGE PROMPT:',
+    '# 1. Scene',
+    'Scene: 우드톤 카페 테이블 위 신메뉴 한 잔.',
+    '',
+    '# 2. Camera',
+    'Camera: 초근접, 얕은 심도.',
+    '',
+    'Color grading: 웜톤 #E8B168, #1B2440.',
+    'AR 4:5',
+    '',
+    'HASHTAGS: #신메뉴',
+  ].join('\n'));
+  assert.match(text, /새 메뉴가 나왔어요/);
+  assert.match(text, /#신메뉴/);
+  assert.doesNotMatch(text, /Scene:|Camera:|Color grading|AR 4:5|# 2\./i);
+});
+
+test('extractPublishBody — 라벨 없는 글 꼬리의 프롬프트 필드(Scene/Camera/AR)도 제거', () => {
+  const { text } = extractPublishBody([
+    'POST 3 — 공지',
+    '오늘 오후 6시부터 이벤트 시작합니다!',
+    '',
+    'Scene: 이벤트 포스터, 네온 조명.',
+    'Camera: 정면 와이드.',
+    'AR 1:1',
+  ].join('\n'));
+  assert.equal(text, '오늘 오후 6시부터 이벤트 시작합니다!');
+});
+
+test('extractPublishBody — 네이버 BODY 뒤 IMAGE SLOT + 6요소 프롬프트 제거, TAGS는 유지', () => {
+  const { text } = extractPublishBody([
+    'POST 1 — 동네 빵집',
+    'TITLE: 우리 동네 빵집 이야기',
+    'BODY:',
+    '아침마다 갓 구운 빵 냄새가 골목을 채웁니다.',
+    '',
+    'IMAGE SLOT 1',
+    'VISUAL DIRECTION: 갓 구운 빵 클로즈업',
+    '',
+    'SUBJECT: fresh bread on wooden board',
+    'COMPOSITION: overhead flat lay',
+    'LIGHTING: soft morning light',
+    'AR 3:4',
+    '',
+    'TAGS: 빵집, 동네맛집',
+  ].join('\n'));
+  assert.match(text, /아침마다 갓 구운 빵/);
+  assert.match(text, /#빵집 #동네맛집/);
+  assert.doesNotMatch(text, /SUBJECT|COMPOSITION|LIGHTING|IMAGE SLOT|AR 3:4|VISUAL DIRECTION/i);
+});
+
+test('extractPublishBody — 프롬프트 필드 오탐 방지: 한국어 본문은 그대로 유지', () => {
+  // "장소:"·"액션" 같은 한국어는 프롬프트 필드가 아니므로 보존
+  const { text } = extractPublishBody([
+    'POST 5 — 매장 안내',
+    'CAPTION: 장소: 강남점 2층. 액션 가득한 주말 이벤트를 준비했어요.',
+    'HASHTAGS: #강남카페',
+  ].join('\n'));
+  assert.match(text, /장소: 강남점 2층/);
+  assert.match(text, /액션 가득한/);
+});
