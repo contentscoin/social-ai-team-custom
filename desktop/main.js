@@ -344,6 +344,8 @@ ipcMain.handle('setup:installIma2', safe(() => setup.installIma2((line) => send(
 ipcMain.handle('setup:ima2Setup', safe(() => pipeline.openInteractiveTerminal(app.getPath('home'), 'ima2 setup')));
 ipcMain.handle('setup:installVideoSkills', safe(() => setup.installVideoSkills((line) => send('log', { source: 'setup', line }))));
 ipcMain.handle('setup:videoSkillsStatus', safe(() => setup.videoSkillsStatus()));
+ipcMain.handle('setup:installImagePromptKit', safe(() => setup.installImagePromptKit((line) => send('log', { source: 'setup', line }))));
+ipcMain.handle('setup:imagePromptKitStatus', safe(() => setup.imagePromptKitStatus()));
 
 // ---- Workspace (clients) ---------------------------------------------------
 ipcMain.handle('ws:list', safe(() => workspace.listClients()));

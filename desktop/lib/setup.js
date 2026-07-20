@@ -226,6 +226,40 @@ async function installVideoSkills(onLine) {
     : null;
   return { ok: okCount > 0, results, installed: okCount, total: VIDEO_SKILLS.length, nodeMajor: major, nodeWarn };
 }
+// 공냥 프롬프트 킷 — 이미지 생성 프롬프트를 gpt-image-2 완성 프롬프트로 컴파일하는 스킬.
+// git clone → skills/image-prompt를 ~/.claude/skills로 복사(심볼릭 링크는 윈도우에서 불안정).
+// 재설치 = git pull 후 재복사(업데이트). 검증기(check_prompt.mjs) 실행에는 Node 필요.
+const IMAGE_KIT_REPO = 'https://github.com/contentscoin/gongnyang-prompt-kit';
+async function installImagePromptKit(onLine) {
+  if (!resolveCmd('git')) return { ok: false, tail: 'git이 없습니다 — https://git-scm.com 에서 설치 후 다시 시도하세요.' };
+  const vendorDir = path.join(CLAUDE_DIR, 'vendor', 'gongnyang-prompt-kit');
+  const skillSrc = path.join(vendorDir, 'skills', 'image-prompt');
+  const skillDst = path.join(CLAUDE_DIR, 'skills', 'image-prompt');
+  let r;
+  if (fs.existsSync(path.join(vendorDir, '.git'))) {
+    onLine && onLine('공냥 프롬프트 킷 업데이트(git pull) 중…');
+    r = await runCmd('git', ['-C', vendorDir, 'pull', '--ff-only'], onLine, { timeoutMs: 120000 });
+  } else {
+    onLine && onLine('공냥 프롬프트 킷 clone 중…');
+    fs.mkdirSync(path.dirname(vendorDir), { recursive: true });
+    r = await runCmd('git', ['clone', '--depth', '1', IMAGE_KIT_REPO, vendorDir], onLine, { timeoutMs: 300000 });
+  }
+  if (!r.ok) return { ok: false, tail: (r.tail || 'clone/pull 실패').slice(-200) };
+  if (!fs.existsSync(skillSrc)) return { ok: false, tail: 'skills/image-prompt를 찾지 못했습니다 (레포 구조 변경?)' };
+  try {
+    fs.mkdirSync(path.join(CLAUDE_DIR, 'skills'), { recursive: true });
+    fs.rmSync(skillDst, { recursive: true, force: true });
+    fs.cpSync(skillSrc, skillDst, { recursive: true });
+  } catch (e) {
+    return { ok: false, tail: '스킬 복사 실패: ' + (e.message || e) };
+  }
+  const node = await cliVersion('node');
+  return { ok: true, path: skillDst, validatorReady: node.found, nodeWarn: node.found ? null : '검증기(check_prompt.mjs) 실행에는 Node.js가 필요합니다.' };
+}
+function imagePromptKitStatus() {
+  return { installed: fs.existsSync(path.join(CLAUDE_DIR, 'skills', 'image-prompt', 'SKILL.md')) };
+}
+
 // 설치 여부·렌더 전제 감지 (설정 화면 배지용)
 function videoSkillsStatus() {
   const skillsDir = path.join(CLAUDE_DIR, 'skills');
@@ -237,4 +271,4 @@ function videoSkillsStatus() {
   };
 }
 
-module.exports = { checkEnvironment, installSkills, installCodexCli, codexOAuthLogin, registerCodexMcp, registerQrMcp, installIma2, installVideoSkills, videoSkillsStatus, payloadPaths };
+module.exports = { checkEnvironment, installSkills, installCodexCli, codexOAuthLogin, registerCodexMcp, registerQrMcp, installIma2, installVideoSkills, videoSkillsStatus, installImagePromptKit, imagePromptKitStatus, payloadPaths };

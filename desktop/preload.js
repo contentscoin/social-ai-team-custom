@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
     installIma2: () => ipcRenderer.invoke('setup:installIma2'),
     installVideoSkills: () => ipcRenderer.invoke('setup:installVideoSkills'),
     videoSkillsStatus: () => ipcRenderer.invoke('setup:videoSkillsStatus'),
+    installImagePromptKit: () => ipcRenderer.invoke('setup:installImagePromptKit'),
+    imagePromptKitStatus: () => ipcRenderer.invoke('setup:imagePromptKitStatus'),
     ima2Setup: () => ipcRenderer.invoke('setup:ima2Setup'),
   },
   ws: {
