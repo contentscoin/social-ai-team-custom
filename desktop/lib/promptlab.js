@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { runCmd } = require('./proc');
 const config = require('./config');
+const engine = require('./engine');
 const { findVisualDirection } = require('./postblock');
 
 // ---- 팩 로딩 ----------------------------------------------------------------------
@@ -214,13 +215,11 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
     (brand.donts ? `\n[브랜드 DON'T — negative에 반영]\n${brand.donts}\n` : '') +
     (brand.palette.length ? `브랜드 팔레트: ${brand.palette.join(' ')}\n` : '') +
     `\n[프롬프트 팩]\n${packs}`;
-  const model = config.getModels().claude;
-  const args = ['-p', '--output-format', 'json'];
-  if (model) args.push('--model', model);
-  const r = await runCmd('claude', args, null, { cwd: dir, stdinText: instr, timeoutMs: 120_000 });
+  // 선택 엔진으로 — codex를 골랐으면 프롬프트 컴파일도 codex로(claude 한도 회피)
+  const r = await engine.runText(dir, instr, { json: true, timeoutMs: 120_000 });
   if (!r.ok) return null;
   let outer = parseJsonLoose(r.out);
-  // claude -p --output-format json은 {result: "..."} 래핑 — 내부 JSON을 다시 파싱
+  // claude json 모드는 {result: "..."} 래핑 — 내부 JSON을 다시 파싱 (codex는 원본 JSON이라 그대로)
   const inner = outer && typeof outer.result === 'string' ? parseJsonLoose(outer.result) : outer;
   if (inner && typeof inner.prompt === 'string' && inner.prompt.length > 20) {
     onLine && onLine('[prompt] 컴파일 완료 (claude · quality v2)');
