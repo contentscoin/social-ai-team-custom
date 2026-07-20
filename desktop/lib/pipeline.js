@@ -152,9 +152,9 @@ function runStage(dir, stage, opts = {}, onLine) {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + spec.prompt + extra;
 
-  // 선택된 엔진으로 실행 — 설정 → 사이드바의 Claude/Codex 토글을 존중한다.
-  // (Codex를 골랐는데 파이프라인이 claude를 고정 실행해 한도에 걸리던 문제 해결)
-  if (config.getEngine() === 'codex') return runStageCodex(dir, stdinText, onLine);
+  // 이 단계에 적용할 엔진 — 단계별 오버라이드 우선, 없으면 전역 토글. (구간별로 엔진을
+  // 나눠 돌릴 수 있어 한도를 분산한다. 예: 캘린더=Claude, 카피=Codex)
+  if (config.getEngineFor(stage) === 'codex') return runStageCodex(dir, stdinText, onLine);
 
   // 프롬프트는 stdin으로 (Windows 개행 안전 — proc.js 참조).
   // stream-json으로 실행해 도구 활동을 읽을 수 있는 로그로, 최종 비용/소요를 결과에 싣는다.

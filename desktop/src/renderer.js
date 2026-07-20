@@ -2416,8 +2416,13 @@ async function openSettings(section) {
         <div id="sec-forms-rd"></div>
       </div>
       <div data-body="engine" class="hidden">
-        <p class="muted" style="margin-bottom:10px">앱 내 대화·외부 터미널의 엔진을 선택합니다. 파이프라인(팀 오케스트레이션)은 항상 Claude로 동작합니다.</p>
+        <p class="muted" style="margin-bottom:10px">기본 엔진을 선택합니다. 대화·파이프라인 단계·이미지 렌더가 이 엔진으로 동작하며, 아래 <b>단계별 엔진</b>에서 구간마다 따로 지정할 수 있습니다.</p>
         <div class="seg" id="set-engine"><button data-engine="claude">Claude</button><button data-engine="codex">Codex</button></div>
+        <div style="margin-top:16px">
+          <b class="small">단계별 엔진 (구간마다 따로 — 한도 분산)</b>
+          <p class="muted small" style="margin:4px 0 8px">비워두면(기본) 위 기본 엔진을 따릅니다. 특정 단계만 다른 엔진으로 돌리려면 지정하세요.</p>
+          <div id="set-stage-engines" style="display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center"></div>
+        </div>
         <div style="margin-top:18px;display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center">
           <b class="small">Claude 모델</b>
           <input id="set-model-claude" list="dl-claude" placeholder="기본값 (비워두면 CLI 기본 모델)"
@@ -2484,7 +2489,32 @@ async function openSettings(section) {
     $$('[data-body]', sheet).forEach((x) => x.classList.toggle('hidden', x.dataset.body !== nb.dataset.sec));
   };
   bindSetupButtons(sheet, () => refreshEnvBadges(sheet));
-  for (const b of $$('#set-engine button')) { b.classList.toggle('active', b.dataset.engine === S.engine); b.onclick = async () => { S.engine = await window.api.engine.set(b.dataset.engine); applyEngine(); $$('#set-engine button').forEach((x) => x.classList.toggle('active', x.dataset.engine === S.engine)); }; }
+  for (const b of $$('#set-engine button')) { b.classList.toggle('active', b.dataset.engine === S.engine); b.onclick = async () => { S.engine = await window.api.engine.set(b.dataset.engine); applyEngine(); $$('#set-engine button').forEach((x) => x.classList.toggle('active', x.dataset.engine === S.engine)); renderStageEngines(); }; }
+  // 단계별 엔진 — 각 파이프라인 단계에 기본/Claude/Codex 지정
+  const STAGE_ENGINE_ROWS = [
+    ['calendar', '캘린더'], ['copy', '카피'], ['shortform', '릴스/영상'], ['verify', '사실 검증'],
+    ['visuals', '비주얼 브리프'], ['visuals-generate', '비주얼 생성(이미지)'], ['compliance', '컴플라이언스'], ['review', '성과 리뷰'],
+  ];
+  async function renderStageEngines() {
+    const box = $('#set-stage-engines');
+    if (!box) return;
+    const ov = await window.api.engine.getStageEngines();
+    if (seq !== settingsSeq) return;
+    box.innerHTML = STAGE_ENGINE_ROWS.map(([k, label]) => {
+      const v = ov[k] || '';
+      const opt = (val, txt) => `<option value="${val}"${v === val ? ' selected' : ''}>${txt}</option>`;
+      return `<span class="small">${label}</span>`
+        + `<select data-stage-engine="${k}" style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px">`
+        + opt('', `기본 (${S.engine === 'codex' ? 'Codex' : 'Claude'})`) + opt('claude', 'Claude') + opt('codex', 'Codex') + '</select>';
+    }).join('');
+    for (const sel of $$('#set-stage-engines select')) sel.onchange = async () => {
+      await window.api.engine.setStageEngine(sel.dataset.stageEngine, sel.value);
+      const lbl = (STAGE_ENGINE_ROWS.find((r) => r[0] === sel.dataset.stageEngine) || [])[1] || sel.dataset.stageEngine;
+      toast(`${lbl} 엔진: ${sel.value ? (sel.value === 'codex' ? 'Codex' : 'Claude') : '기본'}`);
+    };
+  }
+  await renderStageEngines();
+  if (seq !== settingsSeq) return;
   // 엔진별 모델 선택 — 입력 후 포커스 아웃/Enter 시 저장
   S.models = await window.api.engine.getModels();
   if (seq !== settingsSeq) return;

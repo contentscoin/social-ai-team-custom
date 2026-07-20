@@ -7,7 +7,7 @@ const path = require('path');
 const DIR = process.env.SAT_HOME || path.join(os.homedir(), '.social-ai-team');
 const FILE = path.join(DIR, 'settings.json');
 
-const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0 }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정
+const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {} }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
@@ -30,6 +30,24 @@ function getEngine() { return load().engine; }
 function setEngine(engine) {
   if (engine !== 'claude' && engine !== 'codex') return load();
   const cfg = load(); cfg.engine = engine; return save(cfg);
+}
+
+// 단계(구간)별 엔진 오버라이드 — 값이 없으면 전역 engine을 따른다.
+// 예: 캘린더는 Claude, 카피는 Codex 로 나눠 돌려 한도를 분산.
+function getStageEngines() { return { ...(load().stageEngines || {}) }; }
+function setStageEngine(stage, engine) {
+  const cfg = load();
+  cfg.stageEngines = { ...(cfg.stageEngines || {}) };
+  if (engine === 'claude' || engine === 'codex') cfg.stageEngines[stage] = engine;
+  else delete cfg.stageEngines[stage]; // '' | 'default' 등 → 오버라이드 해제(전역 따름)
+  save(cfg);
+  return cfg.stageEngines;
+}
+// 이 단계에 실제 적용할 엔진 — 단계 오버라이드 우선, 없으면 전역.
+function getEngineFor(stage) {
+  const c = load();
+  const ov = (c.stageEngines || {})[stage];
+  return (ov === 'claude' || ov === 'codex') ? ov : c.engine;
 }
 
 function getModels() { const c = load(); return { claude: '', codex: '', ...(c.models || {}) }; }
@@ -80,4 +98,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getModels, setModel, getBudget, setBudget, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getSession, setSession, clearSession };

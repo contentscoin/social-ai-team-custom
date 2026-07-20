@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('api', {
   engine: {
     get: () => ipcRenderer.invoke('cfg:getEngine'),
     set: (engine) => ipcRenderer.invoke('cfg:setEngine', engine),
+    getStageEngines: () => ipcRenderer.invoke('cfg:getStageEngines'),
+    setStageEngine: (stage, engine) => ipcRenderer.invoke('cfg:setStageEngine', stage, engine),
     getModels: () => ipcRenderer.invoke('cfg:getModels'),
     setModel: (engine, model) => ipcRenderer.invoke('cfg:setModel', engine, model),
     getBudget: () => ipcRenderer.invoke('cfg:getBudget'),
