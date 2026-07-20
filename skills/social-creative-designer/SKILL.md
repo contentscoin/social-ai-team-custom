@@ -142,6 +142,19 @@ Text overlay (if required): [Text colour from brand guide], [case convention], [
 
 Write 2 prompt variants with different compositions or settings. Negative prompt derived from brand do/don't rules.
 
+**Codex / gpt-image-2 render lane → compile the prompt with the 공냥 프롬프트 킷 (`/image-prompt`).** When the render lane is Codex-family imagegen (`$imagegen`, the team default — ima2 / codex_render.sh), do NOT hand the raw 6-element draft to the generator. First compile it into a finished gpt-image-2 production prompt with the installed `image-prompt` skill (`~/.claude/skills/image-prompt`):
+
+1. Read `~/.claude/skills/image-prompt/SKILL.md` and route the request through its routing table (C1–C12 / P1–P8 / TP1–TP14 / L1–L9), picking the one matching pattern file.
+2. Author the prompt in the kit's Format A (6-section labeled) or Format B (화보 flat) per the routing, obeying its 9 철칙 — all-positive scene negation (no `Negative:` sections), no SD-era vocab (`masterpiece/8k/…`), HEX palettes (3–5 per cut), camera/lighting as results not gear, size lock, trailing `AR x:y` token only.
+3. **Validate before generating** — `node ~/.claude/skills/image-prompt/scripts/check_prompt.mjs <file>` must return `ok:true` (errors 0). Fix any `E-NEG-TIER` / `E-SLOT-LEAK` / `E-SIZE-LOCK` / SD-vocab errors and re-run until it passes.
+4. Send only the compiled+validated prompt to `$imagegen` (raw request never reaches the generator).
+
+The kit is installed once via 설정 → 환경의 "이미지 프롬프트 킷 설치" (or `git clone https://github.com/contentscoin/gongnyang-prompt-kit` + copy `skills/image-prompt` into `~/.claude/skills`). If the kit is not installed, fall back to the 6-element template above and note "image-prompt 킷 미설치 — 기본 템플릿 사용" in the prompt log.
+
+**Text-in-image + Korean:** the kit's 철칙 #9 renders text inside the image via the prompt (quoted copy + role labels + `quality:high` + 2048 canvas for dense/Korean text) — never post-composite text onto a PNG. This does not override the team's default of keeping burned-in Korean minimal; use it only where a standalone poster/typography slot genuinely needs rendered text, and keep slide-video on-screen text in the app's HTML overlay.
+
+The Nano Banana fallback lane keeps the 6-element template above (the kit targets gpt-image-2, not Nano Banana).
+
 ---
 
 ### Composite Mode

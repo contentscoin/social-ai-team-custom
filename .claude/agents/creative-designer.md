@@ -56,6 +56,8 @@ tools: Read, Write, Glob, Grep, Bash, mcp__nanobanana__generate_image
 
 **렌더 경로 우선순위 (운영자 지정 기본값): Codex 계열 이미지 생성이 1순위입니다.**
 
+**프롬프트 컴파일 — Codex/gpt-image-2 레인은 공냥 프롬프트 킷(`/image-prompt`)으로:** ①·② Codex·ima2 레인으로 생성하기 전에, 최종 프롬프트를 `~/.claude/skills/image-prompt`(공냥 프롬프트 킷)로 컴파일합니다 — 라우팅 표로 패턴 1개 선택 → Format A/B 작성(9 철칙: all-positive, SD어휘 금지, HEX 팔레트, 끝 `AR` 토큰) → **`node ~/.claude/skills/image-prompt/scripts/check_prompt.mjs <파일>`이 `ok:true`가 될 때까지 수정** → 검증 통과한 프롬프트만 `$imagegen`에 넘깁니다(거친 원문 금지). 킷이 설치돼 있지 않으면 스킬의 6요소 템플릿으로 폴백하고 prompts-used.md에 "image-prompt 킷 미설치"를 명시합니다. Nano Banana 레인(②의 편집 작업)에는 이 킷을 쓰지 않습니다(킷은 gpt-image-2 전용).
+
 - **① Codex·ima2 이미지 레인 (기본):** ChatGPT/Codex 계정 기반 이미지 생성.
   - `ima2` CLI가 설치·로그인돼 있으면 `sop/creative-designer/ima2-render.md` SOP대로: `ima2 ping`(필요 시 `ima2 serve` 기동) 확인 후 `ima2 gen "<최종 프롬프트>" --quality high -o outputs/creatives/<파일명>.png`, 레퍼런스는 `--ref`(최대 5장), 편집은 `ima2 edit`. prompts-used.md에 `render: ima2`.
   - ima2가 없고 `sop/creative-designer/codex-render.md`가 있으면: **`mcp__codex__codex` 도구가 있으면 pumasi 위임**(최종 프롬프트 전문 + 출력 경로 + 크기), 없으면 `bash sop/creative-designer/scripts/codex_render.sh --prompt-file <프롬프트파일> --out outputs/creatives/<파일명>.png --size <크기>`. exit 2(`AUTH MISSING`)면 생성한 척하지 말고 "generation blocked — Codex auth missing"을 보고. prompts-used.md에 `render: codex`.

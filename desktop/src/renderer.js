@@ -2372,6 +2372,7 @@ function envButtons() {
     <button data-setup="installIma2">ima2 설치</button>
     <button data-setup="ima2Setup">ima2 셋업 (터미널)</button>
     <button data-setup="installVideoSkills" title="HyperFrames(기본)+Remotion(고급) 영상 렌더 스킬을 ~/.claude/skills에 설치. CLI 렌더는 Node 22+·ffmpeg 필요">영상 렌더 스킬 설치</button>
+    <button data-setup="installImagePromptKit" title="공냥 프롬프트 킷(image-prompt)을 ~/.claude/skills에 설치. 이미지 생성 시 gpt-image-2 완성 프롬프트로 컴파일">이미지 프롬프트 킷 설치</button>
   </div>`;
 }
 function bindSetupButtons(root, after) {
