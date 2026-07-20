@@ -7,7 +7,9 @@ const os = require('os');
 const path = require('path');
 
 function freshSetup(home) {
-  process.env.HOME = home;           // os.homedir() → ~/.claude 기준점
+  // os.homedir() 기준점을 임시 폴더로. POSIX는 HOME, Windows는 USERPROFILE을 읽으므로 둘 다 세팅.
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
   process.env.SAT_SKIP_KIT_GIT = '1'; // git 최신화 단계를 강제로 끔(네트워크·환경 비의존)
   delete require.cache[require.resolve('../lib/setup')];
   return require('../lib/setup');
@@ -41,4 +43,8 @@ test('imagePromptKitStatus — 설치 후 installed=true', async () => {
   assert.equal(setup.imagePromptKitStatus().installed, true);  // 설치 후
 });
 
-test.after(() => { delete process.env.HOME; delete process.env.SAT_SKIP_KIT_GIT; });
+test.after(() => {
+  delete process.env.HOME;
+  delete process.env.USERPROFILE;
+  delete process.env.SAT_SKIP_KIT_GIT;
+});
