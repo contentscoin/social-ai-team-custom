@@ -15,6 +15,7 @@ const CLAUDE_DIR = path.join(HOME, '.claude');
 const CLAUDE_USER_CONFIG = path.join(HOME, '.claude.json');
 
 // Where the bundled skills/agents/sop live. Packaged: resources/payload. Dev: repo root.
+// imageKit: 공냥 프롬프트 킷의 앱 번들 사본(vendor/image-prompt) — git 없는 PC에서도 설치되게.
 function payloadPaths() {
   const packaged = path.join(process.resourcesPath || '', 'payload');
   if (process.resourcesPath && fs.existsSync(packaged)) {
@@ -22,6 +23,7 @@ function payloadPaths() {
       skills: path.join(packaged, 'skills'),
       agents: path.join(packaged, 'agents'),
       sop: path.join(packaged, 'sop'),
+      imageKit: path.join(packaged, 'image-prompt'),
     };
   }
   const repo = path.resolve(__dirname, '..', '..');
@@ -29,6 +31,7 @@ function payloadPaths() {
     skills: path.join(repo, 'skills'),
     agents: path.join(repo, '.claude', 'agents'),
     sop: path.join(repo, 'sop'),
+    imageKit: path.join(repo, 'vendor', 'image-prompt'),
     dev: true,
   };
 }
@@ -227,34 +230,64 @@ async function installVideoSkills(onLine) {
   return { ok: okCount > 0, results, installed: okCount, total: VIDEO_SKILLS.length, nodeMajor: major, nodeWarn };
 }
 // 공냥 프롬프트 킷 — 이미지 생성 프롬프트를 gpt-image-2 완성 프롬프트로 컴파일하는 스킬.
-// git clone → skills/image-prompt를 ~/.claude/skills로 복사(심볼릭 링크는 윈도우에서 불안정).
-// 재설치 = git pull 후 재복사(업데이트). 검증기(check_prompt.mjs) 실행에는 Node 필요.
+// 기본 경로: 앱에 번들된 사본(vendor/image-prompt)을 ~/.claude/skills/image-prompt로 복사.
+//   → git 미설치·오프라인 PC에서도 항상 설치된다(심볼릭 링크는 윈도우에서 불안정하므로 복사).
+// git이 있으면 GitHub 최신본으로 업데이트를 시도하고, 실패/부재 시 번들 사본으로 폴백한다.
+// 검증기(check_prompt.mjs) 실행에는 Node 필요.
 const IMAGE_KIT_REPO = 'https://github.com/contentscoin/gongnyang-prompt-kit';
-async function installImagePromptKit(onLine) {
-  if (!resolveCmd('git')) return { ok: false, tail: 'git이 없습니다 — https://git-scm.com 에서 설치 후 다시 시도하세요.' };
+
+// git이 있으면 최신 skills/image-prompt를 받아온다. 성공 시 소스 디렉터리 경로, 실패 시 null.
+async function fetchImageKitViaGit(onLine) {
+  if (!resolveCmd('git')) return null;
   const vendorDir = path.join(CLAUDE_DIR, 'vendor', 'gongnyang-prompt-kit');
   const skillSrc = path.join(vendorDir, 'skills', 'image-prompt');
-  const skillDst = path.join(CLAUDE_DIR, 'skills', 'image-prompt');
   let r;
   if (fs.existsSync(path.join(vendorDir, '.git'))) {
-    onLine && onLine('공냥 프롬프트 킷 업데이트(git pull) 중…');
+    onLine && onLine('공냥 프롬프트 킷 최신본 확인(git pull) 중…');
     r = await runCmd('git', ['-C', vendorDir, 'pull', '--ff-only'], onLine, { timeoutMs: 120000 });
   } else {
-    onLine && onLine('공냥 프롬프트 킷 clone 중…');
-    fs.mkdirSync(path.dirname(vendorDir), { recursive: true });
+    onLine && onLine('공냥 프롬프트 킷 최신본 받는 중(git clone)…');
+    try { fs.mkdirSync(path.dirname(vendorDir), { recursive: true }); } catch { /* 상위 폴더 존재 */ }
     r = await runCmd('git', ['clone', '--depth', '1', IMAGE_KIT_REPO, vendorDir], onLine, { timeoutMs: 300000 });
   }
-  if (!r.ok) return { ok: false, tail: (r.tail || 'clone/pull 실패').slice(-200) };
-  if (!fs.existsSync(skillSrc)) return { ok: false, tail: 'skills/image-prompt를 찾지 못했습니다 (레포 구조 변경?)' };
-  try {
-    fs.mkdirSync(path.join(CLAUDE_DIR, 'skills'), { recursive: true });
-    fs.rmSync(skillDst, { recursive: true, force: true });
-    fs.cpSync(skillSrc, skillDst, { recursive: true });
-  } catch (e) {
-    return { ok: false, tail: '스킬 복사 실패: ' + (e.message || e) };
+  return (r.ok && fs.existsSync(skillSrc)) ? skillSrc : null;
+}
+
+function copyKit(src, skillDst) {
+  fs.mkdirSync(path.join(CLAUDE_DIR, 'skills'), { recursive: true });
+  fs.rmSync(skillDst, { recursive: true, force: true });
+  fs.cpSync(src, skillDst, { recursive: true });
+}
+
+async function installImagePromptKit(onLine) {
+  const skillDst = path.join(CLAUDE_DIR, 'skills', 'image-prompt');
+  const bundled = payloadPaths().imageKit;
+  const hasBundle = bundled && fs.existsSync(path.join(bundled, 'SKILL.md'));
+  // 1) 앱 번들 사본으로 즉시 설치(항상 성공·오프라인·git 불필요) — 이게 기본 경로.
+  let source = null;
+  if (hasBundle) {
+    onLine && onLine('번들된 공냥 프롬프트 킷 사본으로 설치합니다.');
+    try { copyKit(bundled, skillDst); source = 'bundle'; }
+    catch (e) { return { ok: false, tail: '스킬 복사 실패: ' + (e.message || e) }; }
+  }
+  // 2) git이 (curated 경로에) 있으면 GitHub 최신본으로 덧씌우기 시도 — 실패는 무시(번들 유지).
+  //    git이 없거나 오프라인인 PC는 이 단계를 건너뛰므로 네트워크로 멈추지 않는다.
+  //    SAT_SKIP_KIT_GIT=1 이면 번들만 사용(테스트·오프라인 강제).
+  if (!process.env.SAT_SKIP_KIT_GIT && resolveCmd('git')) {
+    try {
+      const src = await fetchImageKitViaGit(onLine);
+      if (src) { copyKit(src, skillDst); source = 'github'; }
+    } catch { /* 최신화 실패 — 번들 사본을 그대로 사용 */ }
+  }
+  if (!source) {
+    return { ok: false, tail: '공냥 프롬프트 킷을 찾지 못했습니다 — 번들 사본이 없고 git으로도 받지 못했습니다.' };
   }
   const node = await cliVersion('node');
-  return { ok: true, path: skillDst, validatorReady: node.found, nodeWarn: node.found ? null : '검증기(check_prompt.mjs) 실행에는 Node.js가 필요합니다.' };
+  return {
+    ok: true, path: skillDst, source,
+    validatorReady: node.found,
+    nodeWarn: node.found ? null : '검증기(check_prompt.mjs) 실행에는 Node.js가 필요합니다.',
+  };
 }
 function imagePromptKitStatus() {
   return { installed: fs.existsSync(path.join(CLAUDE_DIR, 'skills', 'image-prompt', 'SKILL.md')) };
