@@ -1,7 +1,10 @@
 // Pipeline stage runner — the app IS the human gate layer.
-// Automated stages run `claude -p` headless in the client folder and stream logs;
-// interview-style stages open an interactive terminal running /content-director.
+// Automated stages run the SELECTED engine headless (claude -p 또는 codex exec) in the
+// client folder and stream logs; interview-style stages open an interactive terminal.
 const { spawn } = require('child_process');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const { runCmd, envWithPath, isWin, killTree } = require('./proc');
 
 // 스테이지 실행 상한 — 행(hang) 걸린 CLI가 워크스페이스 락을 무한 점유하는 유일한 데드락
@@ -87,22 +90,77 @@ const STAGES = {
   },
 };
 
+// Codex 엔진으로 단계 실행 — chat.js codexTurn과 같은 방식(headless exec, 결과는 -o 파일).
+// 파이프라인 단계는 일회성이라 세션 재개는 하지 않는다. current Map에 등록해 중지 버튼이 죽일 수 있게.
+// codex는 Claude Code 스킬을 자동 로드하지 않으므로, 스킬 파일 경로를 프롬프트 앞에 명시한다.
+function runStageCodex(dir, stdinText, onLine) {
+  const CODEX_PREAMBLE =
+    '너는 이 클라이언트 폴더의 소셜 콘텐츠 팀 실행자다. 아래 지시에 나오는 "스킬"은 '
+    + `${path.join(os.homedir(), '.claude', 'skills')}/<이름>/SKILL.md 파일이다 — 먼저 그 파일을 읽고 그 절차·출력 규약을 그대로 따르라. `
+    + '서브에이전트/Task 도구가 없으면 해당 작업을 직접(인라인) 수행하라. 산출물은 지정된 outputs/ 폴더에 저장하고, '
+    + '운영자 승인이 필요한 발행·파괴적 작업은 하지 말고 요약만 출력하라.\n\n';
+  const outFile = path.join(os.tmpdir(), `sat-stage-codex-${Date.now()}.txt`);
+  const model = config.getModels().codex;
+  const buildArgs = (extra = [], useModel = true) => {
+    const a = ['exec', '-C', dir, '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...extra];
+    if (model && useModel) a.push('-c', `model="${model}"`);
+    a.push('-');
+    return a;
+  };
+  const feed = (line) => { if (onLine && line.trim()) onLine(line); };
+  const runOpts = {
+    cwd: dir, stdinText: CODEX_PREAMBLE + stdinText, timeoutMs: STAGE_TIMEOUT_MS,
+    onSpawn: (child) => { current.set(dir, child); },
+  };
+  const finish = (r) => {
+    current.delete(dir);
+    let resultText = '';
+    try { resultText = fs.readFileSync(outFile, 'utf8').trim(); fs.unlinkSync(outFile); } catch { /* no file */ }
+    if (!resultText) resultText = (r.tail || r.out || '').slice(-500);
+    return { ...r, resultText, tail: resultText ? resultText.slice(-500) : r.tail };
+  };
+  const AUTH_FAIL = /Invalid authentication credentials|Failed to authenticate|status.?401|Not logged in|Unauthorized/i;
+  return runCmd('codex', buildArgs(), feed, runOpts).then(async (r) => {
+    // config.toml 파싱 실패 → 사용자 설정 무시하고 재시도
+    if (!r.ok && /Error loading config/i.test(r.out)) {
+      onLine && onLine('[codex] config.toml 파싱 실패 — 사용자 설정을 무시하고 재시도합니다.');
+      r = await runCmd('codex', buildArgs(['--ignore-user-config']), feed, runOpts);
+    }
+    // 선택 모델을 계정이 거부 → 기본 모델로 재시도
+    if (!r.ok && model && /model.*(is )?not supported|invalid_request_error/i.test(r.out)) {
+      onLine && onLine(`[codex] 모델 "${model}" 미지원 — 기본 모델로 재시도합니다.`);
+      r = await runCmd('codex', buildArgs([], false), feed, runOpts);
+    }
+    current.delete(dir);
+    if (!r.ok && AUTH_FAIL.test(r.out)) {
+      onLine && onLine('[auth] codex 인증 실패 — 설정의 "Codex 로그인 (OAuth)"으로 로그인 후 다시 실행하세요.');
+      return finish({ ...r, tail: 'codex 인증 실패 — 설정에서 Codex 로그인 후 재시도하세요.' });
+    }
+    return finish(r);
+  });
+}
+
 function runStage(dir, stage, opts = {}, onLine) {
   const spec = STAGES[stage];
   if (!spec) return Promise.resolve({ ok: false, code: -1, out: `unknown stage: ${stage}`, tail: `unknown stage: ${stage}` });
   if (current.has(dir)) return Promise.resolve({ ok: false, code: -1, out: '이 클라이언트에서 다른 단계가 이미 실행 중입니다', tail: '이 클라이언트에서 다른 단계가 이미 실행 중입니다' });
 
   const extra = opts.extraContext ? `\n\n추가 지시: ${opts.extraContext}` : '';
-  // 프롬프트는 stdin으로 (Windows 개행 안전 — proc.js 참조).
-  // stream-json으로 실행해 도구 활동을 읽을 수 있는 로그로, 최종 비용/소요를 결과에 싣는다.
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--add-dir', dir];
-  const model = config.getModels().claude; // 파이프라인은 항상 Claude — 모델만 선택 적용
-  if (model) args.push('--model', model);
   // 오늘 날짜를 모든 단계에 주입 — 특히 캘린더가 과거 날짜에 스케줄되는 것을 막는 앵커
   const now = new Date();
   const dow = ['일', '월', '화', '수', '목', '금', '토'][now.getDay()];
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + spec.prompt + extra;
+
+  // 선택된 엔진으로 실행 — 설정 → 사이드바의 Claude/Codex 토글을 존중한다.
+  // (Codex를 골랐는데 파이프라인이 claude를 고정 실행해 한도에 걸리던 문제 해결)
+  if (config.getEngine() === 'codex') return runStageCodex(dir, stdinText, onLine);
+
+  // 프롬프트는 stdin으로 (Windows 개행 안전 — proc.js 참조).
+  // stream-json으로 실행해 도구 활동을 읽을 수 있는 로그로, 최종 비용/소요를 결과에 싣는다.
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--add-dir', dir];
+  const model = config.getModels().claude;
+  if (model) args.push('--model', model);
   const AUTH_FAIL = /Invalid authentication credentials|Failed to authenticate|status.?401/i;
   let parser;
   const prettyFeed = () => {
