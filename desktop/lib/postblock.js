@@ -43,10 +43,21 @@ function findVisualDirection(dir, lane, topic) {
 /** 게시 본문 섹션(서로 peer) — 여기서만 섹션을 끊는다. VISUAL DIRECTION은 끊지 않음 */
 const PEER_SECTION = /^(?:CAPTION|POST COPY|BODY|TITLE(?:\s*\([^)]*\))?|HASHTAGS?|HASH\s*TAGS?|CTA|TAGS?|본문|제목|해시태그)\s*[:：]/i;
 const META_LINE = /^(?:PLATFORM|OBJECTIVE|FRAMEWORK|TYPE|WORD COUNT|CHAR COUNT|글자수|문자수|MAIN KEYWORD|SUB KEYWORDS?|SPONSORED|HOOK|ANGLE|PILLAR|FORMAT|NOTES?|BLOTATO FLAG|INFOGRAPHIC|SCHEDULED\s*(?:DATE|TIME)|STYLE|MOOD|무드|스타일)\s*[:：]/i;
-// 계약/프롬프트 블록 시작 — 여기부터 빈 줄까지는 게시 본문이 아니다. 렌더용 프롬프트가
-// 발행 본문에 딸려 나가는 유출을 막기 위해 영문·한글 라벨과 PROMPT 계열을 전부 잡는다.
+// 계약/프롬프트 블록 시작 — 여기부터 게시 본문이 아니다. 렌더용 프롬프트가 발행 본문에
+// 딸려 나가는 유출을 막기 위해 영문·한글 라벨과 PROMPT 계열을 전부 잡는다.
 // 주의: 한글 라벨 뒤에는 \b를 쓰지 않는다 — JS \b는 ASCII 단어 경계라 한글 다음에서 매칭 실패
 const CONTRACT_START = /^(?:\[?\s*(?:IMAGE\s+SLOT\b|이미지\s*슬롯)|(?:\*\*)?(?:VISUAL\s+DIRECTION\b|비주얼\s*디렉션)|(?:\*\*)?(?:IMAGE\s+|FINAL\s+|NEGATIVE\s+)?PROMPT\s*[:：]|(?:\*\*)?(?:이미지\s*|네거티브\s*)?프롬프트\s*[:：])/i;
+// 프롬프트 문법 필드 라벨 — gpt-image-2 킷(Format A)·sop 6요소·SUBJECT→…→NEGATIVE 팩이
+// 공유하는 영문 라벨. 한국어 게시 본문엔 이 영문 라벨이 줄머리로 등장하지 않으므로 안전하게 잡는다.
+const PROMPT_FIELD = /^(?:#\s*\d+\.\s*)?(?:\*\*)?(?:Scene|Camera(?:\s*\+\s*Lighting)?|Lighting|Colou?r\s*grading|Texture(?:\s*\/\s*Medium)?|Medium|Text[-\s]?in[-\s]?image|Text\s*overlay|Subject|Composition|Location|Setting|Negative(?:\s*prompt)?|Aspect\s*ratio)\s*[:：]/i;
+// 끝에 붙는 AR 토큰 줄 (`AR 16:9`, `AR 4:5 SIZE 1024x1536`) — 프롬프트 잔재
+const AR_TOKEN = /^(?:\*\*)?AR\s+\d{1,2}\s*:\s*\d{1,2}\b/i;
+// 계약/프롬프트 라인인가 — 스킵 진입 신호
+const isContractLine = (t) => CONTRACT_START.test(t) || PROMPT_FIELD.test(t) || AR_TOKEN.test(t);
+// 실제 게시 섹션 재개 앵커 — 스킵은 빈 줄이 아니라 여기서만 풀린다(프롬프트 블록 중간 빈 줄에
+// 속아 뒷부분을 다시 게시하지 않게). PEER 게시 섹션 / 네이버 ## 소제목 / 구분선 / 새 포스트.
+const isResumeAnchor = (t) => PEER_SECTION.test(t) || /^##\s+/.test(t) || /^---+\s*$/.test(t)
+  || /^(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(t) || /^[A-Z]{1,2}-\d+\b/.test(t);
 
 function sectionBody(text, nameRe) {
   const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
@@ -60,19 +71,16 @@ function sectionBody(text, nameRe) {
     for (let j = i + 1; j < lines.length; j++) {
       const L = lines[j];
       const trimmed = L.trim();
+      // 프롬프트/계약 블록 스킵 중 — 재개 앵커 전까지 빈 줄·프롬프트 줄을 전부 흡수
+      if (skipContract) {
+        if (isResumeAnchor(trimmed)) skipContract = false;
+        else continue;
+      }
       if (/^\s*---+\s*$/.test(L)) break;
       if (/^\s*(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(L)) break;
       // 다른 게시 섹션이 시작되면 종료 (CAPTION 다음 HASHTAGS 등)
       if (PEER_SECTION.test(trimmed) && !new RegExp(String.raw`^(?:${nameRe})\s*[:：]`, 'i').test(trimmed)) break;
-      if (CONTRACT_START.test(trimmed)) { skipContract = true; continue; }
-      if (skipContract) {
-        if (!trimmed) { skipContract = false; continue; }
-        if (/^\s*##\s+/.test(L) || PEER_SECTION.test(trimmed) || META_LINE.test(trimmed)) {
-          skipContract = false;
-        } else {
-          continue;
-        }
-      }
+      if (isContractLine(trimmed)) { skipContract = true; continue; }
       if (META_LINE.test(trimmed)) continue;
       // 네이버 본문 안 ## 소제목은 유지
       collected.push(L);
@@ -87,23 +95,14 @@ function stripVisualAndSlots(text) {
   const out = [];
   let skip = false;
   for (const L of lines) {
-    if (CONTRACT_START.test(L.trim())) {
-      skip = true;
-      continue;
-    }
-    if (skip) {
-      // VISUAL DIRECTION 연속 줄 스킵 — 빈 줄·새 헤더·소제목에서 해제
-      if (!L.trim()) { skip = false; continue; }
-      // (SECTION_HEAD 미정의 잠복 버그 수정 — 의도는 게시 섹션 시작에서 스킵 해제)
-      if (/^\s*##\s+/.test(L) || PEER_SECTION.test(L.trim()) || /^\s*---+\s*$/.test(L)) {
-        skip = false;
-      } else {
-        continue;
-      }
-    }
-    if (/^\s*(?:\*\*)?BLOTATO FLAG\b/i.test(L)) continue;
-    if (/^\s*(?:\*\*)?(?:Char count|Word count|글자수|문자수)\b/i.test(L)) continue;
-    if (/^\s*(?:\*\*)?(?:PASS|WARN|BLOCK)\b/i.test(L)) continue;
+    const t = L.trim();
+    // 스킵 중 — 재개 앵커 전까지는 빈 줄·프롬프트 줄을 전부 흡수(프롬프트 블록 중간 빈 줄에 안 속게)
+    if (skip && !isResumeAnchor(t)) continue;
+    skip = false;
+    if (isContractLine(t)) { skip = true; continue; }
+    if (/^(?:\*\*)?BLOTATO FLAG\b/i.test(t)) continue;
+    if (/^(?:\*\*)?(?:Char count|Word count|글자수|문자수)\b/i.test(t)) continue;
+    if (/^(?:\*\*)?(?:PASS|WARN|BLOCK)\b/i.test(t)) continue;
     out.push(L);
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -112,21 +111,19 @@ function stripVisualAndSlots(text) {
 function stripPackageMeta(text) {
   const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
   const out = [];
-  let skipVd = false;
+  let skip = false;
   for (const L of lines) {
     const trimmed = L.trim().replace(/^\*\*|\*\*$/g, '');
-    if (/^\s*---+\s*$/.test(L)) continue;
-    if (/^\s*(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(L)) continue;
-    if (/^\s*[A-Z]{1,2}-\d+\b/.test(L) && /—|-/.test(L)) continue; // IG-1 — topic
-    if (/^\s*#\s+/.test(L) && /(POST|캡션|스레드)/i.test(L)) continue;
-    if (CONTRACT_START.test(trimmed)) { skipVd = true; continue; }
-    if (skipVd) {
-      if (!trimmed) { skipVd = false; continue; }
-      if (/^\s*##\s+/.test(L) || PEER_SECTION.test(trimmed) || META_LINE.test(trimmed)) skipVd = false;
-      else continue;
-    }
+    // 스킵 중 — 재개 앵커(단, 여기선 ##/PEER/META만; --- 와 POST 는 어차피 아래서 제거)까지 흡수
+    if (skip && !(PEER_SECTION.test(trimmed) || /^##\s+/.test(trimmed) || META_LINE.test(trimmed))) continue;
+    skip = false;
+    if (/^---+\s*$/.test(trimmed)) continue;
+    if (/^(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(trimmed)) continue;
+    if (/^[A-Z]{1,2}-\d+\b/.test(trimmed) && /—|-/.test(trimmed)) continue; // IG-1 — topic
+    if (/^#\s+/.test(trimmed) && /(POST|캡션|스레드)/i.test(trimmed)) continue;
+    if (isContractLine(trimmed)) { skip = true; continue; }
     if (META_LINE.test(trimmed)) continue;
-    if (/^\s*\d+\s*\/\s*\d+\s*chars?\b/i.test(L)) continue;
+    if (/^\d+\s*\/\s*\d+\s*chars?\b/i.test(trimmed)) continue;
     // 라벨만 있고 내용 없는 CAPTION: 줄은 제거
     if (/^(?:CAPTION|POST COPY|BODY|TITLE|HASHTAGS?|CTA|TAGS?)\s*[:：]\s*$/i.test(trimmed)) continue;
     out.push(L);
