@@ -1,16 +1,23 @@
 // 포스트별 산출물 삭제 + 재기획 리셋.
-// 보드가 파일 증거로 stage를 추론하므로, 파일을 지우면 카드가 자동으로 planned/copy로 되돌아간다.
-//  - 이미지 삭제: 포스트별 이미지/영상 렌더 파일 + 시안 폴더를 통째로 삭제(안전 — 포스트 전용 파일).
-//  - 본문 삭제: 카피/대본은 월간 공유 파일에 여러 포스트가 함께 들어 있을 수 있으므로,
-//    앵커(POST n / ID-n / 헤딩) 기준으로 이 포스트 블록만 잘라낸다(형제 포스트 보존).
-//    본문을 지우면 이미지도 근거가 사라지므로 함께 삭제한다.
+// 안전 원칙(형제 포스트·공유 파일 보호):
+//  - 이미지 삭제: outputs/creatives(이미지)·outputs/videos(영상)에서 파일명이 이 포스트의
+//    렌더 프리픽스(chId-n / mono-n / channelKey-n)와 일치하는 것만 지운다. 보드가 토픽/풀
+//    배분으로 "빌려온" 이미지(다른 포스트 것일 수 있음)·브리프(.md)는 절대 건드리지 않는다.
+//    시안 폴더(outputs/variants/<uid>)는 uid 전용이라 함께 정리.
+//  - 본문 삭제: 카피/대본은 월간 공유 파일일 수 있으므로, 앵커(POST n / ID-n) 헤더가 이
+//    포스트 n을 가리키는 블록만 잘라낸다(형제 보존). 특정하지 못하면 아무것도 지우지 않고
+//    삭제를 취소한다. 본문을 지우면 이미지도 함께 리셋한다.
+// 보드가 파일 증거로 stage를 재추론하므로, 지우면 카드가 자동으로 planned/copy로 돌아간다.
 const fs = require('fs');
 const path = require('path');
 const board = require('./board');
+const channelRegistry = require('./channels');
 
-const IMG_KINDS = new Set(['render', 'videorender', 'creative']);
 const COPY_KINDS = new Set(['copy', 'video', 'board']);
+const IMG_EXT = /\.(png|jpe?g|webp|gif)$/i;
+const VID_EXT = /\.(mp4|webm|mov)$/i;
 const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // 워크스페이스(dir) 밖 경로 차단
 function safeInside(dir, rel) {
@@ -19,48 +26,84 @@ function safeInside(dir, rel) {
   return (abs === root || abs.startsWith(root + path.sep)) ? abs : null;
 }
 
-// 앵커 시작 위치들(줄머리 POST n / ID-n / '# ' 헤딩)
-function anchorPositions(text) {
-  const re = /^(?:POST\s*\d+\b.*|[A-Z]{1,2}-\d+\b.*|#\s.*)$/gm;
-  const pos = [];
-  let m;
-  while ((m = re.exec(text)) !== null) { pos.push(m.index); if (m.index === re.lastIndex) re.lastIndex++; }
-  return pos;
+// 이 포스트의 렌더 파일명 프리픽스 정규식 — board.js의 renders 매칭과 동일 규약.
+function renderPrefixRes(card) {
+  const chKey = card.channel || 'etc';
+  const chId = card.chId || 'etc';
+  const mono = (channelRegistry.REGISTRY[chKey] && channelRegistry.REGISTRY[chKey].mono) || '';
+  const n = card.n;
+  return [
+    new RegExp(`^${escRe(chId)}-0*${n}(?![0-9])`, 'i'),
+    mono ? new RegExp(`^${escRe(mono)}-0*${n}(?![0-9])`, 'i') : null,
+    new RegExp(`^${escRe(chKey)}[_-]?0*${n}(?![0-9])`, 'i'),
+    new RegExp(`^${escRe(chKey)}-${n}(?![0-9])`, 'i'),
+  ].filter(Boolean);
 }
-function hasAnchor(text) { return /^(?:POST\s*\d+\b|[A-Z]{1,2}-\d+\b|#\s)/m.test(text); }
 
-// 공유 파일에서 이 포스트 블록만 제거. 남은 포스트가 없으면 파일 자체를 삭제.
-// 반환: { changed, excised?, deletedFile? }
-function exciseBlockFromFile(abs, topic, n) {
+// 헤더 앵커 — board.parseCalendar와 같은 관용(헤딩 #{0,4}·볼드 ** 장식 허용). 본문 속 일반
+// '# 소제목'은 앵커가 아니다(POST/ID 만 앵커). 캡처: [full, postNum, idAlpha, idNum].
+function headerAnchors(text) {
+  const re = /^[ \t]*#{0,4}[ \t]*\**[ \t]*(?:POST[ \t]*(\d+)|([A-Za-z]{1,2})-(\d+))\b[^\n]*$/gim;
+  return [...text.matchAll(re)];
+}
+
+// 공유 파일에서 이 포스트(n·topic) 블록만 제거. 특정 못하면 changed:false(안전). 파일명이 이
+// 포스트 전용 프리픽스면(헤더 없는 단일 파일) 파일 삭제.
+function exciseBlockFromFile(abs, filename, topic, n, prefixRes) {
   let text;
   try { text = fs.readFileSync(abs, 'utf8'); } catch { return { changed: false }; }
-  const t = norm(topic).slice(0, 24);
-  const citesN = (block) => Number(n) > 0
-    && new RegExp(`(?:POST\\s*#?0*${n}(?![0-9])|\\b[A-Z]{1,2}-0*${n}(?![0-9]))`, 'i').test(block);
-  const pos = anchorPositions(text);
-  if (pos.length) {
-    const head = text.slice(0, pos[0]);
-    const bounds = [...pos, text.length];
-    let removed = false;
-    const kept = [];
-    for (let i = 0; i < bounds.length - 1; i++) {
-      const block = text.slice(bounds[i], bounds[i + 1]);
-      const target = (!!t && norm(block).includes(t)) || citesN(block);
-      if (target && !removed) { removed = true; continue; } // 이 포스트 블록(첫 매칭)만 제거
-      kept.push(block);
+  const anchors = headerAnchors(text);
+  if (anchors.length) {
+    const t = norm(topic).slice(0, 24);
+    let targetIdx = -1;
+    // 1순위: 헤더가 정확히 n을 가리킴 (POST n / XX-n)
+    for (let i = 0; i < anchors.length; i++) {
+      const num = Number(anchors[i][1] || anchors[i][3]);
+      if (num === Number(n)) { targetIdx = i; break; }
     }
-    if (!removed) return { changed: false };
-    const rest = (head + kept.join('')).replace(/\n{3,}/g, '\n\n').trim();
-    if (!rest || !hasAnchor(rest)) { // 남은 포스트가 없으면 파일 삭제
+    // 2순위: 헤더 줄에 토픽이 들어 있음 (본문이 아니라 헤더에서만)
+    if (targetIdx < 0 && t) {
+      for (let i = 0; i < anchors.length; i++) {
+        if (norm(anchors[i][0]).includes(t)) { targetIdx = i; break; }
+      }
+    }
+    if (targetIdx < 0) return { changed: false }; // 특정 실패 — 아무것도 지우지 않는다
+    const bounds = anchors.map((m) => m.index);
+    bounds.push(text.length);
+    const head = text.slice(0, bounds[0]);
+    let kept = '';
+    for (let i = 0; i < anchors.length; i++) {
+      if (i === targetIdx) continue;
+      kept += text.slice(bounds[i], bounds[i + 1]);
+    }
+    const rest = (head + kept).replace(/\n{3,}/g, '\n\n').trim();
+    if (!rest || anchors.length === 1) { // 남은 포스트가 없으면 파일 삭제
       try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
     }
     try { fs.writeFileSync(abs, rest + '\n'); return { changed: true, excised: true }; } catch { return { changed: false }; }
   }
-  // 앵커 없는 단일 포스트 파일 — 토픽을 담으면 통째로 삭제
-  if (t && norm(text).includes(t)) {
+  // 앵커 헤더가 없는 파일 — 파일명이 이 포스트 전용 프리픽스일 때만 삭제(공유 파일 오삭제 방지)
+  if (prefixRes && prefixRes.some((re) => re.test(filename))) {
     try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
   }
   return { changed: false };
+}
+
+// outputs/<lane>에서 프리픽스 일치 파일만 삭제(이 포스트 소유 증명). 삭제한 rel 목록 반환.
+function deletePrefixMatched(dir, lane, extRe, prefixRes, deleted, failed) {
+  const laneAbs = safeInside(dir, path.join('outputs', lane));
+  if (!laneAbs) return;
+  let names = [];
+  try { names = fs.readdirSync(laneAbs); } catch { return; }
+  for (const name of names) {
+    if (!extRe.test(name) || !prefixRes.some((re) => re.test(name))) continue;
+    const abs = path.join(laneAbs, name);
+    try {
+      if (!fs.statSync(abs).isFile()) continue;
+      fs.unlinkSync(abs);
+      deleted.push('outputs/' + lane + '/' + name);
+    } catch (e) { failed.push({ rel: 'outputs/' + lane + '/' + name, error: e.message }); }
+  }
 }
 
 // dir/uid의 이미지/본문 산출물을 삭제하고 카드를 재기획 단계로 되돌린다.
@@ -72,43 +115,41 @@ function deleteAssets(dir, uid, opts = {}) {
   const wantCopy = !!opts.copy;
   const wantImage = !!opts.image || wantCopy;
   if (!wantImage && !wantCopy) return { ok: false, error: '삭제할 대상이 없습니다 (image/copy)', uid };
+  const prefixRes = renderPrefixRes(card);
   const deleted = [];
   const failed = [];
 
-  // 1) 이미지/영상 렌더 (+ 시안 폴더) — 포스트 전용 파일이라 통째 삭제
-  if (wantImage) {
-    const rels = new Set();
-    for (const f of (card.files || [])) if (IMG_KINDS.has(f.kind)) rels.add(f.rel);
-    if (card.thumb) rels.add(card.thumb);
-    if (card.videoThumb) rels.add(card.videoThumb);
-    for (const rel of rels) {
+  // 1) 본문 먼저 — 블록을 특정하지 못하면 이미지도 건드리지 않고 취소(부분 파괴 방지)
+  if (wantCopy) {
+    const copyRels = new Set();
+    for (const f of (card.files || [])) if (COPY_KINDS.has(f.kind)) copyRels.add(f.rel);
+    let excisedAny = false;
+    for (const rel of copyRels) {
       const abs = safeInside(dir, rel);
       if (!abs) { failed.push({ rel, error: '경로 이탈' }); continue; }
-      try { if (fs.existsSync(abs)) { fs.unlinkSync(abs); deleted.push(rel); } }
-      catch (e) { failed.push({ rel, error: e.message }); }
+      const r = exciseBlockFromFile(abs, rel.split('/').pop(), card.topic, card.n, prefixRes);
+      if (r.changed) { excisedAny = true; deleted.push(rel + (r.deletedFile ? ' (파일 삭제)' : ' (블록 제거)')); }
     }
-    const vrel = path.join('outputs', 'variants', uid);
-    const vabs = safeInside(dir, vrel);
+    if (!excisedAny) {
+      return { ok: false, uid, error: '이 포스트의 본문 블록을 특정하지 못해 삭제를 취소했습니다 (공유 파일 안전 보호).', deleted: [], failed };
+    }
+  }
+
+  // 2) 이미지/영상 — 파일명이 이 포스트 프리픽스와 일치하는 것만. 브리프·풀 이미지·형제 제외.
+  if (wantImage) {
+    deletePrefixMatched(dir, 'creatives', IMG_EXT, prefixRes, deleted, failed);
+    deletePrefixMatched(dir, 'videos', VID_EXT, prefixRes, deleted, failed);
+    const vabs = safeInside(dir, path.join('outputs', 'variants', uid));
     if (vabs && fs.existsSync(vabs)) {
       try { fs.rmSync(vabs, { recursive: true, force: true }); deleted.push('outputs/variants/' + uid + '/'); }
-      catch (e) { failed.push({ rel: vrel, error: e.message }); }
+      catch (e) { failed.push({ rel: 'outputs/variants/' + uid, error: e.message }); }
     }
   }
 
-  // 2) 본문(카피/대본/스토리보드) — 공유 파일이면 이 포스트 블록만 잘라낸다
-  if (wantCopy) {
-    const rels = new Set();
-    for (const f of (card.files || [])) if (COPY_KINDS.has(f.kind)) rels.add(f.rel);
-    for (const rel of rels) {
-      const abs = safeInside(dir, rel);
-      if (!abs) { failed.push({ rel, error: '경로 이탈' }); continue; }
-      const r = exciseBlockFromFile(abs, card.topic, card.n);
-      if (r.changed) deleted.push(rel + (r.deletedFile ? ' (파일 삭제)' : ' (블록 제거)'));
-      else failed.push({ rel, error: '이 포스트 블록을 특정하지 못함' });
-    }
+  if (!deleted.length) {
+    return { ok: false, uid, deleted, failed, error: '삭제할 파일을 찾지 못했습니다 (이 포스트 소유의 이미지/본문 없음).' };
   }
-
   return { ok: true, uid, deleted, failed, reset: wantCopy ? 'planned' : 'copy' };
 }
 
-module.exports = { deleteAssets, exciseBlockFromFile };
+module.exports = { deleteAssets, exciseBlockFromFile, renderPrefixRes };

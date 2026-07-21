@@ -147,6 +147,20 @@ test('buildBoard — creatives에 실제 이미지가 있으면 visual로 승격
   assert.ok(b.posts[0].thumb);
 });
 
+test('buildBoard — 프리픽스 불일치 풀 이미지는 표시(thumb)만, visual 승격·render 카운트 제외', () => {
+  const dir = tmpWorkspace();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'POST 1 — 라떼 아트\nPlatform: Instagram\nFormat: single image\nTopic: 라떼 아트\n');
+  writeLane(dir, 'captions', 'ig-1.md', 'POST 1\nCAPTION: 라떼 아트 소개\n');
+  writeLane(dir, 'creatives', 'leftover-xyz.png', 'STRAY'); // 파일명 규칙 불일치 = 소유 불확실
+  const b = buildBoard(dir);
+  const p = b.posts[0];
+  assert.equal(p.stage, 'copy');          // 차용 이미지로는 visual 승격 안 됨 (게이트 오인 방지)
+  assert.ok(p.thumb);                       // 표시용 썸네일은 붙는다
+  assert.equal((p.files || []).filter((f) => f.kind === 'render').length, 0); // render 카운트 0
+  assert.equal((p.files || []).some((f) => f.kind === 'poolrender'), true);
+});
+
 test('buildBoard — 사실 검증 리포트의 Overall 줄을 board.verify로 파싱', () => {
   const dir = tmpWorkspace();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');

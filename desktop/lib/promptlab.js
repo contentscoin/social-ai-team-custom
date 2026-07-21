@@ -313,8 +313,9 @@ function finalizeImagePrompt(prompt, negative) {
 function applyStyle(c, styleKey, onLine) {
   const dir = imagestyles.directiveFor(styleKey);
   if (!dir || !c || !c.prompt) return c;
-  const head = dir.split(',')[0].trim().toLowerCase();
-  if (String(c.prompt).toLowerCase().includes(head)) return c;
+  // 지시어 '전체'가 이미 있을 때만 중복 생략 — 첫 단어(예: 'photorealistic')로 판단하면
+  // 품질 꼬리(QUALITY_TAIL)의 'photorealistic finish'와 충돌해 실사형 프리셋이 통째로 무시됐다.
+  if (String(c.prompt).toLowerCase().includes(dir.toLowerCase())) return c;
   onLine && onLine(`[prompt] 스타일 프리셋 적용 · ${imagestyles.labelFor(styleKey)}`);
   return { ...c, prompt: `${dir}. ${c.prompt}`.replace(/\s+/g, ' ').trim().slice(0, 3800), style: styleKey };
 }

@@ -1659,7 +1659,7 @@ function openInspector(p) {
       <span>${(stepFiles[s] || []).map((f) => `<a href="#" class="insp-file" data-rel="${esc(f.rel)}" style="color:var(--info)">${esc(f.name)}</a>`).join('<br>') || '<span class="muted">—</span>'}</span></div>`).join('')}
     </div>
     ${(() => {
-      const imgs = (p.files || []).filter((f) => f.kind === 'render').map((f) => f.rel);
+      const imgs = (p.files || []).filter((f) => f.kind === 'render' || f.kind === 'poolrender').map((f) => f.rel);
       if (!imgs.length && p.thumb) imgs.push(p.thumb);
       return imgs.length ? `<div class="insp-strip">${imgs.map((r) => `<img class="zoomable" src="${satUrl(r)}" alt="렌더" loading="lazy">`).join('')}</div>` : '';
     })()}
@@ -1869,7 +1869,7 @@ async function openRenderPanel(p) {
     $('#rp-imgcount').classList.toggle('hidden', kind !== 'image'); // 캐러셀 장수는 이미지 탭만
     $('#rp-variants').classList.toggle('hidden', kind !== 'image'); // 시안 선택도 이미지 탭 전용
     $('#rp-dur').classList.toggle('hidden', kind !== 'video');
-    $('#rp-style-row').classList.toggle('hidden', kind === 'video'); // 스타일은 이미지·카드뉴스만
+    $('#rp-style-row').classList.toggle('hidden', kind !== 'image'); // 스타일 프리셋은 사진형 이미지 탭만(카드뉴스=한글 타이포 SVG·영상 제외)
     if (kind === 'video' && p.isReel) $('#rp-size').value = 'story';
   };
   // 스타일을 바꾸면 기본값으로 저장(오토파일럿·일괄 생성도 이 값을 씀)하고 재컴파일이 필요함을 표시

@@ -17,6 +17,15 @@ test('compile — 스타일 프리셋이 프롬프트 앞에 명시된다(svg �
   assert.equal(r.style, 'infographic');
 });
 
+test('compile — photoreal 프리셋도 실제 적용된다(품질꼬리 단어 충돌로 무시되지 않음)', async () => {
+  const dir = tmp();
+  // 프롬프트에 이미 'photorealistic finish'가 들어가도 실사형 지시어 전체가 붙어야 한다
+  const r = await promptlab.compile(dir, { provider: 'claude-svg', prompt: 'a cup, photorealistic finish', style: 'photoreal' });
+  assert.equal(r.ok, true);
+  assert.equal(r.style, 'photoreal');
+  assert.match(r.prompt, /realistic photography/i); // 첫 단어만이 아니라 지시어 전체가 반영
+});
+
 test('compile — 무효 스타일은 무시(프롬프트 원본 유지)', async () => {
   const dir = tmp();
   const r = await promptlab.compile(dir, { provider: 'claude-svg', prompt: 'a latte cup', style: 'bogus' });
