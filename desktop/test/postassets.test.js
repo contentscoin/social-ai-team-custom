@@ -164,6 +164,21 @@ test('deleteAssets — 이미지 삭제는 이 포스트 프리픽스 파일만;
   assert.equal(fs.existsSync(path.join(dir, 'outputs', 'creatives', 'prompts-used.md')), true); // 브리프 보존
 });
 
+test('deleteAssets — 프리픽스로 시작하는 공유 파일(ig-1-2주차.md)은 통삭제 금지, 형제 보존', () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
+    'IG-1 — 라떼아트\nPlatform: Instagram\nFormat: single image\nTopic: 라떼아트\n\nIG-2 — 신메뉴\nPlatform: Instagram\nFormat: single image\nTopic: 신메뉴\n');
+  // 파일명이 ig-1 로 시작하지만 실제로는 IG-1·IG-2가 함께 든 공유 파일
+  writeLane(dir, 'captions', 'ig-1-2주차.md',
+    'IG-1 — 라떼아트\nCAPTION: 라떼아트 본문\n\nIG-2 — 신메뉴\nCAPTION: 신메뉴 본문\n');
+  const r = postassets.deleteAssets(dir, 'instagram-1', { copy: true });
+  assert.equal(r.ok, true);
+  const f = path.join(dir, 'outputs', 'captions', 'ig-1-2주차.md');
+  assert.equal(fs.existsSync(f), true);                 // 파일 통삭제 안 됨
+  assert.match(fs.readFileSync(f, 'utf8'), /신메뉴 본문/); // IG-2 형제 보존
+  assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /라떼아트 본문/); // IG-1만 제거
+});
+
 test('deleteAssets — 본문 블록을 특정 못 하면 취소(이미지도 삭제 안 함)', () => {
   const dir = tmp();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),

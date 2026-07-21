@@ -25,7 +25,7 @@ function safeInside(dir, rel) {
   return (abs === root || abs.startsWith(root + path.sep)) ? abs : null;
 }
 
-// 이 포스트의 렌더 파일명 프리픽스 정규식 — board.js의 renders 매칭과 동일 규약.
+// 이 포스트의 렌더 파일명 프리픽스 정규식 — board.js의 renders 매칭과 동일 규약(이미지 파일용).
 function renderPrefixRes(card) {
   const chKey = card.channel || 'etc';
   const chId = card.chId || 'etc';
@@ -36,6 +36,20 @@ function renderPrefixRes(card) {
     mono ? new RegExp(`^${escRe(mono)}-0*${n}(?![0-9])`, 'i') : null,
     new RegExp(`^${escRe(chKey)}[_-]?0*${n}(?![0-9])`, 'i'),
     new RegExp(`^${escRe(chKey)}-${n}(?![0-9])`, 'i'),
+  ].filter(Boolean);
+}
+
+// '이 포스트 전용 파일' 판정용 — 파일 stem(확장자 제외)이 프리픽스와 '정확히' 일치할 때만.
+// ig-1 / ig-1_2(캐러셀 슬롯)는 전용, ig-1-2주차(월간 공유)는 아니다. 공유 파일 통삭제 방지.
+function perPostStemRes(card) {
+  const chKey = card.channel || 'etc';
+  const chId = card.chId || 'etc';
+  const mono = (channelRegistry.REGISTRY[chKey] && channelRegistry.REGISTRY[chKey].mono) || '';
+  const n = card.n;
+  return [
+    new RegExp(`^${escRe(chId)}-0*${n}([_-]\\d+)?$`, 'i'),
+    mono ? new RegExp(`^${escRe(mono)}-0*${n}([_-]\\d+)?$`, 'i') : null,
+    new RegExp(`^${escRe(chKey)}[_-]0*${n}([_-]\\d+)?$`, 'i'),
   ].filter(Boolean);
 }
 
@@ -67,9 +81,10 @@ function anchorChannel(mono) {
 //  1) 파일명이 이 포스트 전용 프리픽스면(예: ig-1.md) 파일 전체가 이 포스트 것 → 파일 삭제.
 //  2) 공유 파일이면: n을 가리키는 '강한 헤더'가 채널 일치로 정확히 하나일 때만 그 블록 제거.
 //     없거나 모호(2개+)하면 아무것도 지우지 않는다(형제·공유 파일 보호).
-function exciseBlockFromFile(abs, filename, topic, n, prefixRes, channelKey) {
-  // 1) 포스트 전용 파일 — 통째로 이 포스트 것
-  if (prefixRes && prefixRes.some((re) => re.test(filename))) {
+function exciseBlockFromFile(abs, filename, topic, n, perPostRes, channelKey) {
+  // 1) 포스트 전용 파일 — stem이 정확히 이 포스트 프리픽스일 때만 통째 삭제(공유 파일은 제외)
+  const stem = String(filename).replace(/\.[^.]+$/, '');
+  if (perPostRes && perPostRes.some((re) => re.test(stem))) {
     try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
   }
   // 2) 공유 파일 — 강한 헤더로 n을 유일하게 특정
@@ -125,7 +140,8 @@ function deleteAssets(dir, uid, opts = {}) {
   const wantCopy = !!opts.copy;
   const wantImage = !!opts.image || wantCopy;
   if (!wantImage && !wantCopy) return { ok: false, error: '삭제할 대상이 없습니다 (image/copy)', uid };
-  const prefixRes = renderPrefixRes(card);
+  const prefixRes = renderPrefixRes(card);   // 이미지 파일명 매칭(느슨)
+  const perPostRes = perPostStemRes(card);   // 카피 파일 통삭제 판정(엄격 stem)
   const deleted = [];
   const failed = [];
 
@@ -137,7 +153,7 @@ function deleteAssets(dir, uid, opts = {}) {
     for (const rel of copyRels) {
       const abs = safeInside(dir, rel);
       if (!abs) { failed.push({ rel, error: '경로 이탈' }); continue; }
-      const r = exciseBlockFromFile(abs, rel.split('/').pop(), card.topic, card.n, prefixRes, card.channel);
+      const r = exciseBlockFromFile(abs, rel.split('/').pop(), card.topic, card.n, perPostRes, card.channel);
       if (r.changed) { excisedAny = true; deleted.push(rel + (r.deletedFile ? ' (파일 삭제)' : ' (블록 제거)')); }
     }
     if (!excisedAny) {
@@ -149,17 +165,25 @@ function deleteAssets(dir, uid, opts = {}) {
   if (wantImage) {
     deletePrefixMatched(dir, 'creatives', IMG_EXT, prefixRes, deleted, failed);
     deletePrefixMatched(dir, 'videos', VID_EXT, prefixRes, deleted, failed);
-    const vabs = safeInside(dir, path.join('outputs', 'variants', uid));
+    // 시안(variant)은 outputs/creatives/variants/<uid> 에 있다 (variants.js).
+    const vabs = safeInside(dir, path.join('outputs', 'creatives', 'variants', uid));
     if (vabs && fs.existsSync(vabs)) {
-      try { fs.rmSync(vabs, { recursive: true, force: true }); deleted.push('outputs/variants/' + uid + '/'); }
-      catch (e) { failed.push({ rel: 'outputs/variants/' + uid, error: e.message }); }
+      try { fs.rmSync(vabs, { recursive: true, force: true }); deleted.push('outputs/creatives/variants/' + uid + '/'); }
+      catch (e) { failed.push({ rel: 'outputs/creatives/variants/' + uid, error: e.message }); }
     }
   }
 
   if (!deleted.length) {
     return { ok: false, uid, deleted, failed, error: '삭제할 파일을 찾지 못했습니다 (이 포스트 소유의 이미지/본문 없음).' };
   }
-  return { ok: true, uid, deleted, failed, reset: wantCopy ? 'planned' : 'copy' };
+  // 삭제 후 실제 카드 단계를 보드에서 재확인해 정직하게 보고(카피+PASS 카드는 이미지만 지워도
+  // ready로 남을 수 있으므로, 가정값이 아니라 실제 stage를 돌려준다).
+  let reset = wantCopy ? 'planned' : 'copy';
+  try {
+    const c2 = (board.buildBoard(dir).posts || []).find((p) => p.uid === uid);
+    if (c2) reset = c2.stage;
+  } catch { /* 재빌드 실패 — 가정값 유지 */ }
+  return { ok: true, uid, deleted, failed, reset };
 }
 
 module.exports = { deleteAssets, exciseBlockFromFile, renderPrefixRes };
