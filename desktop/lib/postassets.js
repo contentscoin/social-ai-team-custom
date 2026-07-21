@@ -16,7 +16,6 @@ const channelRegistry = require('./channels');
 const COPY_KINDS = new Set(['copy', 'video', 'board']);
 const IMG_EXT = /\.(png|jpe?g|webp|gif)$/i;
 const VID_EXT = /\.(mp4|webm|mov)$/i;
-const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // 워크스페이스(dir) 밖 경로 차단
@@ -40,11 +39,25 @@ function renderPrefixRes(card) {
   ].filter(Boolean);
 }
 
-// 헤더 앵커 — board.parseCalendar와 동일 관용(헤딩 #{0,4}·볼드 ** 장식 허용) + 동일 채널
-// 화이트리스트(IG|FB|…). 본문 속 일반 '# 소제목'이나 'B-5'(비타민 B5 같은) 임의 2글자-숫자는
-// 앵커가 아니다. 캡처: [full, postNum, idMono, idNum].
-const ANCHOR_RE = /^[ \t]*#{0,4}[ \t]*\**[ \t]*(?:POST[ \t]*(\d+)|(IG|FB|LI|LN|IN|TH|X|NV|NB|NC|KK|TT)-(\d+))\b[^\n]*$/gim;
-function headerAnchors(text) { return [...text.matchAll(ANCHOR_RE)]; }
+// '강한 헤더' 앵커만 인식한다. 파괴적 삭제라, 본문 문장이 우연히 'IG-5 …'/'POST 5 …'로
+// 시작해도 앵커로 오인하면 형제 본문이 날아간다. 그래서 다음 중 하나여야 헤더로 본다:
+//   (a) 마크다운 헤딩(# ~ ####),  (b) 볼드(**…),  (c) 번호 뒤가 헤더 구분자(— – - : | ·)로
+//   시작하거나 줄 끝. 채널 모노는 board와 동일 화이트리스트로 제한(임의 2글자-숫자 배제).
+// 반환: [{ index, mono, num }] — 강한 헤더만.
+const ANCHOR_RE = /^[ \t]*(#{1,4}[ \t]*)?(\*\*[ \t]*)?(?:POST[ \t]*(\d+)|(IG|FB|LI|LN|IN|TH|X|NV|NB|NC|KK|TT)-(\d+))\b([^\n]*)$/gim;
+const SEP_START = /^[—–‒·\-:|]/; // — – ‒ · - : |
+function headerAnchors(text) {
+  const out = [];
+  for (const m of text.matchAll(ANCHOR_RE)) {
+    const heading = !!m[1];
+    const bold = !!m[2];
+    const rest = (m[6] || '').replace(/^\*\*/, '').trimStart();
+    if (heading || bold || rest === '' || SEP_START.test(rest)) {
+      out.push({ index: m.index, mono: m[4] || '', num: Number(m[3] || m[5]) });
+    }
+  }
+  return out;
+}
 // 앵커의 채널-ID(모노)를 채널 키로. POST 형식(모노 없음)이면 null(채널 무관).
 function anchorChannel(mono) {
   if (!mono) return null;
@@ -52,32 +65,23 @@ function anchorChannel(mono) {
   return plat ? channelRegistry.channelKey(plat) : undefined; // 매핑 불가 = undefined(불일치 취급)
 }
 
-// 공유 파일에서 이 포스트(n·topic·channel) 블록만 제거. 특정 못하면 changed:false(안전).
-// 파일명이 이 포스트 전용 프리픽스면(헤더 없는 단일 파일) 파일 삭제.
+// 공유 파일에서 이 포스트(n·channel) 블록만 제거. n을 가리키는 강한 헤더가 채널 일치로 '정확히
+// 하나'일 때만 제거하고, 없거나 모호(2개+)하면 아무것도 지우지 않는다(형제·공유 파일 보호).
+// 헤더가 전혀 없으면 파일명이 이 포스트 전용 프리픽스일 때만 파일 삭제.
 function exciseBlockFromFile(abs, filename, topic, n, prefixRes, channelKey) {
   let text;
   try { text = fs.readFileSync(abs, 'utf8'); } catch { return { changed: false }; }
   const anchors = headerAnchors(text);
   if (anchors.length) {
-    const t = norm(topic).slice(0, 24);
-    // 채널 일치: 앵커가 POST 형식(채널 무관, ch===null)이거나, 앵커 채널이 이 카드 채널과 같을 때만.
-    const channelOk = (m) => {
-      const ch = anchorChannel(m[2]);
+    const channelOk = (a) => {
+      const ch = anchorChannel(a.mono);
       return ch === null || !channelKey || ch === channelKey;
     };
-    let targetIdx = -1;
-    // 1순위: 헤더가 n을 가리키고 채널도 맞음 (IG-4 vs FB-4 혼동 방지)
-    for (let i = 0; i < anchors.length; i++) {
-      if (Number(anchors[i][1] || anchors[i][3]) === Number(n) && channelOk(anchors[i])) { targetIdx = i; break; }
-    }
-    // 2순위: 헤더 줄에 토픽이 있고 채널도 맞음 (본문이 아니라 헤더에서만)
-    if (targetIdx < 0 && t) {
-      for (let i = 0; i < anchors.length; i++) {
-        if (norm(anchors[i][0]).includes(t) && channelOk(anchors[i])) { targetIdx = i; break; }
-      }
-    }
-    if (targetIdx < 0) return { changed: false }; // 특정 실패 — 아무것도 지우지 않는다
-    const bounds = anchors.map((m) => m.index);
+    // n을 가리키고 채널도 맞는 강한 헤더가 유일할 때만 대상 확정 (토픽 부분일치 폴백 없음).
+    const nMatch = anchors.filter((a) => a.num === Number(n) && channelOk(a));
+    if (nMatch.length !== 1) return { changed: false };
+    const targetIdx = anchors.indexOf(nMatch[0]);
+    const bounds = anchors.map((a) => a.index);
     bounds.push(text.length);
     const head = text.slice(0, bounds[0]);
     let kept = '';
@@ -91,7 +95,7 @@ function exciseBlockFromFile(abs, filename, topic, n, prefixRes, channelKey) {
     }
     try { fs.writeFileSync(abs, rest + '\n'); return { changed: true, excised: true }; } catch { return { changed: false }; }
   }
-  // 앵커 헤더가 없는 파일 — 파일명이 이 포스트 전용 프리픽스일 때만 삭제(공유 파일 오삭제 방지)
+  // 강한 헤더가 없는 파일 — 파일명이 이 포스트 전용 프리픽스일 때만 삭제(공유 파일 오삭제 방지)
   if (prefixRes && prefixRes.some((re) => re.test(filename))) {
     try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
   }

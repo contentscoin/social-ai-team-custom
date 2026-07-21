@@ -100,6 +100,29 @@ test('exciseBlockFromFile — 앵커 앞 머리말은 파일 통삭제하지 않
   assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /세일 본문/);
 });
 
+test('exciseBlockFromFile — n 헤더가 없으면(형제 헤더에만 토픽이 있어도) 취소 — 토픽 폴백 없음', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'may.md');
+  // IG-5 앵커는 없고, 형제 IG-3 헤더에 캠페인 테마어(여름세일)만 들어 있다
+  writeLane(dir, 'captions', 'may.md',
+    '## IG-3 — 여름세일 예고 이벤트\nCAPTION: 곧 여름세일이 시작됩니다\n\n## IG-4 — 신제품 소개\nCAPTION: 신제품 본문\n');
+  const r = postassets.exciseBlockFromFile(f, 'may.md', '여름세일', 5, [/^ig-0*5/i], 'instagram');
+  assert.equal(r.changed, false); // n=5 강한 헤더 없음 → 취소(형제 삭제 금지)
+  assert.match(fs.readFileSync(f, 'utf8'), /여름세일 예고 이벤트/); // IG-3 보존
+});
+
+test('exciseBlockFromFile — 본문 문장이 "IG-5 …"로 시작해도 앵커 아님(진짜 헤더만 제거)', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'jul.md');
+  writeLane(dir, 'captions', 'jul.md',
+    'IG-4 — 라떼\nCAPTION: 신메뉴 안내\nIG-5 할인 코드도 곧 공개\n추가 본문 라인\n\nIG-5 — 여름세일\nCAPTION: 진짜 IG5 본문\n');
+  const r = postassets.exciseBlockFromFile(f, 'jul.md', '여름세일', 5, [/^ig-0*5/i], 'instagram');
+  assert.equal(r.changed, true);
+  const after = fs.readFileSync(f, 'utf8');
+  assert.match(after, /추가 본문 라인/);      // IG-4 본문 꼬리 보존(가짜 앵커에 안 잘림)
+  assert.doesNotMatch(after, /진짜 IG5 본문/); // 진짜 IG-5 헤더 블록만 제거
+});
+
 test('deleteAssets — 이미지 삭제는 이 포스트 프리픽스 파일만; 형제/풀/브리프는 보존', () => {
   const dir = tmp();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
