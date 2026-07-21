@@ -53,4 +53,13 @@ test('오버라이드는 재로드 후에도 유지된다', () => {
   assert.equal(reloaded.getEngineFor('compliance'), 'codex');
 });
 
+test('imageStyle — 유효 프리셋만 저장, 무효는 미지정으로', () => {
+  const config = fresh();
+  assert.equal(config.getImageStyle(), ''); // 기본 미지정
+  config.setImageStyle('photoreal');
+  assert.equal(config.getImageStyle(), 'photoreal');
+  config.setImageStyle('bogus'); // 무효 → 해제
+  assert.equal(config.getImageStyle(), '');
+});
+
 test.after(() => { delete process.env.SAT_HOME; });

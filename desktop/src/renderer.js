@@ -1659,7 +1659,7 @@ function openInspector(p) {
       <span>${(stepFiles[s] || []).map((f) => `<a href="#" class="insp-file" data-rel="${esc(f.rel)}" style="color:var(--info)">${esc(f.name)}</a>`).join('<br>') || '<span class="muted">—</span>'}</span></div>`).join('')}
     </div>
     ${(() => {
-      const imgs = (p.files || []).filter((f) => f.kind === 'render').map((f) => f.rel);
+      const imgs = (p.files || []).filter((f) => f.kind === 'render' || f.kind === 'poolrender').map((f) => f.rel);
       if (!imgs.length && p.thumb) imgs.push(p.thumb);
       return imgs.length ? `<div class="insp-strip">${imgs.map((r) => `<img class="zoomable" src="${satUrl(r)}" alt="렌더" loading="lazy">`).join('')}</div>` : '';
     })()}
@@ -1673,6 +1673,10 @@ function openInspector(p) {
       <button id="insp-chat">디렉터에게 지시</button>
       <button id="insp-folder">레인 폴더 열기</button>
     </div>
+    <div class="insp-actions" style="margin-top:2px">
+      <button id="insp-del-image" title="이 포스트의 생성된 이미지를 삭제하고 이미지 단계부터 다시">🗑 이미지 삭제</button>
+      <button id="insp-del-copy" title="이 포스트의 본문(+이미지)을 삭제하고 기획부터 다시">🗑 본문 삭제</button>
+    </div>
     <div id="insp-comments" class="hidden" style="display:flex;flex-direction:column;gap:8px"></div>
     <div id="insp-render-panel" class="hidden"></div>`;
   $('#insp-back').onclick = () => switchDock('chat');
@@ -1683,6 +1687,17 @@ function openInspector(p) {
     setTimeout(() => openCompose(p.channel, p, direct), 0);
   };
   $('#insp-render').onclick = () => openRenderPanel(p);
+  const delAssets = async (opts) => {
+    const what = opts.copy ? '본문과 이미지' : '이미지';
+    const back = opts.copy ? '기획(본문)' : '이미지';
+    if (!confirm(`${cardId(p)}의 ${what}을(를) 삭제하고 ${back} 단계부터 다시 시작할까요?\n\n삭제한 부분은 되돌릴 수 없으며 다시 생성/작성해야 합니다.`)) return;
+    const r = await window.api.post.deleteAssets(S.client.dir, p.uid, opts);
+    if (!r || !r.ok) { toast('삭제 실패: ' + ((r && r.error) || '알 수 없음')); return; }
+    toast(`${what} 삭제 완료 — ${r.reset === 'planned' ? '기획' : '카피'} 단계로 되돌렸습니다 (${(r.deleted || []).length}건)`);
+    refreshBoard(false); // 카드가 planned/copy로 되돌아가고 인스펙터도 갱신
+  };
+  $('#insp-del-image').onclick = () => delAssets({ image: true });
+  $('#insp-del-copy').onclick = () => delAssets({ copy: true });
   $('#insp-comments-btn').onclick = () => openCommentsPanel(p);
   $('#insp-chat').onclick = () => { S.chips.push({ label: cardId(p), context: `[카드 ${cardId(p)} · ${p.topic} · 현재 단계 ${STAGE_LABEL[p.stage]}]` }); renderChips(); switchDock('chat'); $('#chat-input').focus(); };
   $('#insp-folder').onclick = () => window.api.ws.openFolder(S.client.dir + '/outputs/' + p.lane);
@@ -1782,6 +1797,11 @@ async function openRenderPanel(p) {
   box.innerHTML = '<p class="muted small">프로바이더 확인 중…</p>';
   const av = await window.api.render.providers({ ima2: !!(S.env && S.env.ima2) });
   if (av && av.error) { box.innerHTML = `<p class="muted small">${esc(av.error)}</p>`; return; }
+  // 이미지 스타일 프리셋 — 목록 + 저장된 기본값
+  let styleList = [], defStyle = '';
+  try { styleList = await window.api.render.styles() || []; defStyle = await window.api.engine.getImageStyle() || ''; } catch { /* 목록 없음 */ }
+  const styleOpts = ['<option value="">스타일 자동</option>']
+    .concat(styleList.map((s) => `<option value="${esc(s.key)}" ${s.key === defStyle ? 'selected' : ''}>${esc(s.label)}</option>`)).join('');
   const kind0 = p.isReel ? 'video' : 'image';
   const opts = (kind) => Object.entries(av[kind])
     .map(([k, v]) => `<option value="${k}" ${!v.ok ? 'disabled' : ''}>${esc(v.label)}${v.ok ? '' : ' — 설정 필요'}</option>`).join('');
@@ -1815,6 +1835,9 @@ async function openRenderPanel(p) {
         <option value="5">5초</option><option value="8">8초</option><option value="10">10초</option><option value="15">15초</option><option value="30">30초</option>
       </select>
     </div>
+    <label class="small muted" id="rp-style-row" style="display:flex;gap:6px;align-items:center">이미지 스타일
+      <select id="rp-style" class="rp-input" style="flex:1" title="생성 이미지의 기본 스타일 — 선택하면 컴파일 프롬프트에 반영되고 기본값으로 저장됩니다">${styleOpts}</select>
+    </label>
     <textarea id="rp-prompt" class="rp-input" rows="4" placeholder="브리프 (컴파일하면 시각 언어 프롬프트로 변환됩니다)">${esc(prefill)}</textarea>
     <div style="display:flex;gap:8px;align-items:center">
       <button id="rp-compile" style="flex:1">✨ 프롬프트 컴파일</button>
@@ -1846,7 +1869,13 @@ async function openRenderPanel(p) {
     $('#rp-imgcount').classList.toggle('hidden', kind !== 'image'); // 캐러셀 장수는 이미지 탭만
     $('#rp-variants').classList.toggle('hidden', kind !== 'image'); // 시안 선택도 이미지 탭 전용
     $('#rp-dur').classList.toggle('hidden', kind !== 'video');
+    $('#rp-style-row').classList.toggle('hidden', kind !== 'image'); // 스타일 프리셋은 사진형 이미지 탭만(카드뉴스=한글 타이포 SVG·영상 제외)
     if (kind === 'video' && p.isReel) $('#rp-size').value = 'story';
+  };
+  // 스타일을 바꾸면 기본값으로 저장(오토파일럿·일괄 생성도 이 값을 씀)하고 재컴파일이 필요함을 표시
+  if ($('#rp-style')) $('#rp-style').onchange = () => {
+    compiled = false;
+    window.api.engine.setImageStyle($('#rp-style').value).catch(() => {});
   };
   for (const b of $$('#rp-kind button')) b.onclick = () => {
     $$('#rp-kind button').forEach((x) => x.classList.toggle('active', x === b));
@@ -1867,6 +1896,7 @@ async function openRenderPanel(p) {
         prompt: $('#rp-prompt').value.trim(),
         size: $('#rp-size').value, duration: Number($('#rp-dur').value) || 5,
         count: Number(($('#rp-count') && $('#rp-count').value) || 1) || 1,
+        style: ($('#rp-style') && $('#rp-style').value) || '',
       });
       if (r && r.ok && r.prompt) {
         $('#rp-prompt').value = r.prompt;

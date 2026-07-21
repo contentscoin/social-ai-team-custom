@@ -356,12 +356,15 @@ function buildBoard(dir) {
     };
   });
 
-  // 아직 썸네일이 없는 카드에, 쓰이지 않은 creatives를 채널·순서대로 배분
-  // (에이전트가 ig-1.png 규칙 없이 저장한 경우 템플릿/카드에 이미지가 비는 문제 보완)
+  // 아직 썸네일이 없는 카드에, 쓰이지 않은 creatives를 채널·순서대로 배분(표시용 힌트).
+  // (에이전트가 ig-1.png 규칙 없이 저장한 경우 카드에 이미지가 비는 문제 보완)
+  // 주의: 이 이미지는 이 포스트 소유가 확실치 않다(파일명 규칙 불일치·다른 포스트/삭제된
+  // 슬롯의 잔상일 수 있음). 그래서 kind:'poolrender'로 표시만 하고 stage 승격·게이트 카운트에는
+  // 넣지 않는다 — 차용 이미지를 '생성 완료'로 오인해 오토파일럿이 생성 단계를 건너뛰는 것을 막는다.
   {
     const used = new Set();
     for (const c of cards) {
-      for (const f of (c.files || [])) if (f.kind === 'render' || f.kind === 'creative') used.add(f.rel);
+      for (const f of (c.files || [])) if (f.kind === 'render' || f.kind === 'poolrender' || f.kind === 'creative') used.add(f.rel);
       if (c.thumb) used.add(c.thumb);
     }
     const pool = (lanes.creatives.files || [])
@@ -373,8 +376,7 @@ function buildBoard(dir) {
       const f = pool[pi++];
       c.thumb = f.rel;
       c.files = c.files || [];
-      c.files.push({ rel: f.rel, kind: 'render' });
-      if (c.stage === 'copy') c.stage = 'visual';
+      c.files.push({ rel: f.rel, kind: 'poolrender' }); // 표시용 — 게이트/생성 대상 아님
     }
   }
 

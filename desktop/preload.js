@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('api', {
     setModel: (engine, model) => ipcRenderer.invoke('cfg:setModel', engine, model),
     getBudget: () => ipcRenderer.invoke('cfg:getBudget'),
     setBudget: (usd) => ipcRenderer.invoke('cfg:setBudget', usd),
+    getImageStyle: () => ipcRenderer.invoke('cfg:getImageStyle'),
+    setImageStyle: (key) => ipcRenderer.invoke('cfg:setImageStyle', key),
   },
   chat: {
     send: (dir, msg) => ipcRenderer.invoke('chat:send', dir, msg),
@@ -91,6 +93,10 @@ contextBridge.exposeInMainWorld('api', {
     variants: (dir, job) => ipcRenderer.invoke('render:variants', dir, job),
     listVariants: (dir, uid) => ipcRenderer.invoke('render:listVariants', dir, uid),
     pickVariant: (dir, uid, name, slot) => ipcRenderer.invoke('render:pickVariant', dir, uid, name, slot),
+    styles: () => ipcRenderer.invoke('render:styles'),
+  },
+  post: {
+    deleteAssets: (dir, uid, opts) => ipcRenderer.invoke('post:deleteAssets', dir, uid, opts),
   },
   prompt: {
     compile: (dir, job) => ipcRenderer.invoke('prompt:compile', dir, job),

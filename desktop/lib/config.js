@@ -7,7 +7,9 @@ const path = require('path');
 const DIR = process.env.SAT_HOME || path.join(os.homedir(), '.social-ai-team');
 const FILE = path.join(DIR, 'settings.json');
 
-const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {} }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드
+const imagestyles = require('./imagestyles');
+
+const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {}, imageStyle: '' }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드; imageStyle: 이미지 생성 기본 스타일('' = 미지정)
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
@@ -73,6 +75,18 @@ function setBudget(usd) {
   return cfg.budgetUsd;
 }
 
+// 이미지 생성 기본 스타일 — 렌더 프롬프트에 붙는 프리셋(imagestyles). '' = 미지정(스타일 강제 없음).
+function getImageStyle() {
+  const v = load().imageStyle;
+  return imagestyles.isValid(v) ? v : '';
+}
+function setImageStyle(key) {
+  const cfg = load();
+  cfg.imageStyle = imagestyles.isValid(key) ? key : '';
+  save(cfg);
+  return cfg.imageStyle;
+}
+
 // 클라이언트 폴더별 × 엔진별 세션 — 과거 버전은 단일 문자열이었으므로 마이그레이션:
 // 'codex-started' 류는 codex 슬롯으로, 나머지는 claude 세션 id로 취급한다.
 function normSessions(v) {
@@ -98,4 +112,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getSession, setSession, clearSession };
