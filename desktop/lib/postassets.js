@@ -39,22 +39,20 @@ function renderPrefixRes(card) {
   ].filter(Boolean);
 }
 
-// '강한 헤더' 앵커만 인식한다. 파괴적 삭제라, 본문 문장이 우연히 'IG-5 …'/'POST 5 …'로
-// 시작해도 앵커로 오인하면 형제 본문이 날아간다. 그래서 다음 중 하나여야 헤더로 본다:
-//   (a) 마크다운 헤딩(# ~ ####),  (b) 볼드(**…),  (c) 번호 뒤가 헤더 구분자(— – - : | ·)로
-//   시작하거나 줄 끝. 채널 모노는 board와 동일 화이트리스트로 제한(임의 2글자-숫자 배제).
-// 반환: [{ index, mono, num }] — 강한 헤더만.
+// 블록 경계 = 모든 포스트 헤더(board.parseCalendar와 동일 관용: #{0,4}·** 장식, 채널 모노
+// 화이트리스트 또는 POST). 이 '느슨한 경계'가 형제 포스트를 서로 다른 블록으로 갈라 놓아, 대상
+// 블록이 형제(장식 없는 'POST 2 신메뉴' 포함)를 삼키지 않게 한다. 'B-5'(비타민 B5) 같은
+// 화이트리스트 밖 2글자-숫자는 경계도 대상도 아니다. 캡처: [full, heading, bold, postNum, mono, idNum, rest].
 const ANCHOR_RE = /^[ \t]*(#{1,4}[ \t]*)?(\*\*[ \t]*)?(?:POST[ \t]*(\d+)|(IG|FB|LI|LN|IN|TH|X|NV|NB|NC|KK|TT)-(\d+))\b([^\n]*)$/gim;
 const SEP_START = /^[—–‒·\-:|]/; // — – ‒ · - : |
 function headerAnchors(text) {
   const out = [];
   for (const m of text.matchAll(ANCHOR_RE)) {
-    const heading = !!m[1];
-    const bold = !!m[2];
     const rest = (m[6] || '').replace(/^\*\*/, '').trimStart();
-    if (heading || bold || rest === '' || SEP_START.test(rest)) {
-      out.push({ index: m.index, mono: m[4] || '', num: Number(m[3] || m[5]) });
-    }
+    // strong = 진짜 헤더 신호(헤딩/볼드/번호 뒤 구분자 또는 줄 끝). 본문 문장 'IG-5 …'는 경계는
+    // 되지만(주변 텍스트 무손실 보존) strong=false라 삭제 대상으로는 뽑히지 않는다.
+    const strong = !!m[1] || !!m[2] || rest === '' || SEP_START.test(rest);
+    out.push({ index: m.index, mono: m[4] || '', num: Number(m[3] || m[5]), strong });
   }
   return out;
 }
@@ -65,41 +63,40 @@ function anchorChannel(mono) {
   return plat ? channelRegistry.channelKey(plat) : undefined; // 매핑 불가 = undefined(불일치 취급)
 }
 
-// 공유 파일에서 이 포스트(n·channel) 블록만 제거. n을 가리키는 강한 헤더가 채널 일치로 '정확히
-// 하나'일 때만 제거하고, 없거나 모호(2개+)하면 아무것도 지우지 않는다(형제·공유 파일 보호).
-// 헤더가 전혀 없으면 파일명이 이 포스트 전용 프리픽스일 때만 파일 삭제.
+// 이 포스트(n·channel) 블록만 제거.
+//  1) 파일명이 이 포스트 전용 프리픽스면(예: ig-1.md) 파일 전체가 이 포스트 것 → 파일 삭제.
+//  2) 공유 파일이면: n을 가리키는 '강한 헤더'가 채널 일치로 정확히 하나일 때만 그 블록 제거.
+//     없거나 모호(2개+)하면 아무것도 지우지 않는다(형제·공유 파일 보호).
 function exciseBlockFromFile(abs, filename, topic, n, prefixRes, channelKey) {
-  let text;
-  try { text = fs.readFileSync(abs, 'utf8'); } catch { return { changed: false }; }
-  const anchors = headerAnchors(text);
-  if (anchors.length) {
-    const channelOk = (a) => {
-      const ch = anchorChannel(a.mono);
-      return ch === null || !channelKey || ch === channelKey;
-    };
-    // n을 가리키고 채널도 맞는 강한 헤더가 유일할 때만 대상 확정 (토픽 부분일치 폴백 없음).
-    const nMatch = anchors.filter((a) => a.num === Number(n) && channelOk(a));
-    if (nMatch.length !== 1) return { changed: false };
-    const targetIdx = anchors.indexOf(nMatch[0]);
-    const bounds = anchors.map((a) => a.index);
-    bounds.push(text.length);
-    const head = text.slice(0, bounds[0]);
-    let kept = '';
-    for (let i = 0; i < anchors.length; i++) {
-      if (i === targetIdx) continue;
-      kept += text.slice(bounds[i], bounds[i + 1]);
-    }
-    const rest = (head + kept).replace(/\n{3,}/g, '\n\n').trim();
-    if (!rest) { // 남은 내용이 전혀 없을 때만 파일 삭제 (앵커 앞 머리말이 있으면 보존)
-      try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
-    }
-    try { fs.writeFileSync(abs, rest + '\n'); return { changed: true, excised: true }; } catch { return { changed: false }; }
-  }
-  // 강한 헤더가 없는 파일 — 파일명이 이 포스트 전용 프리픽스일 때만 삭제(공유 파일 오삭제 방지)
+  // 1) 포스트 전용 파일 — 통째로 이 포스트 것
   if (prefixRes && prefixRes.some((re) => re.test(filename))) {
     try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
   }
-  return { changed: false };
+  // 2) 공유 파일 — 강한 헤더로 n을 유일하게 특정
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); } catch { return { changed: false }; }
+  const anchors = headerAnchors(text); // 느슨한 경계(형제 보존) — 대상 선택만 strong으로 좁힌다
+  if (!anchors.length) return { changed: false }; // 공유 파일인데 헤더 없음 → 특정 불가, 취소
+  const channelOk = (a) => {
+    const ch = anchorChannel(a.mono);
+    return ch === null || !channelKey || ch === channelKey;
+  };
+  const nMatch = anchors.filter((a) => a.strong && a.num === Number(n) && channelOk(a));
+  if (nMatch.length !== 1) return { changed: false }; // 0개·모호(2개+) → 취소(토픽 폴백 없음)
+  const targetIdx = anchors.indexOf(nMatch[0]);
+  const bounds = anchors.map((a) => a.index);
+  bounds.push(text.length);
+  const head = text.slice(0, bounds[0]);
+  let kept = '';
+  for (let i = 0; i < anchors.length; i++) {
+    if (i === targetIdx) continue; // 대상 블록만 빼고 나머지는 그대로 이어 붙인다(형제 무손실)
+    kept += text.slice(bounds[i], bounds[i + 1]);
+  }
+  const rest = (head + kept).replace(/\n{3,}/g, '\n\n').trim();
+  if (!rest) { // 남은 내용이 전혀 없을 때만 파일 삭제 (앵커 앞 머리말이 있으면 보존)
+    try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
+  }
+  try { fs.writeFileSync(abs, rest + '\n'); return { changed: true, excised: true }; } catch { return { changed: false }; }
 }
 
 // outputs/<lane>에서 프리픽스 일치 파일만 삭제(이 포스트 소유 증명). 삭제한 rel 목록 반환.

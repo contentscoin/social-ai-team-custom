@@ -123,6 +123,30 @@ test('exciseBlockFromFile — 본문 문장이 "IG-5 …"로 시작해도 앵커
   assert.doesNotMatch(after, /진짜 IG5 본문/); // 진짜 IG-5 헤더 블록만 제거
 });
 
+test('exciseBlockFromFile — 장식 없는 형제 헤더(POST 2 신메뉴)도 경계로 보존(파일 통삭제 금지)', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'monthly.md');
+  writeLane(dir, 'captions', 'monthly.md',
+    '## POST 1 — 라떼\nCAPTION: 라떼 소개\n\nPOST 2 신메뉴\nCAPTION: 신메뉴 소개 본문\n');
+  const r = postassets.exciseBlockFromFile(f, 'monthly.md', '라떼', 1, IG1, 'instagram');
+  assert.equal(r.changed, true);
+  assert.equal(fs.existsSync(f), true);                 // 파일 통삭제 안 됨
+  assert.match(fs.readFileSync(f, 'utf8'), /신메뉴 소개 본문/); // 장식 없는 형제 보존
+});
+
+test('exciseBlockFromFile — 강한/약한 헤더 사이 형제도 대상 블록에 삼켜지지 않음', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'mix.md');
+  writeLane(dir, 'captions', 'mix.md',
+    '## POST 1 — 라떼\nCAPTION: a\n\nPOST 2 신메뉴\nCAPTION: 신메뉴 본문\n\n## POST 3 — 세일\nCAPTION: 세일 본문\n');
+  const r = postassets.exciseBlockFromFile(f, 'mix.md', '라떼', 1, IG1, 'instagram');
+  assert.equal(r.changed, true);
+  const after = fs.readFileSync(f, 'utf8');
+  assert.match(after, /신메뉴 본문/); // 장식 없는 중간 형제 보존
+  assert.match(after, /세일 본문/);   // 뒤 형제 보존
+  assert.doesNotMatch(after, /라떼/);  // POST 1만 제거
+});
+
 test('deleteAssets — 이미지 삭제는 이 포스트 프리픽스 파일만; 형제/풀/브리프는 보존', () => {
   const dir = tmp();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
