@@ -2694,6 +2694,8 @@ const CH_SECRET_FORMS = [
 const RD_SECRET_FORMS = [
   { ns: 'openai', title: 'OpenAI (이미지 gpt-image-1)', hint: 'platform.openai.com API 키 — "코덱스 이미지" 레인.',
     fields: [['apiKey', 'API Key']] },
+  { ns: 'ima2', title: 'ima2 서버 URL (Codex 이미지)', hint: 'ima2(ChatGPT OAuth 이미지)를 직접 유지 중인 서버가 있으면 그 주소를 넣으세요 (예: http://127.0.0.1:3333). 넣으면 앱이 자기 서버를 띄우지 않고 이 주소로 붙습니다(--server). 비우면 앱이 ima2 serve를 자동 기동합니다.',
+    fields: [['server', '서버 URL (예: http://127.0.0.1:3333)']] },
   { ns: 'google', title: 'Google Veo (Gemini API)', hint: 'aistudio.google.com에서 발급한 Gemini API 키. text/image→video. 모델명은 계정에 열린 것으로 (예: veo-3.0-fast-generate-001, veo-3.1-generate-preview).',
     fields: [['apiKey', 'API Key'], ['model', '모델 (기본 veo-3.0-fast-generate-001)']] },
   { ns: 'runway', title: 'Runway', hint: 'dev.runwayml.com 개발자 포털 키. 키프레임 이미지→영상 (gen4_turbo 기준 5초 ≈ $0.25). 모델에 veo3.1 등 Runway 경유 모델도 입력 가능.',

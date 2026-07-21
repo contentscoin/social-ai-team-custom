@@ -162,21 +162,31 @@ async function ensureIma2Serve(onLine) {
   await new Promise((r) => setTimeout(r, 8000)); // 서버 기동 대기
   return true;
 }
+// 설정된 ima2 서버 URL(사용자가 watchdog 등으로 직접 유지하는 서버). 있으면 앱은 자기 serve를
+// 띄우지 않고 이 주소로 붙는다(--server). 비었으면 기존처럼 자동 기동.
+function ima2ServerUrl() { try { return String((secrets.get('ima2') || {}).server || '').trim(); } catch { return ''; } }
+function ima2GenArgs(prompt, tmp, serverUrl) {
+  const a = ['gen', prompt, '-d', tmp, '--quality', 'high'];
+  if (serverUrl) a.push('--server', serverUrl);
+  return a;
+}
 // 배치 시작 전 프로바이더 예열 — ima2면 serve를 미리 띄워 첫 렌더 전에 뜰 시간을 준다.
+// 단, 사용자가 서버 URL을 지정했으면(직접 유지 중) 앱이 자동 기동하지 않는다.
 async function warmupImageProvider(provider, env, onLine) {
-  if (provider === 'ima2') { try { await ensureIma2Serve(onLine); } catch { /* best effort */ } }
+  if (provider === 'ima2' && !ima2ServerUrl()) { try { await ensureIma2Serve(onLine); } catch { /* best effort */ } }
   return { ok: true };
 }
 const IMA2_DOWN = /server unreachable|ima2 serve/i;
 async function genIma2(dir, job, onLine) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sat-ima2-'));
   const prompt = finalizeImagePrompt(job.prompt, job.negative);
-  onLine && onLine('[render] ima2 생성 중… (quality=high + negative fused)');
-  const run = () => runCmd('ima2', ['gen', prompt, '-d', tmp, '--quality', 'high'], onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
+  const serverUrl = ima2ServerUrl();
+  onLine && onLine(`[render] ima2 생성 중… (quality=high + negative fused${serverUrl ? ' · ' + serverUrl : ''})`);
+  const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl), onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
   let r = await run();
-  // 서버가 죽어 있으면 자동 기동 후, 뜰 때까지 몇 번 재시도(각 unreachable은 빠르게 실패 → 저렴한 폴링).
+  // 서버가 죽어 있으면: URL 미지정 시 자동 기동, 지정 시 사용자 서버가 뜰 때까지만 몇 번 재시도.
   if (!r.ok && IMA2_DOWN.test(r.out)) {
-    await ensureIma2Serve(onLine);
+    if (!serverUrl) await ensureIma2Serve(onLine);
     for (let i = 0; i < 4 && !r.ok && IMA2_DOWN.test(r.out); i++) {
       if (job.stopped && job.stopped()) break;
       await new Promise((res) => setTimeout(res, 4000));
@@ -643,5 +653,5 @@ function defaultImageProvider(env) {
 module.exports = {
   generate, availability, SIZES, defaultImageProvider, warmupImageProvider,
   // 테스트 전용 내부 노출
-  _isInfraFailure: isInfraFailure, _fallbackRank: fallbackRank,
+  _isInfraFailure: isInfraFailure, _fallbackRank: fallbackRank, _ima2GenArgs: ima2GenArgs,
 };
