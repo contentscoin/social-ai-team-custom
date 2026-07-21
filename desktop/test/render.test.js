@@ -17,6 +17,7 @@ test('실패 분류 — 인프라성(키·크레딧·네트워크·429/5xx)만 �
     'X API 크레딧이 부족합니다',
     'HTTP 429', 'HTTP 503', 'quota exceeded',
     'fetch failed', 'connect ECONNREFUSED', 'ETIMEDOUT', 'The operation was aborted',
+    "✗ server unreachable — is 'ima2 serve' running?", // ima2 서버 다운 → 인프라(폴백/조기중단 대상)
   ]) assert.equal(render._isInfraFailure(m), true, m);
   for (const m of [
     'safety system이 프롬프트를 거부했습니다',
