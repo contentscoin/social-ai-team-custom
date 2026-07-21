@@ -149,7 +149,7 @@ async function genOpenAI(dir, job, onLine) {
 // ima2 gen은 로컬 `ima2 serve` 데몬이 필요하다 — 죽어 있으면 자동 기동 후 1회 재시도.
 let ima2ServeLastStart = 0;
 async function ensureIma2Serve(onLine) {
-  if (Date.now() - ima2ServeLastStart < 5 * 60_000) return false; // 5분 내 재기동 반복 금지
+  if (Date.now() - ima2ServeLastStart < 2 * 60_000) return false; // 2분 내 재기동 반복 금지(스폰 폭주 방지)
   ima2ServeLastStart = Date.now();
   onLine && onLine('[render] ima2 serve가 꺼져 있음 — 자동 시작합니다…');
   try {
@@ -159,8 +159,13 @@ async function ensureIma2Serve(onLine) {
     const p = spawn(cmd, ['serve'], { detached: true, stdio: 'ignore', env: envWithPath(), shell: isWin, windowsHide: true });
     p.unref();
   } catch { return false; }
-  await new Promise((r) => setTimeout(r, 6000)); // 서버 기동 대기
+  await new Promise((r) => setTimeout(r, 8000)); // 서버 기동 대기
   return true;
+}
+// 배치 시작 전 프로바이더 예열 — ima2면 serve를 미리 띄워 첫 렌더 전에 뜰 시간을 준다.
+async function warmupImageProvider(provider, env, onLine) {
+  if (provider === 'ima2') { try { await ensureIma2Serve(onLine); } catch { /* best effort */ } }
+  return { ok: true };
 }
 const IMA2_DOWN = /server unreachable|ima2 serve/i;
 async function genIma2(dir, job, onLine) {
@@ -169,7 +174,15 @@ async function genIma2(dir, job, onLine) {
   onLine && onLine('[render] ima2 생성 중… (quality=high + negative fused)');
   const run = () => runCmd('ima2', ['gen', prompt, '-d', tmp, '--quality', 'high'], onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
   let r = await run();
-  if (!r.ok && IMA2_DOWN.test(r.out) && await ensureIma2Serve(onLine)) r = await run();
+  // 서버가 죽어 있으면 자동 기동 후, 뜰 때까지 몇 번 재시도(각 unreachable은 빠르게 실패 → 저렴한 폴링).
+  if (!r.ok && IMA2_DOWN.test(r.out)) {
+    await ensureIma2Serve(onLine);
+    for (let i = 0; i < 4 && !r.ok && IMA2_DOWN.test(r.out); i++) {
+      if (job.stopped && job.stopped()) break;
+      await new Promise((res) => setTimeout(res, 4000));
+      r = await run();
+    }
+  }
   const made = (fs.existsSync(tmp) ? fs.readdirSync(tmp) : []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
   if (!r.ok || !made.length) return err('ima2', r.tail || 'ima2가 이미지를 만들지 못했습니다');
   const { abs, rel } = outName(dir, 'creatives', job.base, path.extname(made[0]).slice(1));
@@ -584,7 +597,7 @@ async function generateOnce(dir, job, onLine) {
 // 인프라성 실패(키 미설정·만료, 크레딧/쿼터, 네트워크·타임아웃, 429/5xx)만 폴백 대상.
 // 콘텐츠성 실패(세이프티 거부, 프롬프트 문제)는 다른 프로바이더도 같은 결과이거나
 // 사람이 고쳐야 하므로 그대로 반환한다. 프로바이더별 오류 형태가 제각각이라 문자열 분류.
-const INFRA_FAIL_RE = /api\s*키|api\s*key|키가 없습니다|키.{0,6}필요|토큰이 필요|설정 →|401|403|429|5\d\d|quota|rate\s*limit|billing|credit|크레딧|fetch failed|network|socket|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|abort|timed?\s*out|타임아웃|연결(?:하지 못|실패|할 수 없)|unavailable/i;
+const INFRA_FAIL_RE = /api\s*키|api\s*key|키가 없습니다|키.{0,6}필요|토큰이 필요|설정 →|401|403|429|5\d\d|quota|rate\s*limit|billing|credit|크레딧|fetch failed|network|socket|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|abort|timed?\s*out|타임아웃|연결(?:하지 못|실패|할 수 없)|unavailable|unreachable|ima2 serve/i;
 function isInfraFailure(error) { return INFRA_FAIL_RE.test(String(error || '')); }
 
 // 폴백 순위 — availability 선언 순서가 곧 우선순위(데스크톱 레인의 단일 정본).
@@ -628,7 +641,7 @@ function defaultImageProvider(env) {
 }
 
 module.exports = {
-  generate, availability, SIZES, defaultImageProvider,
+  generate, availability, SIZES, defaultImageProvider, warmupImageProvider,
   // 테스트 전용 내부 노출
   _isInfraFailure: isInfraFailure, _fallbackRank: fallbackRank,
 };

@@ -5,7 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const variants = require('../lib/variants');
-const { inferCount } = require('../lib/autovisual');
+const autovisual = require('../lib/autovisual');
+const { inferCount } = autovisual;
 
 const tmpWorkspace = () => fs.mkdtempSync(path.join(os.tmpdir(), 'variants-test-'));
 

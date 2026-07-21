@@ -24,9 +24,13 @@ function inferSize(post) {
 }
 
 // opts: { provider?, count?(고정 장수 강제), ima2?, stopped?(), onlyMissing?(기본 true), style?(이미지 스타일 프리셋) }
+// opts._render/_promptlab/_board: 테스트 주입 훅(미지정 시 실제 모듈).
 async function renderAll(dir, opts, onLine) {
-  const b = board.buildBoard(dir);
-  const provider = opts.provider || render.defaultImageProvider({ ima2: opts.ima2 });
+  const R = opts._render || render;
+  const PL = opts._promptlab || promptlab;
+  const B = opts._board || board;
+  const b = B.buildBoard(dir);
+  const provider = opts.provider || R.defaultImageProvider({ ima2: opts.ima2 });
   const style = opts.style || '';
   // 사진형 이미지가 필요한 포스트: 카피가 생겼고(stage ≥ copy) 릴스가 아닌 것.
   // onlyMissing이면 "필요한 장수만큼 이미 있는" 카드만 건너뛴다 — 썸네일 하나만 보고
@@ -42,7 +46,11 @@ async function renderAll(dir, opts, onLine) {
     return { ok: true, provider, rendered: 0, results: [], note: '렌더할 포스트가 없습니다 (카피가 있고 아직 이미지가 없는 사진형 포스트 대상)' };
   }
   onLine && onLine(`[비주얼] ${targets.length}개 포스트 · 프로바이더 ${provider}`);
+  // 프로바이더 예열 — ima2면 serve를 미리 띄워 첫 렌더 전에 뜰 시간을 준다.
+  try { if (R.warmupImageProvider) await R.warmupImageProvider(provider, { ima2: opts.ima2 }, onLine); } catch { /* best effort */ }
+  const isInfra = R._isInfraFailure || (() => false);
   const results = [];
+  let okCount = 0, downStreak = 0;
   for (const p of targets) {
     if (opts.stopped && opts.stopped()) { onLine && onLine('[비주얼] 중지됨'); break; }
     const cid = `${p.chId || 'etc'}-${p.n}`;
@@ -52,21 +60,37 @@ async function renderAll(dir, opts, onLine) {
     onLine && onLine(`[비주얼] ${cid} — ${count}장 (${size}) 준비`);
     let prompt = brief, negative = null;
     try {
-      const c = await promptlab.compile(dir, {
+      const c = await PL.compile(dir, {
         kind: 'image', provider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
         prompt: brief, size, count, style,
       }, onLine);
       if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
     } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
+    let r;
     try {
-      const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
+      r = await R.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
       results.push({ uid: p.uid, id: cid, ok: !!r.ok, files: r.files || [], count: (r.files || []).length, error: r.error });
       onLine && onLine(r.ok ? `[비주얼] ✔ ${cid} — ${(r.files || []).length}장` : `[비주얼] ✖ ${cid} — ${r.error}`);
     } catch (e) {
-      results.push({ uid: p.uid, id: cid, ok: false, files: [], error: String(e && e.message || e) });
+      r = { ok: false, error: String(e && e.message || e) };
+      results.push({ uid: p.uid, id: cid, ok: false, files: [], error: r.error });
     }
+    // 조기 중단 — 성공이 하나도 없는데 인프라(엔진 서버·키) 실패가 연속되면 61개를 갈지 말고 중단.
+    if (r && r.ok) { okCount += 1; downStreak = 0; }
+    else if (r && isInfra(r.error)) {
+      downStreak += 1;
+      if (okCount === 0 && downStreak >= 2) {
+        const hint = provider === 'ima2'
+          ? '설정 → 환경에서 ima2 설치·로그인을 확인하거나 터미널에서 `ima2 serve`를 켜세요.'
+          : '설정 → 렌더에서 이 프로바이더의 API 키/연결을 확인하세요.';
+        onLine && onLine(`[비주얼] ⚠ 이미지 엔진(${provider}) 연결 실패가 반복됩니다 — 배치를 중단합니다.`);
+        return {
+          ok: false, provider, rendered: 0, images: 0, results, providerDown: true,
+          resultText: `이미지 엔진(${provider})에 연결하지 못해 중단했습니다. ${hint} (0/${targets.length})`,
+        };
+      }
+    } else { downStreak = 0; } // 콘텐츠성 실패(세이프티 등)는 다음 포스트 계속
   }
-  const okCount = results.filter((r) => r.ok).length;
   const total = results.reduce((n, r) => n + (r.files ? r.files.length : 0), 0);
   return {
     ok: okCount > 0,
