@@ -27,6 +27,12 @@ test('실패 분류 — 인프라성(키·크레딧·네트워크·429/5xx)만 �
   ]) assert.equal(render._isInfraFailure(m), false, m);
 });
 
+test('ima2GenArgs — 서버 URL 지정 시 --server 인자 추가, 미지정 시 기본', () => {
+  assert.deepEqual(render._ima2GenArgs('p', '/tmp/x', ''), ['gen', 'p', '-d', '/tmp/x', '--quality', 'high']);
+  assert.deepEqual(render._ima2GenArgs('p', '/tmp/x', 'http://127.0.0.1:3333'),
+    ['gen', 'p', '-d', '/tmp/x', '--quality', 'high', '--server', 'http://127.0.0.1:3333']);
+});
+
 test('폴백 순위 — 가용 프로바이더만, 시도한 것과 claude-svg는 제외', () => {
   // 키가 하나도 없으면 이미지 폴백 후보 없음 (claude-svg는 항상 가용하지만 타이포 레인이라 제외)
   assert.deepEqual(render._fallbackRank('image', {}, ['openai-image']), []);
