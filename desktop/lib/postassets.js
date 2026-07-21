@@ -40,31 +40,40 @@ function renderPrefixRes(card) {
   ].filter(Boolean);
 }
 
-// 헤더 앵커 — board.parseCalendar와 같은 관용(헤딩 #{0,4}·볼드 ** 장식 허용). 본문 속 일반
-// '# 소제목'은 앵커가 아니다(POST/ID 만 앵커). 캡처: [full, postNum, idAlpha, idNum].
-function headerAnchors(text) {
-  const re = /^[ \t]*#{0,4}[ \t]*\**[ \t]*(?:POST[ \t]*(\d+)|([A-Za-z]{1,2})-(\d+))\b[^\n]*$/gim;
-  return [...text.matchAll(re)];
+// 헤더 앵커 — board.parseCalendar와 동일 관용(헤딩 #{0,4}·볼드 ** 장식 허용) + 동일 채널
+// 화이트리스트(IG|FB|…). 본문 속 일반 '# 소제목'이나 'B-5'(비타민 B5 같은) 임의 2글자-숫자는
+// 앵커가 아니다. 캡처: [full, postNum, idMono, idNum].
+const ANCHOR_RE = /^[ \t]*#{0,4}[ \t]*\**[ \t]*(?:POST[ \t]*(\d+)|(IG|FB|LI|LN|IN|TH|X|NV|NB|NC|KK|TT)-(\d+))\b[^\n]*$/gim;
+function headerAnchors(text) { return [...text.matchAll(ANCHOR_RE)]; }
+// 앵커의 채널-ID(모노)를 채널 키로. POST 형식(모노 없음)이면 null(채널 무관).
+function anchorChannel(mono) {
+  if (!mono) return null;
+  const plat = channelRegistry.ID_PLATFORM[mono.toUpperCase()];
+  return plat ? channelRegistry.channelKey(plat) : undefined; // 매핑 불가 = undefined(불일치 취급)
 }
 
-// 공유 파일에서 이 포스트(n·topic) 블록만 제거. 특정 못하면 changed:false(안전). 파일명이 이
-// 포스트 전용 프리픽스면(헤더 없는 단일 파일) 파일 삭제.
-function exciseBlockFromFile(abs, filename, topic, n, prefixRes) {
+// 공유 파일에서 이 포스트(n·topic·channel) 블록만 제거. 특정 못하면 changed:false(안전).
+// 파일명이 이 포스트 전용 프리픽스면(헤더 없는 단일 파일) 파일 삭제.
+function exciseBlockFromFile(abs, filename, topic, n, prefixRes, channelKey) {
   let text;
   try { text = fs.readFileSync(abs, 'utf8'); } catch { return { changed: false }; }
   const anchors = headerAnchors(text);
   if (anchors.length) {
     const t = norm(topic).slice(0, 24);
+    // 채널 일치: 앵커가 POST 형식(채널 무관, ch===null)이거나, 앵커 채널이 이 카드 채널과 같을 때만.
+    const channelOk = (m) => {
+      const ch = anchorChannel(m[2]);
+      return ch === null || !channelKey || ch === channelKey;
+    };
     let targetIdx = -1;
-    // 1순위: 헤더가 정확히 n을 가리킴 (POST n / XX-n)
+    // 1순위: 헤더가 n을 가리키고 채널도 맞음 (IG-4 vs FB-4 혼동 방지)
     for (let i = 0; i < anchors.length; i++) {
-      const num = Number(anchors[i][1] || anchors[i][3]);
-      if (num === Number(n)) { targetIdx = i; break; }
+      if (Number(anchors[i][1] || anchors[i][3]) === Number(n) && channelOk(anchors[i])) { targetIdx = i; break; }
     }
-    // 2순위: 헤더 줄에 토픽이 들어 있음 (본문이 아니라 헤더에서만)
+    // 2순위: 헤더 줄에 토픽이 있고 채널도 맞음 (본문이 아니라 헤더에서만)
     if (targetIdx < 0 && t) {
       for (let i = 0; i < anchors.length; i++) {
-        if (norm(anchors[i][0]).includes(t)) { targetIdx = i; break; }
+        if (norm(anchors[i][0]).includes(t) && channelOk(anchors[i])) { targetIdx = i; break; }
       }
     }
     if (targetIdx < 0) return { changed: false }; // 특정 실패 — 아무것도 지우지 않는다
@@ -77,7 +86,7 @@ function exciseBlockFromFile(abs, filename, topic, n, prefixRes) {
       kept += text.slice(bounds[i], bounds[i + 1]);
     }
     const rest = (head + kept).replace(/\n{3,}/g, '\n\n').trim();
-    if (!rest || anchors.length === 1) { // 남은 포스트가 없으면 파일 삭제
+    if (!rest) { // 남은 내용이 전혀 없을 때만 파일 삭제 (앵커 앞 머리말이 있으면 보존)
       try { fs.unlinkSync(abs); return { changed: true, deletedFile: true }; } catch { return { changed: false }; }
     }
     try { fs.writeFileSync(abs, rest + '\n'); return { changed: true, excised: true }; } catch { return { changed: false }; }
@@ -127,7 +136,7 @@ function deleteAssets(dir, uid, opts = {}) {
     for (const rel of copyRels) {
       const abs = safeInside(dir, rel);
       if (!abs) { failed.push({ rel, error: '경로 이탈' }); continue; }
-      const r = exciseBlockFromFile(abs, rel.split('/').pop(), card.topic, card.n, prefixRes);
+      const r = exciseBlockFromFile(abs, rel.split('/').pop(), card.topic, card.n, prefixRes, card.channel);
       if (r.changed) { excisedAny = true; deleted.push(rel + (r.deletedFile ? ' (파일 삭제)' : ' (블록 제거)')); }
     }
     if (!excisedAny) {

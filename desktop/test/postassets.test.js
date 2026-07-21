@@ -65,6 +65,41 @@ test('exciseBlockFromFile — 앵커 없는 파일: 포스트 전용 파일명�
   assert.equal(fs.existsSync(shared), true);
 });
 
+test('exciseBlockFromFile — 본문 속 "B-5"(임의 2글자-숫자)는 앵커가 아니다(형제 하이재킹 방지)', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'week3.md');
+  writeLane(dir, 'captions', 'week3.md',
+    'IG-3 — 봄 신상\nCAPTION: a\n\nIG-7 — 비타민 세럼 루틴\nCAPTION: b\n## B-5 비타민이 필요한 이유\n효능 설명\n');
+  // 존재하지 않는 IG-5 삭제 시도 — B-5가 앵커로 잡혀 IG-7 본문을 지우면 안 된다
+  const r = postassets.exciseBlockFromFile(f, 'week3.md', '없는주제xyz', 5, IG1, 'instagram');
+  assert.equal(r.changed, false);
+  assert.match(fs.readFileSync(f, 'utf8'), /비타민이 필요한 이유/); // IG-7 본문 보존
+});
+
+test('exciseBlockFromFile — 같은 레인·같은 번호라도 채널이 맞는 블록만 (IG-4 vs FB-4)', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'jan.md');
+  writeLane(dir, 'captions', 'jan.md',
+    'IG-4 — 인스타 포스트\nCAPTION: 인스타 본문\n\nFB-4 — 페북 포스트\nCAPTION: 페북 본문\n');
+  const r = postassets.exciseBlockFromFile(f, 'jan.md', '페북 포스트', 4, [/^fb-0*4/i], 'facebook');
+  assert.equal(r.changed, true);
+  const after = fs.readFileSync(f, 'utf8');
+  assert.match(after, /인스타 본문/);      // IG-4 보존
+  assert.doesNotMatch(after, /페북 본문/);  // FB-4만 제거
+});
+
+test('exciseBlockFromFile — 앵커 앞 머리말은 파일 통삭제하지 않고 보존', () => {
+  const dir = tmp();
+  const f = path.join(dir, 'outputs', 'captions', 'campaign.md');
+  writeLane(dir, 'captions', 'campaign.md',
+    '# 이번 주 캠페인 개요\n브랜드 인지도 상승이 목표\n\n## FB-2 — 여름 세일\n세일 본문\n');
+  const r = postassets.exciseBlockFromFile(f, 'campaign.md', '여름 세일', 2, [/^fb-0*2/i], 'facebook');
+  assert.equal(r.excised, true);
+  assert.equal(fs.existsSync(f), true);
+  assert.match(fs.readFileSync(f, 'utf8'), /캠페인 개요/); // 머리말 보존
+  assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /세일 본문/);
+});
+
 test('deleteAssets — 이미지 삭제는 이 포스트 프리픽스 파일만; 형제/풀/브리프는 보존', () => {
   const dir = tmp();
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'),
