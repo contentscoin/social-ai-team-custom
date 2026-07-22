@@ -18,6 +18,8 @@ test('실패 분류 — 인프라성(키·크레딧·네트워크·429/5xx)만 �
     'HTTP 429', 'HTTP 503', 'quota exceeded',
     'fetch failed', 'connect ECONNREFUSED', 'ETIMEDOUT', 'The operation was aborted',
     "✗ server unreachable — is 'ima2 serve' running?", // ima2 서버 다운 → 인프라(폴백/조기중단 대상)
+    'Generation in progress (requestId: req_cli_gen_x). ✗ The operation was aborted due to timeout', // ima2 생성 대기 초과(원문)
+    'ima2 생성이 서버 대기 시간을 초과했습니다(timeout) — 다시 시도하세요', // 앱이 정제한 대기초과 메시지
   ]) assert.equal(render._isInfraFailure(m), true, m);
   for (const m of [
     'safety system이 프롬프트를 거부했습니다',
