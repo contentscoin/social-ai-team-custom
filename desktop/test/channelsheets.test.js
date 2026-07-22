@@ -137,6 +137,22 @@ test('draftPrompt — 브랜드·플랫폼 재료를 넣고 JSON 출력 형식�
   assert.match(p, /"character"/);
 });
 
+test('draftPrompt — 전문 구조(마스터=스타일가이드·캐릭터=모델시트) + 전략별 지침을 마크다운으로 요구', () => {
+  const p = channelsheets.draftPrompt({}, 'instagram', '인스타그램', '');
+  assert.match(p, /마크다운/);            // md 구조 요구
+  // 마스터 = 스타일 가이드/아트 바이블 섹션
+  assert.match(p, /조명\(setup\)/);
+  assert.match(p, /색·그레이딩/);
+  assert.match(p, /DO · DON'T/);
+  // 캐릭터 = 캐릭터 모델 시트 섹션
+  assert.match(p, /턴어라운드/);
+  assert.match(p, /표정 세트/);
+  assert.match(p, /시그니처 고정점/);
+  // 지침 = 전략별 세부
+  assert.match(p, /전략별 세부/);
+  assert.match(p, /해시태그 전략/);
+});
+
 test('draftPrompt — 채널별 시트 방향이 다르게 반영되고, 브랜드 정체성(제품·로고)을 마스터에 반영', () => {
   const ig = channelsheets.draftPrompt({ identity: '회사명: 콩볶는집 · 제품: 스페셜티 원두 · 로고: 갈색 원형' }, 'instagram', '인스타그램', '');
   const th = channelsheets.draftPrompt({}, 'threads', '스레드', '');
