@@ -524,6 +524,9 @@ ipcMain.handle('sec:invalidateChannels', () => { channelCache = { at: 0, data: n
 const autovisual = require('./lib/autovisual');
 const imagestyles = require('./lib/imagestyles');
 const postassets = require('./lib/postassets');
+const channelsheets = require('./lib/channelsheets');
+const engine = require('./lib/engine');
+const channelRegistry = require('./lib/channels');
 // 워크스페이스별 비주얼 렌더 중단 플래그 — 프로세스 전역 하나면 다른 dir의 렌더를 함께 죽인다.
 const renderStops = new Map(); // dir → true(중단 요청)
 const stopRender = (dir) => { if (dir) renderStops.set(dir, true); };
@@ -1015,6 +1018,30 @@ ipcMain.handle('post:deleteAssets', safe((_e, dir, uid, opts) => {
   if (r.ok) setTimeout(pushBoard, 200); // 카드가 planned/copy로 즉시 되돌아가게
   return r;
 }));
+
+// ---- 채널별 캐릭터/마스터 시트 락인 ------------------------------------------------
+// 채널마다 고정 비주얼 아이덴티티를 정의하고 락을 걸면, 그 채널의 모든 이미지 컴파일에 최우선 주입.
+ipcMain.handle('sheet:list', safe((_e, dir) => channelsheets.list(dir)));
+ipcMain.handle('sheet:get', safe((_e, dir, channel) => channelsheets.get(dir, channel)));
+ipcMain.handle('sheet:save', safe((_e, dir, channel, data) => channelsheets.save(dir, channel, data || {})));
+ipcMain.handle('sheet:lock', safe((_e, dir, channel, locked) => channelsheets.setLock(dir, channel, locked)));
+// AI 초안 — 브랜드 컨텍스트 + 플랫폼 방향으로 마스터/캐릭터 시트 초안을 생성(저장은 사용자가 검토 후).
+ipcMain.handle('sheet:generate', async (_e, dir, channel) => {
+  try {
+    if (!channelRegistry.REGISTRY[channel] || channel === 'etc') return { ok: false, error: '알 수 없는 채널입니다' };
+    const brand = promptlab.brandContext(dir);
+    const name = (channelRegistry.REGISTRY[channel] || {}).name || channel;
+    const platformDir = promptlab.PLATFORM_DIRECTION[channel] || '';
+    const instr = channelsheets.draftPrompt(brand, channel, name, platformDir);
+    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: 120_000 });
+    if (!r.ok) return { ok: false, error: '초안 생성에 실패했습니다 (엔진 응답 없음)' };
+    const draft = channelsheets.parseDraft(r.out);
+    if (!draft) return { ok: false, error: '초안 파싱에 실패했습니다 — 다시 시도하세요' };
+    return { ok: true, channel, draft };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
 
 // ---- 워크스페이스 백업·복원 -----------------------------------------------------
 ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));

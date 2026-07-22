@@ -2451,7 +2451,7 @@ async function openSettings(section) {
   sheet.innerHTML = `
     <div class="sheet-head"><h2>설정</h2><button class="icon-btn" id="set-close"><svg><use href="#i-close"/></svg></button></div>
     <div class="settings-nav">
-      <button data-sec="env" class="active">환경</button><button data-sec="engine">엔진</button><button data-sec="channels">채널</button><button data-sec="opencrab">OpenCrab</button><button data-sec="render">렌더</button><button data-sec="backup">백업</button><button data-sec="update">업데이트</button><button data-sec="about">정보</button>
+      <button data-sec="env" class="active">환경</button><button data-sec="engine">엔진</button><button data-sec="channels">채널</button><button data-sec="opencrab">OpenCrab</button><button data-sec="render">렌더</button><button data-sec="sheet">시트</button><button data-sec="backup">백업</button><button data-sec="update">업데이트</button><button data-sec="about">정보</button>
     </div>
     <div class="sheet-body">
       <div data-body="env">${envRows(s)}${envButtons()}</div>
@@ -2470,6 +2470,26 @@ async function openSettings(section) {
         </div>
         <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>클로드 디자인</b>(SVG→PNG) 레인은 키 없이 항상 동작합니다. 아래 키를 넣으면 이미지·영상 프로바이더가 추가로 열립니다.</p>
         <div id="sec-forms-rd"></div>
+      </div>
+      <div data-body="sheet" class="hidden">
+        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>채널 시트 락인</b> — 채널마다 <b>마스터 시트</b>(전체 스타일·팔레트·조명·구도)와 <b>캐릭터 시트</b>(반복 등장 주체)를 정해 락을 걸면, 그 채널의 <b>모든 이미지 생성</b>이 이 시트를 최우선 일관성 축으로 따릅니다(플랫폼 방향·VISUAL DIRECTION보다 우선). 채널별로 얼굴·톤·색이 프레임마다 흔들리는 문제를 잡습니다.</p>
+        <div id="sheet-noclient" class="muted small hidden" style="margin:10px 0">먼저 클라이언트를 선택하세요.</div>
+        <div id="sheet-editor">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+            <select id="sheet-ch" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px"></select>
+            <span id="sheet-lock-badge" class="small muted" style="white-space:nowrap"></span>
+          </div>
+          <label class="small muted">마스터 시트 — 전체 비주얼 아이덴티티 (스타일·팔레트 HEX·조명·구도·재질)</label>
+          <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽에서 들어오는 부드러운 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백, 타이트 크롭. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 12px"></textarea>
+          <label class="small muted">캐릭터 시트 — 반복 등장 주체 (모델·마스코트·제품 페르소나). 없으면 "반복 주체 없음 — 오브젝트/손 중심".</label>
+          <textarea id="sheet-character" rows="5" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 화장기 적은 내추럴. 오트밀색 니트 + 리넨 앞치마. 차분하고 다정한 표정. 항상 같은 인물로 등장." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 4px"></textarea>
+          <div class="btn-grid" style="margin-top:10px">
+            <button id="sheet-ai" type="button">AI 초안 생성</button>
+            <button id="sheet-save" type="button">저장</button>
+            <button id="sheet-lock" type="button">락 걸기</button>
+          </div>
+          <p id="sheet-status" class="muted small" style="margin-top:8px"></p>
+        </div>
       </div>
       <div data-body="engine" class="hidden">
         <p class="muted" style="margin-bottom:10px">기본 엔진을 선택합니다. 대화·파이프라인 단계·이미지 렌더가 이 엔진으로 동작하며, 아래 <b>단계별 엔진</b>에서 구간마다 따로 지정할 수 있습니다.</p>
@@ -2617,6 +2637,78 @@ async function openSettings(section) {
       sel.onchange = async () => {
         await window.api.engine.setImageStyle(sel.value);
         toast(sel.value ? `이미지 기본 스타일: ${sel.options[sel.selectedIndex].text}` : '이미지 기본 스타일 해제');
+      };
+    }
+  }
+  // 채널 시트 락인 (설정 → 시트) — 채널별 마스터/캐릭터 시트 편집 + 락 + AI 초안
+  {
+    const dir = S.client && S.client.dir;
+    const editor = $('#sheet-editor');
+    const noclient = $('#sheet-noclient');
+    if (!dir) {
+      if (editor) editor.classList.add('hidden');
+      if (noclient) noclient.classList.remove('hidden');
+    } else if (editor) {
+      const chSel = $('#sheet-ch');
+      const mEl = $('#sheet-master');
+      const cEl = $('#sheet-character');
+      const badge = $('#sheet-lock-badge');
+      const lockBtn = $('#sheet-lock');
+      const setStatus = (t) => { const el = $('#sheet-status'); if (el) el.textContent = t || ''; };
+      let curLocked = false;
+      const refreshList = async () => {
+        const items = await window.api.sheet.list(dir).catch(() => []);
+        if (seq !== settingsSeq || !chSel) return;
+        const keep = chSel.value;
+        chSel.innerHTML = (items || []).map((it) =>
+          `<option value="${esc(it.channel)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.has ? '' : ' · (미작성)'}</option>`).join('');
+        if (keep && items.some((it) => it.channel === keep)) chSel.value = keep;
+      };
+      const loadCh = async (ch) => {
+        const s = await window.api.sheet.get(dir, ch).catch(() => null);
+        if (seq !== settingsSeq) return;
+        mEl.value = (s && s.master) || '';
+        cEl.value = (s && s.character) || '';
+        curLocked = !!(s && s.locked);
+        badge.textContent = curLocked ? '🔒 락됨 · 이 채널 이미지에 적용 중' : '락 해제';
+        badge.style.color = curLocked ? 'var(--ok)' : '';
+        lockBtn.textContent = curLocked ? '락 해제' : '락 걸기';
+        setStatus('');
+      };
+      await refreshList();
+      if (seq === settingsSeq && chSel && chSel.value) await loadCh(chSel.value);
+      if (chSel) chSel.onchange = () => loadCh(chSel.value);
+      $('#sheet-save').onclick = async () => {
+        const ch = chSel.value; if (!ch) return;
+        const r = await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value });
+        if (r && r.ok) { setStatus('저장됨'); toast('채널 시트 저장됨'); await refreshList(); await loadCh(ch); }
+        else setStatus((r && r.error) || '저장 실패');
+      };
+      lockBtn.onclick = async () => {
+        const ch = chSel.value; if (!ch) return;
+        // 락 걸기 전 현재 편집분을 먼저 저장(내용 없으면 락 불가)
+        if (!curLocked) {
+          if (!mEl.value.trim() && !cEl.value.trim()) { setStatus('시트 내용을 먼저 입력하세요'); return; }
+          await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value });
+        }
+        const r = await window.api.sheet.lock(dir, ch, !curLocked);
+        if (r && r.ok) { toast(!curLocked ? '락 — 이 채널 이미지에 시트 적용' : '락 해제됨'); await loadCh(ch); await refreshList(); }
+        else setStatus((r && r.error) || '락 실패');
+      };
+      $('#sheet-ai').onclick = async () => {
+        const ch = chSel.value; if (!ch) return;
+        const btn = $('#sheet-ai'); const old = btn.textContent;
+        btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (최대 2분)');
+        try {
+          const r = await window.api.sheet.generate(dir, ch);
+          if (seq !== settingsSeq) return;
+          if (r && r.ok && r.draft) {
+            if (r.draft.master) mEl.value = r.draft.master;
+            if (r.draft.character) cEl.value = r.draft.character;
+            setStatus('초안 생성됨 — 검토·수정 후 [저장]을 누르세요');
+          } else setStatus((r && r.error) || '초안 생성 실패');
+        } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
+        finally { btn.disabled = false; btn.textContent = old; }
       };
     }
   }

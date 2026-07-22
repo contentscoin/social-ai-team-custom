@@ -8,6 +8,7 @@ const { runCmd } = require('./proc');
 const config = require('./config');
 const engine = require('./engine');
 const imagestyles = require('./imagestyles');
+const channelsheets = require('./channelsheets');
 const { findVisualDirection } = require('./postblock');
 
 // ---- 팩 로딩 ----------------------------------------------------------------------
@@ -262,9 +263,12 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
       + `단, 이 앱의 사진형 이미지 모델용이므로: 프롬프트는 영어, 이미지 내 텍스트/로고 렌더 금지(TEXT RULE — 텍스트는 앱이 따로 얹는다), negative는 아래 JSON의 negative 필드로 분리한다. SD 퀄리티 꼬리(sharp focus 등)는 붙이지 말고 킷 문법의 재질·조명·색으로 퀄리티를 낸다.\n\n`
     : '';
   const platformBlock = platformDirective(job.channel, job.kind);
+  // 채널 시트 락인 — 락 걸린 채널이면 마스터/캐릭터 시트를 최우선 일관성 축으로 주입(플랫폼 방향보다 우선).
+  const sheetBlock = job.kind !== 'video' ? channelsheets.compileDirective(dir, job.channel) : '';
   const instr =
     `너는 시니어 비주얼 프롬프트 엔지니어다. 아래 재료로 ${target}에 넣을 **고퀄리티** 최종 생성 프롬프트를 만들어라.\n` +
     kitDirective +
+    sheetBlock +
     platformBlock +
     `[규칙]\n` +
     `- 기획 언어(목표/필러/앵글/engagement)를 그대로 옮기지 말고 카메라가 찍을 수 있는 시각 언어로 번역하라.\n` +
