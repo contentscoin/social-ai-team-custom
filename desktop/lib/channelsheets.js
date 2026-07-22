@@ -14,22 +14,60 @@ function sheetsDir(dir) { return path.join(dir, 'context', 'channel-sheets'); }
 function fileFor(dir, channel) { return path.join(sheetsDir(dir), `${channel}.json`); }
 function validChannel(channel) { return !!(channelRegistry.REGISTRY[channel] && channel !== 'etc'); }
 
-function get(dir, channel) {
-  try { return JSON.parse(fs.readFileSync(fileFor(dir, channel), 'utf8')); } catch { return null; }
+const clampStr = (v, fb, cap) => (typeof v === 'string' ? v.slice(0, cap) : fb);
+const clampRel = (v, fb) => (v != null ? String(v).slice(0, 300) : (fb || ''));
+
+// 캐릭터 배열 정규화 — {name, text, ref}[] (최대 5, 빈 항목 제거).
+function normChars(arr) {
+  if (!Array.isArray(arr)) return null;
+  return arr.slice(0, 5)
+    .map((c) => ({ name: clampStr(c && c.name, '', 60) || '캐릭터', text: clampStr(c && c.text, '', 4000), ref: clampRel(c && c.ref, '') }))
+    .filter((c) => c.text.trim() || c.ref);
+}
+// 저장 데이터 마이그레이션 — 구 단일 character/characterRef를 characters[]로 승격(비파괴, 읽기 시).
+function normalize(s) {
+  if (!s || typeof s !== 'object') return s;
+  if (!Array.isArray(s.characters)) {
+    const legacy = [];
+    if ((s.character && String(s.character).trim()) || s.characterRef) {
+      legacy.push({ name: '캐릭터 1', text: s.character || '', ref: s.characterRef || '' });
+    }
+    s.characters = legacy;
+  } else {
+    s.characters = normChars(s.characters) || [];
+  }
+  return s;
 }
 
+function get(dir, channel) {
+  try { return normalize(JSON.parse(fs.readFileSync(fileFor(dir, channel), 'utf8'))); } catch { return null; }
+}
+
+// 여러 캐릭터 시트 + 단일 마스터 시트를 채널당 저장. 캐릭터는 characters[](각 name/text/ref).
+// data.characters를 주면 배열을 통째 교체, 없으면 기존 유지. 구 character/characterRef도 계속 받는다.
 function save(dir, channel, data = {}) {
   if (!validChannel(channel)) return { ok: false, error: '알 수 없는 채널입니다' };
   const cur = get(dir, channel) || {};
-  const str = (v, fb, cap) => (typeof v === 'string' ? v.slice(0, cap) : fb);
-  const rel = (v, fb) => (v != null ? String(v).slice(0, 300) : (fb || ''));
+  const str = clampStr, rel = clampRel;
+  // 캐릭터: characters 배열 우선, 없으면 구 character/characterRef 단일 갱신을 characters[0]에 반영.
+  let characters;
+  if (data.characters != null) {
+    characters = normChars(data.characters) || [];
+  } else if (data.character != null || data.characterRef != null) {
+    characters = (cur.characters || []).slice();
+    const first = characters[0] || { name: '캐릭터 1', text: '', ref: '' };
+    if (data.character != null) first.text = str(data.character, first.text, 4000);
+    if (data.characterRef != null) first.ref = rel(data.characterRef, first.ref);
+    characters[0] = first;
+    characters = normChars(characters) || [];
+  } else {
+    characters = cur.characters || [];
+  }
   const next = {
     master: str(data.master, cur.master || '', 4000),
-    character: str(data.character, cur.character || '', 4000),
     guidelines: str(data.guidelines, cur.guidelines || '', 4000), // 지침 — 이미지·카피에 공통 적용되는 채널 규칙
-    // 레퍼런스 이미지 rel — ima2 --ref 앵커로 인물·제품 픽셀 일관성. 텍스트 시트로 부족한 부분을 실제 이미지로 고정.
-    characterRef: rel(data.characterRef, cur.characterRef),
-    masterRef: rel(data.masterRef, cur.masterRef),
+    characters, // 여러 캐릭터 시트 [{name, text, ref}]
+    masterRef: rel(data.masterRef, cur.masterRef), // 마스터 레퍼런스(스타일 보드) 앵커
     anchorImage: rel(data.anchorImage, cur.anchorImage), // (구) 단일 앵커 — 하위호환
     locked: data.locked != null ? !!data.locked : !!cur.locked,
     updatedAt: new Date().toISOString(),
@@ -47,18 +85,31 @@ function setLock(dir, channel, locked) {
   return save(dir, channel, { locked: !!locked });
 }
 
+// 특정 캐릭터(index)의 레퍼런스 이미지 rel을 설정 — 레퍼런스 생성 IPC가 사용.
+function setCharacterRef(dir, channel, index, rel) {
+  const s = get(dir, channel);
+  if (!s) return { ok: false, error: '시트가 없습니다' };
+  const chars = (s.characters || []).slice();
+  const i = Number(index) || 0;
+  if (!chars[i]) return { ok: false, error: '해당 캐릭터가 없습니다' };
+  chars[i] = { ...chars[i], ref: clampRel(rel, chars[i].ref) };
+  return save(dir, channel, { characters: chars });
+}
+
 // 전 채널 시트 요약(설정 UI 목록용)
 function list(dir) {
   return Object.keys(channelRegistry.REGISTRY)
     .filter(validChannel)
     .map((ch) => {
       const s = get(dir, ch);
+      const chars = (s && s.characters) || [];
       return {
         channel: ch,
         name: channelRegistry.REGISTRY[ch].name,
-        has: !!(s && (s.master || s.character || s.guidelines)),
+        has: !!(s && (s.master || s.guidelines || chars.length)),
         locked: !!(s && s.locked),
-        characterRef: (s && s.characterRef) || '',
+        characterCount: chars.length,
+        refCount: [(s && s.masterRef), ...chars.map((c) => c.ref), (s && s.anchorImage)].filter(Boolean).length,
         masterRef: (s && s.masterRef) || '',
         anchorImage: (s && s.anchorImage) || '',
         updatedAt: (s && s.updatedAt) || null,
@@ -175,13 +226,15 @@ function parseDraft(out) {
 function compileDirective(dir, channel) {
   const s = get(dir, channel);
   if (!s) return '';
+  const chars = s.characters || [];
   const parts = [];
   if (s.master && s.master.trim()) parts.push(`[마스터 시트 — 고정 비주얼 아이덴티티]\n${s.master.trim()}`);
-  if (s.character && s.character.trim()) parts.push(`[캐릭터 시트 — 반복 등장 주체 고정]\n${s.character.trim()}`);
+  chars.forEach((c) => { if (c.text && c.text.trim()) parts.push(`[캐릭터 시트 · ${c.name} — 반복 등장 주체 고정]\n${c.text.trim()}`); });
   if (s.guidelines && s.guidelines.trim()) parts.push(`[채널 지침 — 준수 규칙]\n${s.guidelines.trim()}`);
   if (!parts.length) return '';
   if (s.locked) {
-    const refNote = (s.characterRef || s.masterRef || s.anchorImage)
+    const hasRef = s.masterRef || s.anchorImage || chars.some((c) => c.ref);
+    const refNote = hasRef
       ? `이 채널은 잠금된 레퍼런스 이미지가 있어 생성 시 --ref 앵커로 전달된다 — 그 레퍼런스의 인물·제품 외형을 그대로 유지하라. `
       : '';
     return `\n[채널 시트 락인 — ${channel} · 반드시 준수]\n`
@@ -202,7 +255,9 @@ function refImages(dir, channel) {
   if (!s || !s.locked) return [];
   const base = path.resolve(dir);
   const out = [];
-  for (const relPath of [s.characterRef, s.masterRef, s.anchorImage]) {
+  // 여러 캐릭터 레퍼런스 + 마스터 레퍼런스 + 구 앵커 — 존재하는 파일만, 최대 5장(ima2 --ref 상한).
+  const rels = [...(s.characters || []).map((c) => c.ref), s.masterRef, s.anchorImage];
+  for (const relPath of rels) {
     if (!relPath) continue;
     const abs = path.resolve(dir, relPath);
     if (abs.startsWith(base + path.sep) && !out.includes(abs)) {
@@ -226,4 +281,4 @@ function contentGuidelines(dir) {
   return `[채널별 지침 — 락인, 반드시 준수]\n각 채널의 카피·영상은 아래 해당 채널 지침을 최우선으로 따른다.\n${lines.join('\n')}\n\n`;
 }
 
-module.exports = { get, save, setLock, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir, CHANNEL_SHEET_GUIDE };
+module.exports = { get, save, setLock, setCharacterRef, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir, CHANNEL_SHEET_GUIDE };

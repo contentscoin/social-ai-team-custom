@@ -2489,23 +2489,20 @@ async function openSettings(section) {
           </div>
           <label class="small muted">마스터 시트 — 전체 비주얼 아이덴티티 (스타일·팔레트 HEX·조명·구도·재질)</label>
           <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽에서 들어오는 부드러운 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백, 타이트 크롭. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 12px"></textarea>
-          <label class="small muted">캐릭터 시트 — 반복 등장 주체 (모델·마스코트·제품 페르소나). 없으면 "반복 주체 없음 — 오브젝트/손 중심".</label>
-          <textarea id="sheet-character" rows="5" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 화장기 적은 내추럴. 오트밀색 니트 + 리넨 앞치마. 차분하고 다정한 표정. 항상 같은 인물로 등장." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 12px"></textarea>
+          <div style="display:flex;gap:12px;align-items:center;margin:-4px 0 14px">
+            <div id="sheet-ref-master-box" style="width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center"></div>
+            <div style="flex:1;min-width:0">
+              <button id="sheet-ref-master" type="button" class="small">마스터 스타일 레퍼런스 생성</button>
+              <p class="muted small" style="margin-top:4px;line-height:1.45">마스터 시트로 스타일 보드 이미지를 만들어 앵커로 씁니다(선택). 저장 후 생성.</p>
+            </div>
+          </div>
           <label class="small muted">지침 — 이 채널 콘텐츠 규칙 (카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약 등). 카피·이미지 모두에 적용.</label>
           <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그는 끝에 3~5개. '최고/1위' 등 과장 표현 금지. 가격은 본문에 직접 쓰지 않음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 4px"></textarea>
-          <div style="margin:14px 0 4px;padding-top:12px;border-top:1px solid var(--line)">
-            <b class="small">레퍼런스 이미지 (픽셀 일관성 앵커)</b>
-            <p class="muted small" style="margin:4px 0 10px;line-height:1.55">텍스트 시트만으로는 <b>같은 얼굴·같은 제품</b>을 매번 재현하지 못합니다. 캐릭터/마스터 시트로 레퍼런스 이미지를 <b>1회 생성</b>해 두면, 락인 시 이 채널의 모든 이미지 생성에 <code>--ref</code> 앵커로 전달돼 외형이 고정됩니다(ima2). 시트 내용을 먼저 <b>저장</b>한 뒤 생성하세요.</p>
-            <div style="display:flex;gap:12px">
-              <div style="flex:1;text-align:center">
-                <div id="sheet-ref-character-box" style="aspect-ratio:1;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px"><span class="muted small">캐릭터 레퍼런스 없음</span></div>
-                <button id="sheet-ref-character" type="button" class="small" style="width:100%">캐릭터 레퍼런스 생성</button>
-              </div>
-              <div style="flex:1;text-align:center">
-                <div id="sheet-ref-master-box" style="aspect-ratio:1;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px"><span class="muted small">마스터 레퍼런스 없음</span></div>
-                <button id="sheet-ref-master" type="button" class="small" style="width:100%">마스터 레퍼런스 생성</button>
-              </div>
-            </div>
+          <div style="margin:16px 0 4px;padding-top:12px;border-top:1px solid var(--line)">
+            <b class="small">캐릭터 시트 (여러 개 가능)</b>
+            <p class="muted small" style="margin:4px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. 각각 레퍼런스 이미지를 만들어 두면, 락인 시 이 채널 이미지에 최대 5장까지 <code>--ref</code> 앵커로 쓰입니다(같은 얼굴·같은 제품 재현). 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
+            <div id="sheet-chars"></div>
+            <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
           </div>
           <div class="btn-grid" style="margin-top:14px">
             <button id="sheet-ai" type="button">AI 초안 생성</button>
@@ -2675,55 +2672,91 @@ async function openSettings(section) {
     } else if (editor) {
       const chSel = $('#sheet-ch');
       const mEl = $('#sheet-master');
-      const cEl = $('#sheet-character');
       const gEl = $('#sheet-guidelines');
+      const charsBox = $('#sheet-chars');
       const badge = $('#sheet-lock-badge');
       const lockBtn = $('#sheet-lock');
       const setStatus = (t) => { const el = $('#sheet-status'); if (el) el.textContent = t || ''; };
-      const setRefBox = (which, rel) => {
-        const box = $(`#sheet-ref-${which}-box`);
+      const setMasterRef = (rel) => {
+        const box = $('#sheet-ref-master-box');
         if (!box) return;
-        if (rel) box.innerHTML = `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">`;
-        else box.innerHTML = `<span class="muted small">${which === 'character' ? '캐릭터' : '마스터'} 레퍼런스 없음</span>`;
+        box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">` : '<span class="muted" style="font-size:10px">마스터<br>레퍼런스</span>';
       };
       let curLocked = false;
+      let charState = []; // [{name, text, ref}]
+      const syncChars = () => {
+        if (!charsBox) return;
+        const names = charsBox.querySelectorAll('.sc-name');
+        const texts = charsBox.querySelectorAll('.sc-text');
+        charState = charState.map((c, i) => ({
+          name: (names[i] && names[i].value) || c.name || `캐릭터 ${i + 1}`,
+          text: (texts[i] && texts[i].value) || '',
+          ref: c.ref || '',
+        }));
+      };
+      const renderChars = () => {
+        if (!charsBox) return;
+        charsBox.innerHTML = charState.length ? charState.map((c, i) => `
+          <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+              <input class="sc-name" data-i="${i}" value="${esc(c.name || '')}" placeholder="캐릭터 이름 (예: 바리스타 지은 / 시그니처 라떼)" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12.5px">
+              <button class="sc-del small" data-i="${i}" type="button">삭제</button>
+            </div>
+            <div style="display:flex;gap:10px">
+              <div style="width:64px;height:64px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center">${c.ref ? `<img src="${satUrl(c.ref)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="ref">` : '<span class="muted" style="font-size:10px">레퍼런스<br>없음</span>'}</div>
+              <textarea class="sc-text" data-i="${i}" rows="4" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 오트밀색 니트 + 리넨 앞치마. 항상 같은 인물." style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;line-height:1.55;resize:vertical">${esc(c.text || '')}</textarea>
+            </div>
+            <button class="sc-genref small" data-i="${i}" type="button" style="margin-top:6px">이 캐릭터 레퍼런스 생성</button>
+          </div>`).join('') : '<p class="muted small">캐릭터가 없습니다. "+ 캐릭터 추가"로 시작하세요.</p>';
+        charsBox.querySelectorAll('.sc-del').forEach((b) => { b.onclick = () => { syncChars(); charState.splice(Number(b.dataset.i), 1); renderChars(); }; });
+        charsBox.querySelectorAll('.sc-genref').forEach((b) => { b.onclick = () => genCharRef(Number(b.dataset.i)); });
+      };
       const refreshList = async () => {
         const items = await window.api.sheet.list(dir).catch(() => []);
         if (seq !== settingsSeq || !chSel) return;
         const keep = chSel.value;
         chSel.innerHTML = (items || []).map((it) =>
-          `<option value="${esc(it.channel)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.has ? '' : ' · (미작성)'}</option>`).join('');
+          `<option value="${esc(it.channel)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.characterCount ? ` · 캐릭터 ${it.characterCount}` : ''}${it.has ? '' : ' · (미작성)'}</option>`).join('');
         if (keep && items.some((it) => it.channel === keep)) chSel.value = keep;
       };
       const loadCh = async (ch) => {
         const s = await window.api.sheet.get(dir, ch).catch(() => null);
         if (seq !== settingsSeq) return;
         mEl.value = (s && s.master) || '';
-        cEl.value = (s && s.character) || '';
         gEl.value = (s && s.guidelines) || '';
-        setRefBox('character', s && s.characterRef);
-        setRefBox('master', s && s.masterRef);
+        charState = ((s && s.characters) || []).map((c) => ({ name: c.name || '캐릭터', text: c.text || '', ref: c.ref || '' }));
+        renderChars();
+        setMasterRef(s && s.masterRef);
         curLocked = !!(s && s.locked);
         badge.textContent = curLocked ? '🔒 락됨 · 이 채널 이미지에 적용 중' : '락 해제';
         badge.style.color = curLocked ? 'var(--ok)' : '';
         lockBtn.textContent = curLocked ? '락 해제' : '락 걸기';
         setStatus('');
       };
+      const saveAll = (ch) => window.api.sheet.save(dir, ch, { master: mEl.value, guidelines: gEl.value, characters: charState });
       await refreshList();
       if (seq === settingsSeq && chSel && chSel.value) await loadCh(chSel.value);
       if (chSel) chSel.onchange = () => loadCh(chSel.value);
+      $('#sheet-char-add').onclick = () => {
+        syncChars();
+        if (charState.length >= 5) { setStatus('캐릭터는 최대 5개까지 (ima2 레퍼런스 상한)'); return; }
+        charState.push({ name: `캐릭터 ${charState.length + 1}`, text: '', ref: '' });
+        renderChars();
+      };
       $('#sheet-save').onclick = async () => {
         const ch = chSel.value; if (!ch) return;
-        const r = await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value, guidelines: gEl.value });
+        syncChars();
+        const r = await saveAll(ch);
         if (r && r.ok) { setStatus('저장됨'); toast('채널 시트 저장됨'); await refreshList(); await loadCh(ch); }
         else setStatus((r && r.error) || '저장 실패');
       };
       lockBtn.onclick = async () => {
         const ch = chSel.value; if (!ch) return;
-        // 락 걸기 전 현재 편집분을 먼저 저장(내용 없으면 락 불가)
+        syncChars();
         if (!curLocked) {
-          if (!mEl.value.trim() && !cEl.value.trim() && !gEl.value.trim()) { setStatus('시트 내용을 먼저 입력하세요'); return; }
-          await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value, guidelines: gEl.value });
+          const has = mEl.value.trim() || gEl.value.trim() || charState.some((c) => c.text.trim() || c.ref);
+          if (!has) { setStatus('시트 내용을 먼저 입력하세요'); return; }
+          await saveAll(ch);
         }
         const r = await window.api.sheet.lock(dir, ch, !curLocked);
         if (r && r.ok) { toast(!curLocked ? '락 — 이 채널 이미지에 시트 적용' : '락 해제됨'); await loadCh(ch); await refreshList(); }
@@ -2738,30 +2771,42 @@ async function openSettings(section) {
           if (seq !== settingsSeq) return;
           if (r && r.ok && r.draft) {
             if (r.draft.master) mEl.value = r.draft.master;
-            if (r.draft.character) cEl.value = r.draft.character;
             if (r.draft.guidelines) gEl.value = r.draft.guidelines;
-            setStatus('초안 생성됨 — 검토·수정 후 [저장]을 누르세요');
+            if (r.draft.character) { syncChars(); if (!charState.length) charState.push({ name: '캐릭터 1', text: '', ref: '' }); charState[0] = { ...charState[0], text: r.draft.character }; renderChars(); }
+            setStatus('초안 생성됨 — 검토·수정 후 [저장]을 누르세요 (캐릭터는 추가로 더 만들 수 있습니다)');
           } else setStatus((r && r.error) || '초안 생성 실패');
         } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
       };
-      // 레퍼런스 이미지 생성 — 저장된 시트 텍스트로 앵커 이미지를 만들어 채널에 저장(락인 시 --ref로 적용)
-      const genRef = async (which) => {
+      // 레퍼런스 이미지 생성 — 저장된 시트 텍스트로 앵커 이미지를 만들어 저장(락인 시 --ref로 적용).
+      // 함수 선언(호이스팅) — renderChars가 genCharRef를 참조하므로 TDZ를 피한다.
+      async function genMasterRef() {
         const ch = chSel.value; if (!ch) return;
-        const btn = $(`#sheet-ref-${which}`); const old = btn.textContent;
-        await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value, guidelines: gEl.value });
-        btn.disabled = true; btn.textContent = '생성 중…';
-        setStatus(`${which === 'character' ? '캐릭터' : '마스터'} 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)`);
+        syncChars(); await saveAll(ch);
+        const btn = $('#sheet-ref-master'); const old = btn.textContent;
+        btn.disabled = true; btn.textContent = '생성 중…'; setStatus('마스터 스타일 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)');
         try {
-          const r = await window.api.sheet.genRef(dir, ch, which);
+          const r = await window.api.sheet.genRef(dir, ch, 'master');
           if (seq !== settingsSeq) return;
-          if (r && r.ok && r.rel) { setRefBox(which, r.rel); setStatus('레퍼런스 생성됨 — 락을 걸면 이 채널 이미지에 앵커로 적용됩니다'); await refreshList(); }
+          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('마스터 레퍼런스 생성됨'); await refreshList(); }
           else setStatus((r && r.error) || '레퍼런스 생성 실패');
         } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
-      };
-      $('#sheet-ref-character').onclick = () => genRef('character');
-      $('#sheet-ref-master').onclick = () => genRef('master');
+      }
+      async function genCharRef(i) {
+        const ch = chSel.value; if (!ch) return;
+        syncChars();
+        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요'); return; }
+        await saveAll(ch);
+        setStatus(`캐릭터 「${charState[i].name}」 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)`);
+        try {
+          const r = await window.api.sheet.genRef(dir, ch, 'character', i);
+          if (seq !== settingsSeq) return;
+          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('레퍼런스 생성됨 — 락을 걸면 앵커로 적용됩니다'); await refreshList(); }
+          else setStatus((r && r.error) || '레퍼런스 생성 실패');
+        } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
+      }
+      $('#sheet-ref-master').onclick = genMasterRef;
     }
   }
   // 백업 — 목록 렌더 + 생성/복원/삭제
