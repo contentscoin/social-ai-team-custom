@@ -2852,59 +2852,65 @@ async function openSettings(section) {
                 .concat(charState.slice(gen.length)).slice(0, 5);
               renderChars();
             }
-            // 이어서 브랜드 스타일 레퍼런스 + 캐릭터 턴어라운드까지 자동 생성(저장 포함).
-            // 텍스트 초안은 이미 채워져 있어 이미지 생성이 실패해도 초안은 남는다.
-            let brandOk = false;
-            if (mEl.value.trim()) {
-              setStatus('텍스트 초안 완료 — ① 공용 브랜드 레퍼런스 이미지 생성 중… (이미지 엔진 · 최대 몇 분)');
-              brandOk = await genBrandRef();
-              if (seq !== settingsSeq) return;
-            }
-            // 캐릭터 턴어라운드 — 내용이 있는 캐릭터를 순서대로 전부 생성(이미지 엔진 순차 호출)
+            // 이어서 브랜드 스타일 레퍼런스 + 캐릭터 턴어라운드를 병렬 생성(저장 포함).
+            // 이미지 1장 = 프롬프트 컴파일(LLM 1회) + 생성으로 몇 분 — 순차로 돌리면 장수만큼
+            // 늘어나므로 전부 동시에 던지고 완료를 집계한다. 실패해도 텍스트 초안·성공분은 남는다.
             syncChars();
-            const targets = charState.map((c, i) => ({ c, i })).filter((x) => x.c.text.trim());
-            let made = 0;
-            for (let n = 0; n < targets.length; n++) {
-              setStatus(`② 캐릭터 턴어라운드 ${n + 1}/${targets.length} 「${targets[n].c.name}」 생성 중… (이미지 엔진 · 최대 몇 분)`);
-              if (await genCharRef(targets[n].i)) made++;
+            const withBrand = !!mEl.value.trim();
+            const charTargets = charState.map((c, i) => ({ c, i })).filter((x) => x.c.text.trim());
+            const totalImgs = (withBrand ? 1 : 0) + charTargets.length;
+            if (!totalImgs) {
+              setStatus('텍스트 초안 완료 — 검토·수정 후 [공용 저장]/[채널 저장]을 누르세요.');
+            } else {
+              let doneImgs = 0;
+              const tick = (label) => { doneImgs++; if (doneImgs < totalImgs) setStatus(`이미지 ${doneImgs}/${totalImgs} 완료 (${label}) — 나머지 병렬 생성 중…`); };
+              setStatus(`텍스트 초안 완료 — 이미지 ${totalImgs}장(브랜드 ${withBrand ? 1 : 0} + 캐릭터 ${charTargets.length}) 병렬 생성 중… (몇 분)`);
+              const jobs = [];
+              if (withBrand) jobs.push(genBrandRef(true).then((ok) => { tick('브랜드'); return { ok, label: '브랜드 레퍼런스' }; }));
+              for (const t of charTargets) jobs.push(genCharRef(t.i, true).then((ok) => { tick(t.c.name); return { ok, label: `캐릭터 「${t.c.name}」` }; }));
+              const results = await Promise.all(jobs);
               if (seq !== settingsSeq) return;
+              const failed = results.filter((x) => !x.ok).map((x) => x.label);
+              setStatus(`AI 초안 + 이미지 완료 — 성공 ${results.length - failed.length}/${results.length}`
+                + (failed.length ? ` · 실패: ${failed.join(', ')} (해당 생성 버튼으로 재시도)` : '')
+                + '. 검토 후 [락]을 걸면 이 채널 이미지 생성에 적용됩니다.');
             }
-            const fails = (brandOk ? 0 : (mEl.value.trim() ? 1 : 0)) + (targets.length - made);
-            setStatus(`AI 초안 + 이미지 완료 — 브랜드 레퍼런스 ${brandOk ? '✔' : '✖'} · 캐릭터 턴어라운드 ${made}/${targets.length}. `
-              + `검토 후 [락]을 걸면 이 채널 이미지 생성에 적용됩니다.${fails ? ' 실패한 이미지는 해당 생성 버튼으로 다시 시도하세요.' : ''}`);
           } else setStatus((r && r.error) || '초안 생성 실패');
         } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
       };
       // 브랜드 레퍼런스(클라이언트 공용) — 브랜드 시트 텍스트로 스타일 보드 1장 생성해 공용 저장.
       // 함수 선언(호이스팅) — renderChars가 genCharRef를 참조하므로 TDZ를 피한다.
-      async function genBrandRef() {
+      // quiet: 병렬 일괄 실행 시 개별 상태 메시지를 억제(집계 메시지가 대신 표시) — 성공 여부 반환.
+      async function genBrandRef(quiet) {
+        const st = quiet ? () => {} : setStatus;
         await saveBrandData(); // 브랜드 텍스트(편집분) 공용 저장 후 생성
         const btn = $('#sheet-ref-master'); const old = btn.textContent;
-        btn.disabled = true; btn.textContent = '생성 중…'; setStatus('브랜드 스타일 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)');
+        btn.disabled = true; btn.textContent = '생성 중…'; st('브랜드 스타일 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)');
         let okv = false;
         try {
           const r = await window.api.sheet.genBrandRef(dir);
           if (seq !== settingsSeq) return false;
-          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('브랜드 레퍼런스 생성됨 (전 채널 공유)'); okv = true; }
-          else setStatus((r && r.error) || '레퍼런스 생성 실패');
-        } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
+          if (r && r.ok && r.rel) { setMasterRef(r.rel); st('브랜드 레퍼런스 생성됨 (전 채널 공유)'); okv = true; }
+          else st((r && r.error) || '레퍼런스 생성 실패');
+        } catch (e) { st('레퍼런스 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
         return okv;
       }
-      async function genCharRef(i) { // 성공 여부 반환 — AI 초안 자동 연쇄가 집계에 쓴다
+      async function genCharRef(i, quiet) {
+        const st = quiet ? () => {} : setStatus;
         const ch = chSel.value; if (!ch) return false;
         syncChars();
-        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요'); return false; }
+        if (!charState[i] || !charState[i].text.trim()) { st('이 캐릭터의 내용을 먼저 입력하세요'); return false; }
         await saveAll(ch);
-        setStatus(`캐릭터 「${charState[i].name}」 턴어라운드(정면·측면·후면) 모델 시트 생성 중… (이미지 엔진 · 최대 몇 분)`);
+        st(`캐릭터 「${charState[i].name}」 턴어라운드(정면·측면·후면) 모델 시트 생성 중… (이미지 엔진 · 최대 몇 분)`);
         let okv = false;
         try {
           const r = await window.api.sheet.genRef(dir, ch, 'character', i);
           if (seq !== settingsSeq) return false;
-          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('턴어라운드 레퍼런스 생성됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); okv = true; }
-          else setStatus((r && r.error) || '레퍼런스 생성 실패');
-        } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
+          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); st('턴어라운드 레퍼런스 생성됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); okv = true; }
+          else st((r && r.error) || '레퍼런스 생성 실패');
+        } catch (e) { st('레퍼런스 생성 실패: ' + e.message); }
         return okv;
       }
       // 참고용 레퍼런스 업로드 — AI 생성 대신 갖고 있는 이미지를 이 캐릭터의 앵커로 등록.
@@ -2920,9 +2926,10 @@ async function openSettings(section) {
           else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
         } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
       }
-      // 전체 채널 AI 초안 — 락 안 된 모든 채널의 텍스트 초안(캐릭터+지침)을 순서대로 생성해 바로 저장.
+      // 전체 채널 AI 초안 — 락 안 된 모든 채널의 텍스트 초안(캐릭터+지침)을 동시 3채널씩 병렬
+      // 생성해 바로 저장(순차로 돌리면 채널 수 × 몇 분이라 과도. 3개 제한은 엔진 한도 배려).
       // 이미지는 만들지 않는다(채널당 몇 분 × 캐릭터 수라 과도) — 각 채널에서 검토 후 생성.
-      // 공용 브랜드 시트는 비어 있을 때만 첫 초안의 master로 채운다(기존 브랜드를 덮지 않게).
+      // 공용 브랜드 시트는 비어 있을 때만 첫 성공 초안의 master로 채운다(기존 브랜드를 덮지 않게).
       $('#sheet-ai-all').onclick = async () => {
         const btnAll = $('#sheet-ai-all'); const btnOne = $('#sheet-ai');
         const oldAll = btnAll.textContent;
@@ -2932,24 +2939,34 @@ async function openSettings(section) {
         const skipped = items.length - targets.length;
         if (!targets.length) { setStatus('모든 채널이 락인 상태입니다 — 초안으로 덮어쓰려면 먼저 락을 해제하세요.'); return; }
         btnAll.disabled = true; btnOne.disabled = true;
-        let okCount = 0; const fails = [];
+        let okCount = 0; let doneCount = 0; const fails = [];
+        const b0 = await window.api.sheet.getBrand(dir).catch(() => null);
+        let brandFilled = !!(b0 && b0.brand && b0.brand.trim()); // 렌더러 단일 스레드 — 플래그로 1회만 채움
         try {
-          for (let n = 0; n < targets.length; n++) {
-            const it = targets[n];
-            btnAll.textContent = `전체 초안 ${n + 1}/${targets.length}…`;
-            setStatus(`[${n + 1}/${targets.length}] ${it.name} 초안 생성 중… (채널당 최대 7분)`);
-            const r = await window.api.sheet.generate(dir, it.channel).catch((e) => ({ ok: false, error: e.message }));
-            if (seq !== settingsSeq) return;
-            if (!(r && r.ok && r.draft)) { fails.push(`${it.name}: ${String((r && r.error) || '실패').slice(0, 80)}`); continue; }
-            // 채널별 저장 — 기존 캐릭터 레퍼런스는 자리(index)별로 보존
-            const cur = await window.api.sheet.get(dir, it.channel).catch(() => null);
-            const curChars = (cur && cur.characters) || [];
-            const characters = (r.draft.characters || []).map((c, i) => ({ name: c.name, text: c.text, ref: (curChars[i] && curChars[i].ref) || '' }));
-            await window.api.sheet.save(dir, it.channel, { characters, guidelines: r.draft.guidelines || '' });
-            const b = await window.api.sheet.getBrand(dir).catch(() => null);
-            if (r.draft.master && !(b && b.brand && b.brand.trim())) await window.api.sheet.saveBrand(dir, { brand: r.draft.master });
-            okCount++;
-          }
+          setStatus(`전체 채널 AI 초안 — ${targets.length}개 채널을 동시 3개씩 생성 중… (채널당 최대 7분)`);
+          let next = 0;
+          const worker = async () => {
+            while (next < targets.length) {
+              if (seq !== settingsSeq) return;
+              const it = targets[next++];
+              const r = await window.api.sheet.generate(dir, it.channel).catch((e) => ({ ok: false, error: e.message }));
+              if (seq !== settingsSeq) return;
+              if (r && r.ok && r.draft) {
+                // 채널별 저장 — 기존 캐릭터 레퍼런스는 자리(index)별로 보존
+                const cur = await window.api.sheet.get(dir, it.channel).catch(() => null);
+                const curChars = (cur && cur.characters) || [];
+                const characters = (r.draft.characters || []).map((c, i) => ({ name: c.name, text: c.text, ref: (curChars[i] && curChars[i].ref) || '' }));
+                await window.api.sheet.save(dir, it.channel, { characters, guidelines: r.draft.guidelines || '' });
+                if (r.draft.master && !brandFilled) { brandFilled = true; await window.api.sheet.saveBrand(dir, { brand: r.draft.master }); }
+                okCount++;
+              } else fails.push(`${it.name}: ${String((r && r.error) || '실패').slice(0, 80)}`);
+              doneCount++;
+              btnAll.textContent = `전체 초안 ${doneCount}/${targets.length}…`;
+              setStatus(`전체 채널 AI 초안 — ${doneCount}/${targets.length} 완료(${it.name}) · 나머지 병렬 생성 중…`);
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
+          if (seq !== settingsSeq) return;
           await refreshList();
           await loadBrand();
           if (chSel.value) await loadCh(chSel.value);

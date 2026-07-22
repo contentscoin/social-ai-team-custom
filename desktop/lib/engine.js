@@ -11,13 +11,14 @@ const config = require('./config');
 // runText(dir, prompt, { timeoutMs, json, onLine }) → runCmd 결과에 { out } 을 최종 응답 텍스트로.
 // claude: -p (json 모드면 --output-format json, {result} 래핑은 호출자가 벗김).
 // codex: exec -o <file> 로 최종 메시지를 파일에 받아 out으로. config/model 폴백 포함.
+let seq = 0; // 병렬 호출이 같은 밀리초에 시작해도 outFile이 겹치지 않게
 async function runText(dir, prompt, opts = {}) {
   const timeoutMs = opts.timeoutMs || 120_000;
   const onLine = opts.onLine || null;
   // opts.engine 오버라이드(단계별 선택) 우선, 없으면 전역 토글
   const eng = (opts.engine === 'claude' || opts.engine === 'codex') ? opts.engine : config.getEngine();
   if (eng === 'codex') {
-    const outFile = path.join(os.tmpdir(), `sat-engine-codex-${Date.now()}.txt`);
+    const outFile = path.join(os.tmpdir(), `sat-engine-codex-${Date.now()}-${++seq}.txt`);
     const model = config.getModels().codex;
     const build = (extra = [], useModel = true) => {
       // sandbox_mode=workspace-write: 워크스페이스 파일 쓰기 허용(read-only면 산출물을 못 씀).
