@@ -2525,7 +2525,7 @@ async function openSettings(section) {
           </div>
 
           <b class="small" style="color:var(--accent-hover)">③ 캐릭터 시트 (채널별 · 여러 개 가능)</b>
-          <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. <b>[AI 초안 + 이미지]</b>가 채널 전략에 맞춰 캐릭터 시트를 1~3개 제안합니다. <b>[레퍼런스 생성]</b>은 정면·측면·후면 <b>턴어라운드 모델 시트</b>를 만들고, <b>[참고 이미지 업로드]</b>로 갖고 있는 사진을 대신 쓸 수도 있습니다. 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰여 같은 얼굴·같은 제품을 재현합니다. 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
+          <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. <b>[AI 초안 + 이미지]</b>가 채널 전략에 맞춰 캐릭터 시트 1~3개를 제안하고 브랜드 레퍼런스 + 캐릭터별 <b>턴어라운드 모델 시트</b>(정면·측면·후면)까지 이어서 생성합니다. <b>[전체 채널 AI 초안]</b>은 락 안 된 모든 채널의 텍스트 초안을 한 번에 만들어 저장합니다(이미지는 채널별로). <b>[참고 이미지 업로드]</b>로 갖고 있는 사진을 대신 쓸 수도 있습니다. 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰여 같은 얼굴·같은 제품을 재현합니다. 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
           <div id="sheet-chars"></div>
           <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
 
@@ -2537,6 +2537,7 @@ async function openSettings(section) {
 
           <div class="btn-grid" style="margin-top:16px">
             <button id="sheet-ai" type="button">AI 초안 + 이미지</button>
+            <button id="sheet-ai-all" type="button">전체 채널 AI 초안</button>
             <button id="sheet-save" type="button">채널 시트 저장</button>
             <button id="sheet-lock" type="button">락 걸기</button>
           </div>
@@ -2851,18 +2852,26 @@ async function openSettings(section) {
                 .concat(charState.slice(gen.length)).slice(0, 5);
               renderChars();
             }
-            // 이어서 브랜드 스타일 레퍼런스 이미지까지 자동 생성(공용 저장 포함). 텍스트 초안은 이미 채워져 있어
-            // 이미지 생성이 실패해도 초안은 남는다.
+            // 이어서 브랜드 스타일 레퍼런스 + 캐릭터 턴어라운드까지 자동 생성(저장 포함).
+            // 텍스트 초안은 이미 채워져 있어 이미지 생성이 실패해도 초안은 남는다.
+            let brandOk = false;
             if (mEl.value.trim()) {
-              setStatus('텍스트 초안 완료 — 이어서 공용 브랜드 레퍼런스 이미지를 생성합니다… (이미지 엔진 · 최대 몇 분)');
-              const okRef = await genBrandRef();
+              setStatus('텍스트 초안 완료 — ① 공용 브랜드 레퍼런스 이미지 생성 중… (이미지 엔진 · 최대 몇 분)');
+              brandOk = await genBrandRef();
               if (seq !== settingsSeq) return;
-              setStatus(okRef
-                ? '초안 + 공용 브랜드 레퍼런스 이미지 완료 — 검토·수정 후 [공용 저장]/[채널 저장]/[락]. 캐릭터 턴어라운드는 각 카드에서 생성하세요.'
-                : '텍스트 초안은 완료됐습니다 — 브랜드 레퍼런스 이미지 생성만 실패(다시 시도 가능). 초안은 유지됩니다.');
-            } else {
-              setStatus('텍스트 초안 완료 — 검토·수정 후 [공용 저장]/[채널 저장]을 누르세요.');
             }
+            // 캐릭터 턴어라운드 — 내용이 있는 캐릭터를 순서대로 전부 생성(이미지 엔진 순차 호출)
+            syncChars();
+            const targets = charState.map((c, i) => ({ c, i })).filter((x) => x.c.text.trim());
+            let made = 0;
+            for (let n = 0; n < targets.length; n++) {
+              setStatus(`② 캐릭터 턴어라운드 ${n + 1}/${targets.length} 「${targets[n].c.name}」 생성 중… (이미지 엔진 · 최대 몇 분)`);
+              if (await genCharRef(targets[n].i)) made++;
+              if (seq !== settingsSeq) return;
+            }
+            const fails = (brandOk ? 0 : (mEl.value.trim() ? 1 : 0)) + (targets.length - made);
+            setStatus(`AI 초안 + 이미지 완료 — 브랜드 레퍼런스 ${brandOk ? '✔' : '✖'} · 캐릭터 턴어라운드 ${made}/${targets.length}. `
+              + `검토 후 [락]을 걸면 이 채널 이미지 생성에 적용됩니다.${fails ? ' 실패한 이미지는 해당 생성 버튼으로 다시 시도하세요.' : ''}`);
           } else setStatus((r && r.error) || '초안 생성 실패');
         } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
@@ -2883,18 +2892,20 @@ async function openSettings(section) {
         finally { btn.disabled = false; btn.textContent = old; }
         return okv;
       }
-      async function genCharRef(i) {
-        const ch = chSel.value; if (!ch) return;
+      async function genCharRef(i) { // 성공 여부 반환 — AI 초안 자동 연쇄가 집계에 쓴다
+        const ch = chSel.value; if (!ch) return false;
         syncChars();
-        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요'); return; }
+        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요'); return false; }
         await saveAll(ch);
         setStatus(`캐릭터 「${charState[i].name}」 턴어라운드(정면·측면·후면) 모델 시트 생성 중… (이미지 엔진 · 최대 몇 분)`);
+        let okv = false;
         try {
           const r = await window.api.sheet.genRef(dir, ch, 'character', i);
-          if (seq !== settingsSeq) return;
-          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('턴어라운드 레퍼런스 생성됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); }
+          if (seq !== settingsSeq) return false;
+          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('턴어라운드 레퍼런스 생성됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); okv = true; }
           else setStatus((r && r.error) || '레퍼런스 생성 실패');
         } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
+        return okv;
       }
       // 참고용 레퍼런스 업로드 — AI 생성 대신 갖고 있는 이미지를 이 캐릭터의 앵커로 등록.
       async function upCharRef(i) {
@@ -2909,6 +2920,44 @@ async function openSettings(section) {
           else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
         } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
       }
+      // 전체 채널 AI 초안 — 락 안 된 모든 채널의 텍스트 초안(캐릭터+지침)을 순서대로 생성해 바로 저장.
+      // 이미지는 만들지 않는다(채널당 몇 분 × 캐릭터 수라 과도) — 각 채널에서 검토 후 생성.
+      // 공용 브랜드 시트는 비어 있을 때만 첫 초안의 master로 채운다(기존 브랜드를 덮지 않게).
+      $('#sheet-ai-all').onclick = async () => {
+        const btnAll = $('#sheet-ai-all'); const btnOne = $('#sheet-ai');
+        const oldAll = btnAll.textContent;
+        const items = (await window.api.sheet.list(dir).catch(() => [])) || [];
+        if (seq !== settingsSeq || !items.length) return;
+        const targets = items.filter((it) => !it.locked); // 락인 채널은 확정본 — 덮어쓰지 않는다
+        const skipped = items.length - targets.length;
+        if (!targets.length) { setStatus('모든 채널이 락인 상태입니다 — 초안으로 덮어쓰려면 먼저 락을 해제하세요.'); return; }
+        btnAll.disabled = true; btnOne.disabled = true;
+        let okCount = 0; const fails = [];
+        try {
+          for (let n = 0; n < targets.length; n++) {
+            const it = targets[n];
+            btnAll.textContent = `전체 초안 ${n + 1}/${targets.length}…`;
+            setStatus(`[${n + 1}/${targets.length}] ${it.name} 초안 생성 중… (채널당 최대 7분)`);
+            const r = await window.api.sheet.generate(dir, it.channel).catch((e) => ({ ok: false, error: e.message }));
+            if (seq !== settingsSeq) return;
+            if (!(r && r.ok && r.draft)) { fails.push(`${it.name}: ${String((r && r.error) || '실패').slice(0, 80)}`); continue; }
+            // 채널별 저장 — 기존 캐릭터 레퍼런스는 자리(index)별로 보존
+            const cur = await window.api.sheet.get(dir, it.channel).catch(() => null);
+            const curChars = (cur && cur.characters) || [];
+            const characters = (r.draft.characters || []).map((c, i) => ({ name: c.name, text: c.text, ref: (curChars[i] && curChars[i].ref) || '' }));
+            await window.api.sheet.save(dir, it.channel, { characters, guidelines: r.draft.guidelines || '' });
+            const b = await window.api.sheet.getBrand(dir).catch(() => null);
+            if (r.draft.master && !(b && b.brand && b.brand.trim())) await window.api.sheet.saveBrand(dir, { brand: r.draft.master });
+            okCount++;
+          }
+          await refreshList();
+          await loadBrand();
+          if (chSel.value) await loadCh(chSel.value);
+          setStatus(`전체 채널 AI 초안 완료 — 성공 ${okCount}/${targets.length}${skipped ? ` · 락인 ${skipped}개 건너뜀` : ''}`
+            + `${fails.length ? ` · 실패: ${fails.join(' / ')}` : ''}. 채널마다 검토 후 레퍼런스 생성·락을 진행하세요.`);
+        } catch (e) { setStatus('전체 초안 생성 실패: ' + e.message);
+        } finally { btnAll.disabled = false; btnOne.disabled = false; btnAll.textContent = oldAll; }
+      };
       $('#sheet-ref-master').onclick = genBrandRef;
       $('#sheet-ref-master-up').onclick = async () => {
         await saveBrandData(); // 브랜드 텍스트(편집분) 보존
