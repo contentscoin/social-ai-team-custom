@@ -55,3 +55,27 @@ test('compile — 무효 스타일은 무시(프롬프트 원본 유지)', async
   assert.equal(r.prompt, 'a latte cup');
   assert.equal(r.style, undefined);
 });
+
+test('shotRecipe — 결정론적(같은 시드=같은 레시피), 시드가 다르면 대체로 분산', () => {
+  assert.ok(promptlab.SHOT_RECIPES.length >= 6);
+  // 같은 시드 → 같은 레시피
+  assert.equal(promptlab.shotRecipe('ig-1').key, promptlab.shotRecipe('ig-1').key);
+  // 여러 시드에 걸쳐 최소 절반 이상의 레시피가 등장(단조 방지 효과)
+  const seen = new Set(['ig-1', 'ig-2', 'ig-3', 'ig-4', 'ig-5', 'th-1', 'nb-2', 'fb-3'].map((s) => promptlab.shotRecipe(s).key));
+  assert.ok(seen.size >= 4, `분산 부족: ${seen.size}종`);
+});
+
+test('shotFraming — 같은 포스트의 슬라이드는 서로 다른 프레이밍으로 회전', () => {
+  const f0 = promptlab.shotFraming(0, 'ig-1');
+  const f1 = promptlab.shotFraming(1, 'ig-1');
+  const f2 = promptlab.shotFraming(2, 'ig-1');
+  assert.notEqual(f0.key, f1.key); // 인접 슬라이드는 프레이밍이 다르다
+  assert.notEqual(f1.key, f2.key);
+});
+
+test('varietyDirective — 컷 변주 블록에 레시피와 반복금지 지시, 영상은 빈 문자열', () => {
+  const v = promptlab._varietyDirective({ kind: 'image', channel: 'instagram', topic: '라떼', varietySeed: 'ig-1' });
+  assert.match(v, /컷 변주/);
+  assert.match(v, /뚜렷이 달라야/);
+  assert.equal(promptlab._varietyDirective({ kind: 'video', channel: 'instagram', topic: '라떼' }), '');
+});

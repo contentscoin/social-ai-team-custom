@@ -2,10 +2,15 @@
 // 핵심: 파이프라인(creative-designer 에이전트)은 앱 설정의 프로바이더 키를 못 본다.
 // 여기서 앱 렌더 엔진(lib/render.js — 설정 키를 읽음)을 직접 돌려 실제 이미지를 만든다.
 // 포스트마다 프롬프트를 컴파일하고, 포맷에 따라 여러 장(캐러셀)을 생성한다.
+const fs = require('fs');
+const path = require('path');
 const board = require('./board');
 const promptlab = require('./promptlab');
 const render = require('./render');
 const channelsheets = require('./channelsheets');
+
+// 재사용 키 정규화 — 같은 주제를 여러 채널에 쓰면 같은 이미지로 취급
+const normTopic = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 // 포맷 문자열로 캐러셀 여부·기본 장수 추정 — 대부분의 SNS는 여러 장을 쓴다
 function inferCount(post, fallback) {
@@ -53,18 +58,43 @@ async function renderAll(dir, opts, onLine) {
   const isInfra = R._isInfraFailure || (() => false);
   const results = [];
   let okCount = 0, downStreak = 0;
+  // 동일 창작물 재사용 — 같은 주제·사이즈·장수의 이미지는 재생성하지 않고 복사해 쓴다(채널 중복).
+  const reuse = new Map(); // `${topic}|${size}|${count}` → [rel,...]
+  const reuseOn = opts.reuse !== false;
   for (const p of targets) {
     if (opts.stopped && opts.stopped()) { onLine && onLine('[비주얼] 중지됨'); break; }
     const cid = `${p.chId || 'etc'}-${p.n}`;
     const count = wantCount(p);
     const size = inferSize(p);
+    const dupKey = `${normTopic(p.topic)}|${size}|${count}`;
+    // 재사용 — 같은 주제·사이즈·장수가 이미 이번 배치에서 렌더됐으면 파일을 복사해 쓴다(재생성 생략).
+    if (reuseOn && normTopic(p.topic) && reuse.has(dupKey)) {
+      const copied = [];
+      try {
+        reuse.get(dupKey).forEach((src, k) => {
+          const ext = path.extname(src) || '.png';
+          const destBase = count > 1 ? `${cid}_${k + 1}` : cid;
+          const destRel = ['outputs', 'creatives', `${destBase}${ext}`].join('/');
+          const srcAbs = path.join(dir, src);
+          const destAbs = path.join(dir, 'outputs', 'creatives', `${destBase}${ext}`);
+          if (fs.existsSync(srcAbs) && !fs.existsSync(destAbs)) fs.copyFileSync(srcAbs, destAbs);
+          if (fs.existsSync(destAbs)) copied.push(destRel);
+        });
+      } catch { /* 복사 실패 → 아래 정상 생성으로 폴백 */ }
+      if (copied.length) {
+        onLine && onLine(`[비주얼] ♻ ${cid} — 동일 주제·사이즈 이미지 재사용 (${copied.length}장, 재생성 생략)`);
+        results.push({ uid: p.uid, id: cid, ok: true, files: copied, count: copied.length, reused: true });
+        okCount += 1; downStreak = 0;
+        continue;
+      }
+    }
     const brief = [p.topic, p.visual && `비주얼 디렉션: ${p.visual}`, p.angle && `앵글: ${p.angle}`, p.pillar && `필러: ${p.pillar}`].filter(Boolean).join('\n');
     onLine && onLine(`[비주얼] ${cid} — ${count}장 (${size}) 준비`);
     let prompt = brief, negative = null;
     try {
       const c = await PL.compile(dir, {
         kind: 'image', provider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
-        prompt: brief, size, count, style,
+        prompt: brief, size, count, style, varietySeed: cid, // 컷 변주 시드 — 포스트마다 다른 구도
       }, onLine);
       if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
     } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
@@ -82,7 +112,11 @@ async function renderAll(dir, opts, onLine) {
       results.push({ uid: p.uid, id: cid, ok: false, files: [], error: r.error });
     }
     // 조기 중단 — 성공이 하나도 없는데 인프라(엔진 서버·키) 실패가 연속되면 61개를 갈지 말고 중단.
-    if (r && r.ok) { okCount += 1; downStreak = 0; }
+    if (r && r.ok) {
+      okCount += 1; downStreak = 0;
+      // 재사용 등록 — 뒤따르는 같은 주제·사이즈·장수 포스트가 이 파일을 복사해 쓴다.
+      if (reuseOn && normTopic(p.topic) && (r.files || []).length) reuse.set(dupKey, (r.files || []).slice());
+    }
     else if (r && isInfra(r.error)) {
       downStreak += 1;
       if (okCount === 0 && downStreak >= 2) {

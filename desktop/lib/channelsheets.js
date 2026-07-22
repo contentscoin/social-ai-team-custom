@@ -112,21 +112,29 @@ function parseDraft(out) {
   return { master: master.slice(0, 4000), character: character.slice(0, 4000), guidelines: guidelines.slice(0, 4000) };
 }
 
-// 락인된 채널 시트를 이미지 프롬프트 컴파일에 주입할 지시문. 락 안 됐거나 비었으면 ''.
+// 채널 시트를 이미지 프롬프트 컴파일에 주입할 지시문. 내용(마스터/캐릭터/지침 텍스트)이 있으면
+// 락 여부와 무관하게 주입한다 — 채워두면 바로 스타일에 반영된다(예전엔 락해야만 반영돼 "가이드를
+// 줘도 반영 안 됨" 문제가 있었다). 락이 걸리면 '반드시·최우선 + 레퍼런스 앵커'로 격상한다.
 function compileDirective(dir, channel) {
   const s = get(dir, channel);
-  if (!s || !s.locked) return '';
+  if (!s) return '';
   const parts = [];
   if (s.master && s.master.trim()) parts.push(`[마스터 시트 — 고정 비주얼 아이덴티티]\n${s.master.trim()}`);
   if (s.character && s.character.trim()) parts.push(`[캐릭터 시트 — 반복 등장 주체 고정]\n${s.character.trim()}`);
   if (s.guidelines && s.guidelines.trim()) parts.push(`[채널 지침 — 준수 규칙]\n${s.guidelines.trim()}`);
   if (!parts.length) return '';
-  const refNote = (s.characterRef || s.masterRef || s.anchorImage)
-    ? `이 채널은 잠금된 레퍼런스 이미지가 있어 생성 시 --ref 앵커로 전달된다 — 그 레퍼런스의 인물·제품 외형을 그대로 유지하라. `
-    : '';
-  return `\n[채널 시트 락인 — ${channel} · 반드시 준수]\n`
-    + `이 채널의 모든 이미지는 아래 마스터/캐릭터 시트를 일관되게 따른다(팔레트·조명·스타일·등장 주체를 프레임 간 고정). ${refNote}`
-    + `VISUAL DIRECTION·플랫폼 방향보다 이 락인 시트가 우선한다.\n`
+  if (s.locked) {
+    const refNote = (s.characterRef || s.masterRef || s.anchorImage)
+      ? `이 채널은 잠금된 레퍼런스 이미지가 있어 생성 시 --ref 앵커로 전달된다 — 그 레퍼런스의 인물·제품 외형을 그대로 유지하라. `
+      : '';
+    return `\n[채널 시트 락인 — ${channel} · 반드시 준수]\n`
+      + `이 채널의 모든 이미지는 아래 마스터/캐릭터 시트를 일관되게 따른다(팔레트·조명·스타일·등장 주체를 프레임 간 고정). ${refNote}`
+      + `VISUAL DIRECTION·플랫폼 방향보다 이 락인 시트가 우선한다.\n`
+      + parts.join('\n\n') + '\n\n';
+  }
+  // 락 안 됨 — 텍스트 가이드로 반영(강한 스타일 기준이되 최우선은 아님)
+  return `\n[채널 스타일 가이드 — ${channel} · 반영]\n`
+    + `이 채널 이미지는 아래 시트의 팔레트·조명·무드·주체를 스타일 기준으로 따른다.\n`
     + parts.join('\n\n') + '\n\n';
 }
 

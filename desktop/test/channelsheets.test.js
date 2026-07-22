@@ -49,22 +49,23 @@ test('setLock — 저장 안 된 채널은 락 거부, 저장 후 락/해제 토
   assert.equal(channelsheets.get(dir, 'naver').locked, false);
 });
 
-test('compileDirective — 락 걸린 채널만 주입, 아니면 빈 문자열', () => {
+test('compileDirective — 내용 있으면 락 없이도 스타일 가이드로 주입, 락하면 최우선으로 격상', () => {
   const dir = tmp();
-  // 미작성 채널
+  // 미작성 채널 → 빈 문자열
   assert.equal(channelsheets.compileDirective(dir, 'instagram'), '');
-  // 저장했지만 락 안 함 → 빈 문자열
+  // 저장(락 안 함) → 스타일 가이드로 주입(예전엔 락해야만 반영돼 "가이드 줘도 반영 안 됨" 문제였다)
   channelsheets.save(dir, 'instagram', { master: '팔레트 #F5F1E8 크림', character: '바리스타 1인, visible pores' });
-  assert.equal(channelsheets.compileDirective(dir, 'instagram'), '');
-  // 락 → 주입 텍스트에 마스터·캐릭터·우선순위 문구 포함
+  const guide = channelsheets.compileDirective(dir, 'instagram');
+  assert.match(guide, /채널 스타일 가이드/);
+  assert.match(guide, /#F5F1E8 크림/);
+  assert.match(guide, /바리스타 1인/);
+  assert.doesNotMatch(guide, /락인/); // 락 전엔 '락인'이 아니다
+  // 락 → 최우선 격상(락인·우선 문구)
   channelsheets.setLock(dir, 'instagram', true);
   const out = channelsheets.compileDirective(dir, 'instagram');
   assert.match(out, /채널 시트 락인/);
-  assert.match(out, /instagram/);
   assert.match(out, /마스터 시트/);
   assert.match(out, /캐릭터 시트/);
-  assert.match(out, /#F5F1E8 크림/);
-  assert.match(out, /바리스타 1인/);
   assert.match(out, /우선/); // 플랫폼 방향보다 우선한다는 지시
 });
 
