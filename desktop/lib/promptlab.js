@@ -14,6 +14,46 @@ const { findVisualDirection } = require('./postblock');
 const BUILTIN_DIR = path.join(__dirname, '..', 'packs');
 const USER_DIR = path.join(os.homedir(), '.social-ai-team', 'packs');
 
+// 채널별 이미지 아트 디렉션 — 플랫폼 특성(인스타=부러운 연출 사진 우선, 스레드=스크롤 멈추는
+// 단독컷+체인 시퀀스, 블로그=깔끔한 정보 보조컷)을 컴파일에 최우선 축으로 주입한다.
+// 공냥 9철칙 준수: 무대지정(전문가처럼/세련된)·SD어휘 없이 재질·조명·색을 '결과'로 서술,
+// 이미지 내 텍스트/로고 금지(앱이 따로 얹음).
+const PLATFORM_DIRECTION = {
+  instagram:
+    'aspirational editorial hero frame — one confident focal subject with everything else subordinate to it, '
+    + 'cinematic shallow depth of field, soft directional daylight raking from one side casting long gentle shadows, '
+    + 'muted palette drawn from #F5F1E8 #1C1A17 #8C7B6B, generous clean negative space around the subject, tight editorial crop, '
+    + 'matte film-grain finish, natural skin texture with visible pores, an enviable effortless-lifestyle moment that stops the scroll on its own — the photograph itself carries the hook',
+  threads:
+    'scroll-stopping single frame that reads instantly in a fast feed, one oversized focal subject held with a decisive crop, '
+    + 'high-contrast accent light, calm uncluttered surround so the subject dominates, natural skin texture with visible pores; '
+    + 'one beat in a continuing chain — hold the same setting, lighting character and palette (HEX carried from the chain DNA) steady across frames while sweeping only angle, distance and detail; '
+    + 'lead with hands, objects and space rather than a repeated face, favor honest curiosity over glossy perfection',
+  naver:
+    'clean brightly and evenly lit informative supporting photograph illustrating one specific article section and nothing more, '
+    + 'true-to-life documentary detail with honest color, seamless neutral stage around #FAFAFA carrying a single soft grounding shadow, '
+    + 'tidy calm composition with the key detail centered and legible, real-world surfaces described by how they catch light '
+    + '(matte paper grain, soft fabric nap, gentle product sheen), supportive and unobtrusive',
+  facebook:
+    'warm approachable real-moment photograph, one clear relatable subject in soft natural light, authentic everyday warmth, '
+    + 'honest color and natural texture, natural skin texture with visible pores',
+  linkedin:
+    'composed credible editorial photograph, one subject in even soft light, restrained cool-neutral palette, '
+    + 'clean uncluttered framing, calm trustworthy composition, natural skin texture with visible pores',
+  x:
+    'bold high-contrast single frame that reads instantly at thumbnail scale, one focal subject with strong graphic clarity, '
+    + 'decisive crisp lighting and clean shape separation, natural skin texture with visible pores when a person is shown, immediate at small size',
+};
+// 컴파일 지시문에 넣을 플랫폼 아트 디렉션 블록(영상은 제외). 없으면 ''.
+function platformDirective(channel, kind) {
+  if (kind === 'video') return '';
+  const d = PLATFORM_DIRECTION[channel];
+  return d
+    ? `\n[플랫폼 아트 디렉션 — ${channel} · 최우선 축]\n${d}\n`
+      + `이 방향을 장면의 최우선 축으로 삼되 VISUAL DIRECTION·브랜드 무드와 결합하라. 이미지 안에는 텍스트/로고를 넣지 말라(앱이 따로 얹는다).\n\n`
+    : '';
+}
+
 /** 사진형 모델 공통 — 해상도·사실감 앵커 (프롬프트 꼬리에 합침) */
 const QUALITY_TAIL =
   'ultra detailed, sharp focus, natural materials and textures, professional color grading, ' +
@@ -221,9 +261,11 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
       + `- 이상적 피부 금지 → natural skin texture, visible pores. 추상어는 구체 사물·제스처로 환원. 앞머리 [AR/SIZE] 브래킷 금지.\n`
       + `단, 이 앱의 사진형 이미지 모델용이므로: 프롬프트는 영어, 이미지 내 텍스트/로고 렌더 금지(TEXT RULE — 텍스트는 앱이 따로 얹는다), negative는 아래 JSON의 negative 필드로 분리한다. SD 퀄리티 꼬리(sharp focus 등)는 붙이지 말고 킷 문법의 재질·조명·색으로 퀄리티를 낸다.\n\n`
     : '';
+  const platformBlock = platformDirective(job.channel, job.kind);
   const instr =
     `너는 시니어 비주얼 프롬프트 엔지니어다. 아래 재료로 ${target}에 넣을 **고퀄리티** 최종 생성 프롬프트를 만들어라.\n` +
     kitDirective +
+    platformBlock +
     `[규칙]\n` +
     `- 기획 언어(목표/필러/앵글/engagement)를 그대로 옮기지 말고 카메라가 찍을 수 있는 시각 언어로 번역하라.\n` +
     `- 프롬프트는 영어 (브랜드·제품 고유명사는 원문 유지).\n` +
@@ -352,4 +394,6 @@ module.exports = {
   finalizeImagePrompt,
   QUALITY_TAIL,
   DEFAULT_NEGATIVE,
+  PLATFORM_DIRECTION,
+  _platformDirective: platformDirective,
 };

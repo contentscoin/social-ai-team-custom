@@ -256,3 +256,34 @@ Present the captions and summary table. Offer:
 - `/content-calendar` — Produces the post topics this skill writes captions for
 - `/social-creative-designer` — Turns captions into visual assets (uses the `VISUAL DIRECTION` field)
 - `/social-content` — General social media strategy and platform advice
+
+## 인스타는 '사진 먼저' (플랫폼 고도화 지침 — IG 한정, 페북/기타는 현행 유지)
+
+인스타그램은 남들이 잘된 모습·멋진 연출·부러운 장면으로 관심을 끄는 채널이다. **사진이 곧 후크**다.
+
+### 1. 기획 순서 뒤집기
+IG 포스트는 **사진 컨셉을 먼저 확정한 뒤 캡션이 그 장면을 받쳐준다.** 캡션은 이미 강렬한 사진에 의미·맥락·부러움 포인트를 얹는 역할. (페북·링크드인은 기존 텍스트 우선 유지.)
+
+### 2. HERO IMAGE 필드로 승격
+IG 캡션 블록에서 맨 끝 1줄 `VISUAL DIRECTION`을 **상단 리드 필드 `HERO IMAGE`(다줄)** 로 올린다. 기능 묘사가 아니라 장면·연출·스타일링·무드·"왜 부러운가"를 다룬다.
+
+```
+HERO IMAGE:
+- Scene: [사람들이 캡처해 부러워할 순간 한 줄]
+- Styling/Mood: [연출·소품·무드]
+- Envy point: [무엇이 aspirational한가]
+- Direction: [social-creative-designer 핸드오프 — editorial 방향]
+```
+
+### 3. Aspirational/Editorial 루브릭
+축: **남들이 잘된 모습 · 멋진 연출 · 부러운 장면 · 화보(editorial) 스테이징.**
+- 기능형 → aspirational형으로:
+  - 기존: "close-up of finished result, warm tones, clean background"
+  - 변경: "golden-hour rooftop dinner, editorial styling, generous negative space — 사람들이 스크린샷하고 부러워하는 순간"
+- 어휘는 social-creative-designer·공냥킷과 연결: **editorial, 단독 히어로 피사체, 잡지 여백, soft directional daylight + long gentle shadows, 뮤트 팔레트(#HEX 3~5색), natural skin texture.** 밀도가 아니라 **여백·정돈·절제**로 부러움을 낸다.
+
+### 4. 캐러셀 = 패널별 컷 계획
+캐러셀은 프레임워크 이름만이 아니라 **패널 n = 어떤 컷**을 명시. 첫 패널은 스크롤 정지용 히어로, 이후 패널은 같은 룩(팔레트·조명 고정)으로 이어지는 시퀀스.
+
+### 5. 사진 안 텍스트 금지
+사진 자체엔 텍스트를 넣지 않는다(앱이 오버레이/캡션 처리). HERO IMAGE는 순수 비주얼 방향만.
