@@ -134,7 +134,24 @@ test('draftPrompt — 브랜드·플랫폼 재료를 넣고 JSON 출력 형식�
   assert.match(p, /따뜻한 미니멀/);
   assert.match(p, /aspirational editorial hero frame/);
   assert.match(p, /"master"/);
-  assert.match(p, /"character"/);
+  assert.match(p, /"characters"/);
+});
+
+test('draftPrompt — 채널별 캐릭터 개수·구성 권장을 주입(1~3개 상한)', () => {
+  // 모든 등록 채널 가이드에 캐릭터 구성(chars)이 정의돼 있다
+  for (const [ch, g] of Object.entries(channelsheets.CHANNEL_SHEET_GUIDE)) {
+    assert.ok(g.chars && /개/.test(g.chars), `캐릭터 구성 누락: ${ch}`);
+  }
+  // 채널마다 권장 구성이 프롬프트에 다르게 들어간다
+  const ig = channelsheets.draftPrompt({}, 'instagram', '인스타그램', '');
+  assert.match(ig, /캐릭터 구성 — 이 채널 권장/);
+  assert.match(ig, /2개 — ① 메인 모델/);
+  const th = channelsheets.draftPrompt({}, 'threads', '스레드', '');
+  assert.match(th, /1개 — 반복 오브젝트/);
+  // 개수 상한과 항목 형식({name, text})을 규칙으로 요구
+  assert.match(ig, /1~3개/);
+  assert.match(ig, /"name"/);
+  assert.match(ig, /"text"/);
 });
 
 test('draftPrompt — 전문 구조(마스터=스타일가이드·캐릭터=모델시트) + 전략별 지침을 마크다운으로 요구', () => {
@@ -172,19 +189,48 @@ test('draftPrompt — 채널별 시트 방향이 다르게 반영되고, 브랜�
   }
 });
 
-test('parseDraft — 평문 JSON / 코드펜스 감싼 JSON / claude {result} 래핑 모두 파싱', () => {
-  // 평문 (guidelines 미지정 시 '')
+test('parseDraft — 평문 JSON / 코드펜스 감싼 JSON / claude {result} 래핑 모두 파싱 (구 단일 character 승격)', () => {
+  // 평문 (guidelines 미지정 시 '', 구 character는 characters[0]로 승격)
   let d = channelsheets.parseDraft('{"master":"M","character":"C"}');
-  assert.deepEqual(d, { master: 'M', character: 'C', guidelines: '' });
+  assert.deepEqual(d, { master: 'M', character: 'C', characters: [{ name: '캐릭터 1', text: 'C' }], guidelines: '' });
   // 잡텍스트에 섞인 JSON
   d = channelsheets.parseDraft('여기 결과입니다:\n{"master":"MM","character":"CC"}\n끝');
-  assert.deepEqual(d, { master: 'MM', character: 'CC', guidelines: '' });
+  assert.equal(d.master, 'MM');
+  assert.equal(d.characters[0].text, 'CC');
   // claude json 모드 {result:"<inner json string>"} 래핑
   d = channelsheets.parseDraft(JSON.stringify({ result: '{"master":"RM","character":"RC"}' }));
-  assert.deepEqual(d, { master: 'RM', character: 'RC', guidelines: '' });
+  assert.equal(d.master, 'RM');
+  assert.equal(d.character, 'RC');
   // 파싱 불가 / 빈 시트
   assert.equal(channelsheets.parseDraft('nope'), null);
   assert.equal(channelsheets.parseDraft('{"master":"","character":""}'), null);
+});
+
+test('parseDraft — characters[] 배열: 이름 보정·빈 항목 제거·상한 5·하위호환 별칭', () => {
+  // 여러 캐릭터 + 이름 없음 보정 + 빈 text 제거
+  let d = channelsheets.parseDraft(JSON.stringify({
+    master: 'M',
+    characters: [
+      { name: '바리스타 지은', text: '20대 바리스타' },
+      { text: '라떼 잔' },              // 이름 없음 → '캐릭터 2'
+      { name: '빈칸', text: '  ' },     // 빈 text → 제거
+    ],
+    guidelines: 'G',
+  }));
+  assert.equal(d.characters.length, 2);
+  assert.deepEqual(d.characters[0], { name: '바리스타 지은', text: '20대 바리스타' });
+  assert.equal(d.characters[1].name, '캐릭터 2');
+  assert.equal(d.character, '20대 바리스타'); // 하위호환 별칭 = 첫 캐릭터 text
+  // 상한 5개 (시트 저장 상한과 동일)
+  d = channelsheets.parseDraft(JSON.stringify({ characters: Array.from({ length: 8 }, (_, i) => ({ name: `C${i}`, text: `t${i}` })) }));
+  assert.equal(d.characters.length, 5);
+  // claude {result} 래핑 안의 characters[]도 파싱
+  d = channelsheets.parseDraft(JSON.stringify({ result: JSON.stringify({ master: 'M', characters: [{ name: 'A', text: 'a' }, { name: 'B', text: 'b' }] }) }));
+  assert.equal(d.characters.length, 2);
+  // characters만 있어도 성공(빈 시트 아님), parseDraft 결과를 그대로 save에 넘겨도 동작
+  const dir = tmp();
+  channelsheets.save(dir, 'instagram', { characters: d.characters });
+  assert.equal(channelsheets.get(dir, 'instagram').characters.length, 2);
 });
 
 test('guidelines(지침) — 저장·되읽기, compileDirective·draftPrompt·parseDraft에 반영', () => {
@@ -199,9 +245,10 @@ test('guidelines(지침) — 저장·되읽기, compileDirective·draftPrompt·p
   // draftPrompt는 guidelines 필드를 요구, parseDraft는 파싱
   assert.match(channelsheets.draftPrompt({}, 'instagram', '인스타그램', ''), /"guidelines"/);
   const d = channelsheets.parseDraft('{"master":"M","character":"C","guidelines":"G"}');
-  assert.deepEqual(d, { master: 'M', character: 'C', guidelines: 'G' });
+  assert.equal(d.master, 'M');
+  assert.equal(d.guidelines, 'G');
   // guidelines만 있어도 parseDraft 성공(빈 시트 아님)
-  assert.deepEqual(channelsheets.parseDraft('{"guidelines":"G"}'), { master: '', character: '', guidelines: 'G' });
+  assert.deepEqual(channelsheets.parseDraft('{"guidelines":"G"}'), { master: '', character: '', characters: [], guidelines: 'G' });
 });
 
 test('로고 — logoRef/logoNote 저장, compileDirective에 로고 노트 주입, 사진 --ref로는 미사용', () => {

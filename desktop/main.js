@@ -1054,10 +1054,14 @@ ipcMain.handle('sheet:generate', async (_e, dir, channel) => {
     const name = (channelRegistry.REGISTRY[channel] || {}).name || channel;
     const platformDir = promptlab.PLATFORM_DIRECTION[channel] || '';
     const instr = channelsheets.draftPrompt(brand, channel, name, platformDir);
-    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: 120_000 });
-    if (!r.ok) return { ok: false, error: '초안 생성에 실패했습니다 (엔진 응답 없음)' };
+    // 초안은 마스터+캐릭터 1~3개+지침 합계 3000자 안팎 마크다운 — 실측 4분대(261s)까지 걸린다. 여유 포함 7분.
+    const DRAFT_TIMEOUT_MS = 420_000;
+    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: DRAFT_TIMEOUT_MS });
+    if (!r.ok) {
+      return { ok: false, error: '초안 생성에 실패했습니다' + (r.timedOut ? ` (시간 초과 ${Math.round(DRAFT_TIMEOUT_MS / 60000)}분)` : '') + (r.tail ? ` — ${String(r.tail).trim().slice(-200)}` : ' (엔진 응답 없음)') };
+    }
     const draft = channelsheets.parseDraft(r.out);
-    if (!draft) return { ok: false, error: '초안 파싱에 실패했습니다 — 다시 시도하세요' };
+    if (!draft) return { ok: false, error: '초안 파싱에 실패했습니다 — 다시 시도하세요' + (r.tail ? ` (${String(r.tail).trim().slice(-150)})` : '') };
     return { ok: true, channel, draft };
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
@@ -1160,6 +1164,40 @@ ipcMain.handle('sheet:setLogo', async (_e, dir) => {
   }
 });
 ipcMain.handle('sheet:clearLogo', safe((_e, dir) => channelsheets.saveBrand(dir, { logoRef: '' })));
+// 참고용 레퍼런스 업로드 — AI 생성 대신 갖고 있는 이미지를 골라 브랜드/캐릭터 레퍼런스 앵커로 등록.
+// which: 'brand'|'master' → 공용 브랜드 레퍼런스, 'character' → 채널별 캐릭터(index) 레퍼런스.
+ipcMain.handle('sheet:uploadRef', async (_e, dir, channel, which, index) => {
+  try {
+    const isChar = which === 'character';
+    const r = await dialog.showOpenDialog(win, {
+      title: isChar ? '캐릭터 레퍼런스 이미지 선택' : '브랜드 레퍼런스 이미지 선택', properties: ['openFile'],
+      filters: [{ name: '이미지', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+    const src = r.filePaths[0];
+    const ext = (path.extname(src) || '.png').toLowerCase();
+    const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+    fs.mkdirSync(refsDir, { recursive: true });
+    if (isChar) {
+      if (!channelRegistry.REGISTRY[channel] || channel === 'etc') return { ok: false, error: '알 수 없는 채널입니다' };
+      const idx = Number(index) || 0;
+      // -up 접미사: AI 생성본(chref-…)과 파일을 분리해 서로 덮어쓰지 않게
+      const destAbs = path.join(refsDir, `chref-${channel}-character-${idx}-up${ext}`);
+      fs.copyFileSync(src, destAbs);
+      const relFromDir = path.relative(dir, destAbs).replace(/\\/g, '/');
+      const sr = channelsheets.setCharacterRef(dir, channel, idx, relFromDir);
+      if (!sr.ok) return sr;
+      return { ok: true, channel, which: 'character', index: idx, rel: relFromDir };
+    }
+    const destAbs = path.join(refsDir, `brand-master-up${ext}`);
+    fs.copyFileSync(src, destAbs);
+    const relFromDir = path.relative(dir, destAbs).replace(/\\/g, '/');
+    channelsheets.saveBrand(dir, { brandRef: relFromDir });
+    return { ok: true, which: 'brand', rel: relFromDir };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
 
 // ---- 워크스페이스 백업·복원 -----------------------------------------------------
 ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));

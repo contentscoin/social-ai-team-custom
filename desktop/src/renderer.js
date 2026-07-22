@@ -2494,8 +2494,11 @@ async function openSettings(section) {
               <div style="display:flex;gap:12px;align-items:center;margin:0 0 4px">
                 <div id="sheet-ref-master-box" style="width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center"></div>
                 <div style="flex:1;min-width:0">
-                  <button id="sheet-ref-master" type="button" class="small">브랜드 스타일 레퍼런스 생성</button>
-                  <p class="muted small" style="margin-top:4px;line-height:1.45">브랜드 시트로 스타일 보드 이미지를 만들어 앵커로 씁니다(선택).</p>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button id="sheet-ref-master" type="button" class="small">브랜드 스타일 레퍼런스 생성</button>
+                    <button id="sheet-ref-master-up" type="button" class="small">참고 이미지 업로드</button>
+                  </div>
+                  <p class="muted small" style="margin-top:4px;line-height:1.45">브랜드 시트로 스타일 보드를 생성하거나, 갖고 있는 참고 이미지를 올려 앵커로 씁니다(선택).</p>
                 </div>
               </div>
             </div>
@@ -2522,7 +2525,7 @@ async function openSettings(section) {
           </div>
 
           <b class="small" style="color:var(--accent-hover)">③ 캐릭터 시트 (채널별 · 여러 개 가능)</b>
-          <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. <b>[이 캐릭터 레퍼런스 생성]</b>은 정면·측면·후면 <b>턴어라운드 모델 시트</b>를 만듭니다. 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰여 같은 얼굴·같은 제품을 재현합니다. 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
+          <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. <b>[AI 초안 + 이미지]</b>가 채널 전략에 맞춰 캐릭터 시트를 1~3개 제안합니다. <b>[레퍼런스 생성]</b>은 정면·측면·후면 <b>턴어라운드 모델 시트</b>를 만들고, <b>[참고 이미지 업로드]</b>로 갖고 있는 사진을 대신 쓸 수도 있습니다. 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰여 같은 얼굴·같은 제품을 재현합니다. 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
           <div id="sheet-chars"></div>
           <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
 
@@ -2740,10 +2743,14 @@ async function openSettings(section) {
               <div style="width:64px;height:64px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center">${c.ref ? `<img src="${satUrl(c.ref)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="ref">` : '<span class="muted" style="font-size:10px">레퍼런스<br>없음</span>'}</div>
               <textarea class="sc-text" data-i="${i}" rows="4" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 오트밀색 니트 + 리넨 앞치마. 항상 같은 인물." style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;line-height:1.55;resize:vertical">${esc(c.text || '')}</textarea>
             </div>
-            <button class="sc-genref small" data-i="${i}" type="button" style="margin-top:6px">이 캐릭터 레퍼런스 생성</button>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+              <button class="sc-genref small" data-i="${i}" type="button">이 캐릭터 레퍼런스 생성</button>
+              <button class="sc-upref small" data-i="${i}" type="button">참고 이미지 업로드</button>
+            </div>
           </div>`).join('') : '<p class="muted small">캐릭터가 없습니다. "+ 캐릭터 추가"로 시작하세요.</p>';
         charsBox.querySelectorAll('.sc-del').forEach((b) => { b.onclick = () => { syncChars(); charState.splice(Number(b.dataset.i), 1); renderChars(); }; });
         charsBox.querySelectorAll('.sc-genref').forEach((b) => { b.onclick = () => genCharRef(Number(b.dataset.i)); });
+        charsBox.querySelectorAll('.sc-upref').forEach((b) => { b.onclick = () => upCharRef(Number(b.dataset.i)); });
       };
       const refreshList = async () => {
         const items = await window.api.sheet.list(dir).catch(() => []);
@@ -2825,14 +2832,25 @@ async function openSettings(section) {
       $('#sheet-ai').onclick = async () => {
         const ch = chSel.value; if (!ch) return;
         const btn = $('#sheet-ai'); const old = btn.textContent;
-        btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (최대 2분)');
+        btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (캐릭터 1~3개 · 최대 7분)');
         try {
           const r = await window.api.sheet.generate(dir, ch);
           if (seq !== settingsSeq) return;
           if (r && r.ok && r.draft) {
             if (r.draft.master) mEl.value = r.draft.master;     // 브랜드 시트(공용)
             if (r.draft.guidelines) gEl.value = r.draft.guidelines;
-            if (r.draft.character) { syncChars(); if (!charState.length) charState.push({ name: '캐릭터 1', text: '', ref: '' }); charState[0] = { ...charState[0], text: r.draft.character }; renderChars(); }
+            // 캐릭터 시트 — 초안이 채널 전략에 따라 1~3개를 제안(구 단일 character도 수용).
+            // 기존 레퍼런스는 자리(index)별로 보존하고 이름·텍스트만 초안으로 교체하며,
+            // 초안 개수보다 뒤에 있던 기존 캐릭터는 그대로 남긴다(사용자가 만든 것을 지우지 않게).
+            const gen = (r.draft.characters && r.draft.characters.length)
+              ? r.draft.characters
+              : (r.draft.character ? [{ name: '캐릭터 1', text: r.draft.character }] : []);
+            if (gen.length) {
+              syncChars();
+              charState = gen.map((c, i) => ({ name: c.name || `캐릭터 ${i + 1}`, text: c.text || '', ref: (charState[i] && charState[i].ref) || '' }))
+                .concat(charState.slice(gen.length)).slice(0, 5);
+              renderChars();
+            }
             // 이어서 브랜드 스타일 레퍼런스 이미지까지 자동 생성(공용 저장 포함). 텍스트 초안은 이미 채워져 있어
             // 이미지 생성이 실패해도 초안은 남는다.
             if (mEl.value.trim()) {
@@ -2878,7 +2896,29 @@ async function openSettings(section) {
           else setStatus((r && r.error) || '레퍼런스 생성 실패');
         } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
       }
+      // 참고용 레퍼런스 업로드 — AI 생성 대신 갖고 있는 이미지를 이 캐릭터의 앵커로 등록.
+      async function upCharRef(i) {
+        const ch = chSel.value; if (!ch) return;
+        syncChars();
+        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요 (한 줄이면 충분 — 저장된 캐릭터에만 업로드됩니다)'); return; }
+        await saveAll(ch); // 업로드 핸들러가 저장된 시트를 읽으므로 먼저 저장
+        try {
+          const r = await window.api.sheet.uploadRef(dir, ch, 'character', i);
+          if (seq !== settingsSeq) return;
+          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('참고 이미지 업로드됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); }
+          else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
+        } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
+      }
       $('#sheet-ref-master').onclick = genBrandRef;
+      $('#sheet-ref-master-up').onclick = async () => {
+        await saveBrandData(); // 브랜드 텍스트(편집분) 보존
+        try {
+          const r = await window.api.sheet.uploadRef(dir, '', 'brand');
+          if (seq !== settingsSeq) return;
+          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('브랜드 참고 이미지 업로드됨 (전 채널 공유)'); }
+          else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
+        } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
+      };
     }
   }
   // 백업 — 목록 렌더 + 생성/복원/삭제
