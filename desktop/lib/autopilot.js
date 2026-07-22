@@ -30,8 +30,9 @@ function runningDirs() {
   return [...states.values()].filter((s) => s.running).map((s) => s.dir);
 }
 
-// deps: { buildBoard(dir), runStage(dir, stage) → Promise<r>, onEvent(ev), stopStage() }
+// deps: { buildBoard(dir), runStage(dir, stage) → Promise<r>, onEvent(ev), stopStage(), autoApprove? }
 async function run(dir, deps) {
+  const autoApprove = !!deps.autoApprove; // true면 증거가 있는 승인 게이트를 자동 통과(컴플라이언스·발행 제외)
   if (states.get(dir) && states.get(dir).running) return { ok: false, error: '이 클라이언트에서 오토파일럿이 이미 실행 중입니다' };
   const state = { running: true, dir, stage: null };
   states.set(dir, state);
@@ -58,10 +59,17 @@ async function run(dir, deps) {
       if (req) {
         const reqNode = g.nodes.find((n) => n.key === req);
         if (!reqNode || !reqNode.approved) {
-          return finish({
-            state: 'paused', stage, needStamp: req,
-            message: `${NODE_LABEL[req] || req} 승인 도장이 필요합니다. 도장을 찍고 오토파일럿을 다시 시작하세요.`,
-          });
+          // 자동 승인 옵션 — 증거(done)가 있는 게이트만 자동 도장하고 계속. 증거가 없으면(스테이지가
+          // 산출물을 못 냄) 자동 승인하지 않고 멈춘다(빈 게이트에 도장 금지).
+          if (autoApprove && reqNode && reqNode.done) {
+            gates.approve(dir, { node: req, signer: 'autopilot', note: '오토파일럿 자동 승인', calendarHash: b.calendarHash });
+            emit({ state: 'auto-approve', stage, node: req, message: `${NODE_LABEL[req] || req} 자동 승인` });
+          } else {
+            return finish({
+              state: 'paused', stage, needStamp: req,
+              message: `${NODE_LABEL[req] || req} 승인 도장이 필요합니다. 도장을 찍고 오토파일럿을 다시 시작하세요.`,
+            });
+          }
         }
       }
       // 비용 예산 게이트 — 예산 초과 상태에서는 새 단계를 시작하지 않는다 (진행 중 단계는 완주)

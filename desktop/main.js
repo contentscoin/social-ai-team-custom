@@ -780,6 +780,7 @@ ipcMain.handle('auto:run', async (_e, dir) => {
     const r = await autopilot.run(dir, {
       buildBoard: (d) => board.buildBoard(d),
       runStage: (d, s) => execStage(d, s, {}),
+      autoApprove: config.getAutopilotAutoApprove(),
       checkBudget: () => {
         const budgetUsd = config.getBudget();
         if (!budgetUsd) return null;
@@ -1025,6 +1026,9 @@ ipcMain.handle('cfg:getModels', safe(() => config.getModels()));
 ipcMain.handle('cfg:setModel', safe((_e, engine, model) => config.setModel(engine, model)));
 ipcMain.handle('cfg:getBudget', safe(() => config.getBudget()));
 ipcMain.handle('cfg:setBudget', safe((_e, usd) => config.setBudget(usd)));
+// 오토파일럿 자동 승인 — 승인 게이트를 검수 없이 자동 통과할지
+ipcMain.handle('cfg:getAutoApprove', safe(() => config.getAutopilotAutoApprove()));
+ipcMain.handle('cfg:setAutoApprove', safe((_e, on) => config.setAutopilotAutoApprove(on)));
 // 이미지 생성 스타일 프리셋 — 목록 + 기본값 get/set
 ipcMain.handle('render:styles', safe(() => imagestyles.list()));
 ipcMain.handle('cfg:getImageStyle', safe(() => config.getImageStyle()));

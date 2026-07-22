@@ -154,6 +154,36 @@ test('visuals-generate — 카피 산출물이 전혀 없으면 done=false', () 
   assert.equal(nodeOf(gates.computeGates(b, empty), 'visuals-generate').done, false);
 });
 
+test('visuals(비주얼 브리프)는 승인 게이트 — needsStamp, 도장 없으면 current가 visuals에서 멈춘다', () => {
+  // 회귀: 예전엔 visuals가 needsStamp에서 빠져 UI엔 승인 버튼이 안 뜨는데 오토파일럿은
+  // visuals 승인을 요구해 교착됐다. 이제 visuals는 정식 승인 게이트다.
+  const b = board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [{ stage: 'visual', isReel: false, visual: 'shot A', format: 'single image', files: [{ rel: 'ig-1.png', kind: 'render' }] }],
+    verify: { pass: 1, revise: 0, file: { rel: 'x' } },
+  });
+  const appr = { approvals: [
+    { node: 'calendar', calendarHash: 'abc123' },
+    { node: 'copy', calendarHash: 'abc123' },
+    { node: 'verify', calendarHash: 'abc123' },
+  ] };
+  const g = gates.computeGates(b, appr);
+  assert.equal(nodeOf(g, 'visuals').needsStamp, true);   // 승인 게이트로 표시된다
+  const vIdx = g.nodes.findIndex((n) => n.key === 'visuals');
+  assert.equal(g.current, vIdx);                          // visuals 도장 대기 — 다음(생성)으로 못 감
+  appr.approvals.push({ node: 'visuals', calendarHash: 'abc123' });
+  assert.equal(gates.computeGates(b, appr).current > vIdx, true); // 도장 찍으면 전진
+});
+
+test('STAMP_NODES / needsStamp — 승인 게이트 집합에 visuals 포함, foundation/shortform/publish 제외', () => {
+  assert.ok(gates.STAMP_NODES.includes('visuals'));
+  assert.equal(gates.needsStamp('visuals'), true);
+  assert.equal(gates.needsStamp('calendar'), true);
+  assert.equal(gates.needsStamp('shortform'), false);
+  assert.equal(gates.needsStamp('foundation'), false);
+  assert.equal(gates.needsStamp('visuals-generate'), false);
+});
+
 test('BLOCK이 있으면 publish 노드가 blocked', () => {
   const b = board({ compliance: { pass: 1, warn: 0, block: 2 } });
   const g = gates.computeGates(b, empty);

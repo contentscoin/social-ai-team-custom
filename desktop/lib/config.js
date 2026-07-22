@@ -9,7 +9,7 @@ const FILE = path.join(DIR, 'settings.json');
 
 const imagestyles = require('./imagestyles');
 
-const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {}, imageStyle: '' }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드; imageStyle: 이미지 생성 기본 스타일('' = 미지정)
+const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {}, imageStyle: '', autopilotAutoApprove: false }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드; imageStyle: 이미지 생성 기본 스타일('' = 미지정); autopilotAutoApprove: 오토파일럿이 승인 게이트를 자동 통과
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
@@ -87,6 +87,16 @@ function setImageStyle(key) {
   return cfg.imageStyle;
 }
 
+// 오토파일럿 자동 승인 — true면 승인 도장이 필요한 게이트(캘린더·카피·검증·비주얼 브리프)를
+// 증거가 있을 때 자동으로 통과한다. 컴플라이언스(안전 게이트)와 발행은 대상이 아니다.
+function getAutopilotAutoApprove() { return !!load().autopilotAutoApprove; }
+function setAutopilotAutoApprove(on) {
+  const cfg = load();
+  cfg.autopilotAutoApprove = !!on;
+  save(cfg);
+  return cfg.autopilotAutoApprove;
+}
+
 // 클라이언트 폴더별 × 엔진별 세션 — 과거 버전은 단일 문자열이었으므로 마이그레이션:
 // 'codex-started' 류는 codex 슬롯으로, 나머지는 claude 세션 id로 취급한다.
 function normSessions(v) {
@@ -112,4 +122,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };

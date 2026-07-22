@@ -54,6 +54,42 @@ test('증거가 있는 단계는 재실행하지 않는다(skip), 도장이 있�
   assert.equal(r.needStamp, 'copy');
 });
 
+test('autoApprove — 증거가 있는 승인 게이트를 자동 통과하고 멈추지 않고 진행', async () => {
+  const dir = tmpDir();
+  let hasCalendar = false, hasCopy = false;
+  const events = [];
+  const r = await autopilot.run(dir, {
+    autoApprove: true,
+    buildBoard: () => boardWith({ calendar: hasCalendar, copy: hasCopy }),
+    runStage: async (_d, stage) => {
+      if (stage === 'calendar') hasCalendar = true;
+      if (stage === 'copy') hasCopy = true;
+      return { ok: true };
+    },
+    onEvent: (ev) => events.push(ev),
+  });
+  // calendar 도장 대기로 멈추지 않고, 자동 승인 이벤트가 나온다
+  assert.ok(events.some((e) => e.state === 'auto-approve' && e.node === 'calendar'), 'calendar 자동 승인');
+  assert.ok(events.some((e) => e.state === 'auto-approve' && e.node === 'copy'), 'copy 자동 승인');
+  assert.notEqual(r.state, 'paused'); // 승인 대기로 멈추지 않는다
+  // 게이트에 실제 도장이 기록됐는지 확인 (calendarHash 포함)
+  const g = gates.computeGates(boardWith({ calendar: true }), gates.load(dir));
+  assert.equal(g.nodes.find((n) => n.key === 'calendar').approved, true);
+});
+
+test('autoApprove — 증거(done)가 없는 게이트는 자동 승인하지 않고 멈춘다', async () => {
+  const dir = tmpDir();
+  // calendar 스테이지가 산출물을 못 내면(hasCalendar 계속 false) copy 진입 전 calendar 도장이 필요한데
+  // 증거가 없으므로 자동 승인 대상이 아니다 → paused.
+  const r = await autopilot.run(dir, {
+    autoApprove: true,
+    buildBoard: () => boardWith({ calendar: false }),
+    runStage: async () => ({ ok: true }), // calendar 실행해도 증거가 안 생김
+  });
+  assert.equal(r.state, 'paused');
+  assert.equal(r.needStamp, 'calendar');
+});
+
 test('단계 실패 시 failed로 종료하고 이후 단계를 실행하지 않는다', async () => {
   const dir = tmpDir();
   const ranStages = [];

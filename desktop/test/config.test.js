@@ -62,4 +62,16 @@ test('imageStyle — 유효 프리셋만 저장, 무효는 미지정으로', () 
   assert.equal(config.getImageStyle(), '');
 });
 
+test('autopilotAutoApprove — 기본 false, 토글 저장·재로드 유지', () => {
+  const config = fresh();
+  assert.equal(config.getAutopilotAutoApprove(), false); // 기본 꺼짐
+  assert.equal(config.setAutopilotAutoApprove(true), true);
+  assert.equal(config.getAutopilotAutoApprove(), true);
+  delete require.cache[require.resolve('../lib/config')];
+  const reloaded = require('../lib/config');
+  assert.equal(reloaded.getAutopilotAutoApprove(), true); // 재로드 후에도 유지
+  assert.equal(reloaded.setAutopilotAutoApprove(false), false);
+  assert.equal(reloaded.getAutopilotAutoApprove(), false);
+});
+
 test.after(() => { delete process.env.SAT_HOME; });
