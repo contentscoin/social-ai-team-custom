@@ -2442,6 +2442,11 @@ async function openSettings(section) {
         <div id="sec-opencrab"></div>
       </div>
       <div data-body="render" class="hidden">
+        <div style="margin-bottom:14px">
+          <b class="small">이미지 생성 기본 스타일</b>
+          <p class="muted small" style="margin:4px 0 6px;line-height:1.55">일괄·오토파일럿 생성에 적용되는 기본 스타일입니다. 카드별 「비주얼 생성」 패널의 "이미지" 탭에서 개별로 바꿀 수도 있습니다.</p>
+          <select id="set-image-style" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px"></select>
+        </div>
         <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>클로드 디자인</b>(SVG→PNG) 레인은 키 없이 항상 동작합니다. 아래 키를 넣으면 이미지·영상 프로바이더가 추가로 열립니다.</p>
         <div id="sec-forms-rd"></div>
       </div>
@@ -2578,6 +2583,21 @@ async function openSettings(section) {
     };
     inp.addEventListener('change', saveBudget);
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBudget(); });
+  }
+  // 이미지 생성 기본 스타일 (설정 → 렌더) — 일괄·오토파일럿 생성에 적용, 카드 패널과 같은 값 공유
+  {
+    const sel = $('#set-image-style');
+    if (sel) {
+      const styles = await window.api.render.styles().catch(() => []);
+      const cur = await window.api.engine.getImageStyle().catch(() => '');
+      if (seq !== settingsSeq) return;
+      sel.innerHTML = ['<option value="">스타일 자동 (미지정)</option>']
+        .concat((styles || []).map((s) => `<option value="${esc(s.key)}" ${s.key === cur ? 'selected' : ''}>${esc(s.label)}</option>`)).join('');
+      sel.onchange = async () => {
+        await window.api.engine.setImageStyle(sel.value);
+        toast(sel.value ? `이미지 기본 스타일: ${sel.options[sel.selectedIndex].text}` : '이미지 기본 스타일 해제');
+      };
+    }
   }
   // 백업 — 목록 렌더 + 생성/복원/삭제
   {
