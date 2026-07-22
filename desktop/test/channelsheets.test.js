@@ -265,3 +265,61 @@ test('save 원자성 — .tmp 잔여물 없이 최종 파일만 남는다', () =
   const files = fs.readdirSync(channelsheets.sheetsDir(dir));
   assert.deepEqual(files, ['kakao_channel.json']); // .tmp 없음
 });
+
+test('브랜드 공용 — saveBrand/getBrand 저장·되읽기(_brand.json), 부분 갱신 보존', () => {
+  const dir = tmp();
+  assert.equal(channelsheets.getBrand(dir), null); // 아무것도 없으면 null
+  const r = channelsheets.saveBrand(dir, { brand: '따뜻한 미니멀 #F5F1E8', logoNote: '갈색 #8C6B4F 팔레트 근거' });
+  assert.equal(r.ok, true);
+  const b = channelsheets.getBrand(dir);
+  assert.equal(b.brand, '따뜻한 미니멀 #F5F1E8');
+  assert.match(b.logoNote, /8C6B4F/);
+  assert.ok(b.updatedAt);
+  assert.equal(fs.existsSync(path.join(channelsheets.sheetsDir(dir), '_brand.json')), true);
+  // 부분 갱신 — logoNote만 바꿔도 brand 보존
+  channelsheets.saveBrand(dir, { logoNote: '새 규칙' });
+  assert.equal(channelsheets.getBrand(dir).brand, '따뜻한 미니멀 #F5F1E8');
+  assert.equal(channelsheets.getBrand(dir).logoNote, '새 규칙');
+});
+
+test('브랜드 공용 — 한 번 저장하면 전 채널 compileDirective·refImages에 공유 반영', () => {
+  const dir = tmp();
+  const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+  fs.mkdirSync(refsDir, { recursive: true });
+  fs.writeFileSync(path.join(refsDir, 'brand-master.png'), 'x');
+  channelsheets.saveBrand(dir, {
+    brand: '팔레트 #F5F1E8 크림',
+    brandRef: 'context/channel-sheets/refs/brand-master.png',
+    logoNote: '로고 갈색 #8C6B4F. 이미지 내 워드마크 금지.',
+  });
+  // 서로 다른 두 채널 모두 공용 브랜드를 스타일 가이드로 반영(락 전에도)
+  for (const ch of ['instagram', 'threads']) {
+    const out = channelsheets.compileDirective(dir, ch);
+    assert.match(out, /#F5F1E8 크림/, `${ch} 브랜드 반영`);
+    assert.match(out, /로고 — 색·스타일 근거로만/, `${ch} 로고 노트 반영`);
+    assert.match(out, /클라이언트 공용/, `${ch} 공용 라벨`);
+  }
+  // 채널에 캐릭터만 넣고 락 → 공용 브랜드 레퍼런스가 --ref 앵커에 포함
+  channelsheets.save(dir, 'instagram', { characters: [{ name: '지은', text: '바리스타' }] });
+  channelsheets.setLock(dir, 'instagram', true);
+  const refs = channelsheets.refImages(dir, 'instagram');
+  assert.equal(refs.length, 1);
+  assert.ok(refs[0].endsWith('brand-master.png')); // 공용 브랜드 레퍼런스가 앵커로
+});
+
+test('브랜드 공용 — _brand.json 없으면 레거시 채널 master/logo에서 비파괴 승격(마이그레이션)', () => {
+  const dir = tmp();
+  // 구버전: 브랜드가 채널별로 저장돼 있던 상태
+  channelsheets.save(dir, 'naver', {
+    master: '레거시 브랜드 룩 #123456',
+    logoRef: 'context/channel-sheets/refs/old-logo.png',
+    logoNote: '레거시 로고 규칙',
+  });
+  // _brand.json이 없어도 getBrand가 레거시 채널에서 승격해 읽는다
+  const b = channelsheets.getBrand(dir);
+  assert.match(b.brand, /레거시 브랜드 룩 #123456/);
+  assert.match(b.logoNote, /레거시 로고 규칙/);
+  assert.equal(b.logoRef, 'context/channel-sheets/refs/old-logo.png');
+  // 원본 채널 파일은 그대로(비파괴)
+  assert.equal(fs.existsSync(path.join(channelsheets.sheetsDir(dir), '_brand.json')), false);
+});

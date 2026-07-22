@@ -87,6 +87,39 @@ function setLock(dir, channel, locked) {
   return save(dir, channel, { locked: !!locked });
 }
 
+// ---- 클라이언트 공용 브랜드(전 채널 공유) ----------------------------------------------
+// 브랜드 시트(전체 룩)와 로고는 채널 무관하게 하나로 관리한다: <client>/context/channel-sheets/_brand.json
+function brandFile(dir) { return path.join(sheetsDir(dir), '_brand.json'); }
+function getBrand(dir) {
+  try { return JSON.parse(fs.readFileSync(brandFile(dir), 'utf8')); }
+  catch {
+    // 마이그레이션(비파괴): _brand.json이 없으면 마스터/로고가 있던 첫 채널에서 승격해 읽는다.
+    for (const ch of Object.keys(channelRegistry.REGISTRY).filter(validChannel)) {
+      const s = get(dir, ch);
+      if (s && (s.master || s.masterRef || s.logoRef || s.logoNote)) {
+        return { brand: s.master || '', brandRef: s.masterRef || '', logoRef: s.logoRef || '', logoNote: s.logoNote || '', updatedAt: null };
+      }
+    }
+    return null;
+  }
+}
+function saveBrand(dir, data = {}) {
+  const cur = getBrand(dir) || {};
+  const next = {
+    brand: clampStr(data.brand, cur.brand || '', 4000), // 브랜드 시트(전체 비주얼 아이덴티티)
+    brandRef: clampRel(data.brandRef, cur.brandRef),     // 브랜드 스타일 레퍼런스 이미지 rel
+    logoRef: clampRel(data.logoRef, cur.logoRef),        // 로고 이미지 자산 rel
+    logoNote: clampStr(data.logoNote, cur.logoNote || '', 2000),
+    updatedAt: new Date().toISOString(),
+  };
+  fs.mkdirSync(sheetsDir(dir), { recursive: true });
+  const p = brandFile(dir);
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+  fs.renameSync(tmp, p);
+  return { ok: true, brand: next };
+}
+
 // 특정 캐릭터(index)의 레퍼런스 이미지 rel을 설정 — 레퍼런스 생성 IPC가 사용.
 function setCharacterRef(dir, channel, index, rel) {
   const s = get(dir, channel);
@@ -235,18 +268,20 @@ function parseDraft(out) {
 // 락 여부와 무관하게 주입한다 — 채워두면 바로 스타일에 반영된다(예전엔 락해야만 반영돼 "가이드를
 // 줘도 반영 안 됨" 문제가 있었다). 락이 걸리면 '반드시·최우선 + 레퍼런스 앵커'로 격상한다.
 function compileDirective(dir, channel) {
-  const s = get(dir, channel);
-  if (!s) return '';
-  const chars = s.characters || [];
+  const brand = getBrand(dir);        // 클라이언트 공용(브랜드 시트 + 로고) — 전 채널 공유
+  const s = get(dir, channel);        // 채널별(캐릭터 시트 + 가이드 시트)
+  const chars = (s && s.characters) || [];
   const parts = [];
-  if (s.master && s.master.trim()) parts.push(`[브랜드 시트 — 고정 비주얼 아이덴티티]\n${s.master.trim()}`);
+  // 브랜드 시트·로고는 클라이언트 공용에서 가져온다(채널 무관).
+  if (brand && brand.brand && brand.brand.trim()) parts.push(`[브랜드 시트 — 고정 비주얼 아이덴티티(클라이언트 공용)]\n${brand.brand.trim()}`);
   // 로고: 색·스타일 근거로만 반영, 이미지 안에 로고·워드마크를 렌더하지는 말라(앱이 따로 얹는다).
-  if (s.logoNote && s.logoNote.trim()) parts.push(`[로고 — 색·스타일 근거로만 반영, 이미지 내 로고·텍스트 렌더 금지]\n${s.logoNote.trim()}`);
+  if (brand && brand.logoNote && brand.logoNote.trim()) parts.push(`[로고 — 색·스타일 근거로만 반영, 이미지 내 로고·텍스트 렌더 금지]\n${brand.logoNote.trim()}`);
   chars.forEach((c) => { if (c.text && c.text.trim()) parts.push(`[캐릭터 시트 · ${c.name} — 반복 등장 주체 고정]\n${c.text.trim()}`); });
-  if (s.guidelines && s.guidelines.trim()) parts.push(`[가이드 시트 — 준수 규칙]\n${s.guidelines.trim()}`);
+  if (s && s.guidelines && s.guidelines.trim()) parts.push(`[가이드 시트 — 준수 규칙]\n${s.guidelines.trim()}`);
   if (!parts.length) return '';
-  if (s.locked) {
-    const hasRef = s.masterRef || s.anchorImage || chars.some((c) => c.ref);
+  const locked = !!(s && s.locked);
+  if (locked) {
+    const hasRef = (brand && brand.brandRef) || (s && s.anchorImage) || chars.some((c) => c.ref);
     const refNote = hasRef
       ? `이 채널은 잠금된 레퍼런스 이미지가 있어 생성 시 --ref 앵커로 전달된다 — 그 레퍼런스의 인물·제품 외형을 그대로 유지하라. `
       : '';
@@ -266,10 +301,11 @@ function compileDirective(dir, channel) {
 function refImages(dir, channel) {
   const s = get(dir, channel);
   if (!s || !s.locked) return [];
+  const brand = getBrand(dir); // 클라이언트 공용 브랜드 레퍼런스(전 채널 공유)
   const base = path.resolve(dir);
   const out = [];
-  // 여러 캐릭터 레퍼런스 + 마스터 레퍼런스 + 구 앵커 — 존재하는 파일만, 최대 5장(ima2 --ref 상한).
-  const rels = [...(s.characters || []).map((c) => c.ref), s.masterRef, s.anchorImage];
+  // 여러 캐릭터 레퍼런스 + 브랜드 레퍼런스(공용) + 구 앵커 — 존재하는 파일만, 최대 5장(ima2 --ref 상한).
+  const rels = [...(s.characters || []).map((c) => c.ref), (brand && brand.brandRef), s.anchorImage];
   for (const relPath of rels) {
     if (!relPath) continue;
     const abs = path.resolve(dir, relPath);
@@ -294,4 +330,4 @@ function contentGuidelines(dir) {
   return `[채널별 지침 — 락인, 반드시 준수]\n각 채널의 카피·영상은 아래 해당 채널 지침을 최우선으로 따른다.\n${lines.join('\n')}\n\n`;
 }
 
-module.exports = { get, save, setLock, setCharacterRef, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir, CHANNEL_SHEET_GUIDE };
+module.exports = { get, save, setLock, setCharacterRef, getBrand, saveBrand, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir, CHANNEL_SHEET_GUIDE };
