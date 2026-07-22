@@ -11,6 +11,7 @@ const path = require('path');
 
 const ASPECTS = { '9:16': [1080, 1920], '1:1': [1080, 1080], '16:9': [1920, 1080], '4:5': [1080, 1350] };
 const TRANSITIONS = new Set(['cut', 'fade', 'slide', 'zoom']);
+const MOTIONS = new Set(['kenburns', 'panLeft', 'panRight', 'kinetic', 'static']);
 
 // 매니페스트 검증 — 앱 렌더 전에 계약 위반을 잡는다. { ok, errors[], warnings[] }
 function validateManifest(m) {
@@ -26,8 +27,12 @@ function validateManifest(m) {
   slides.forEach((s, i) => {
     const d = Number(s.durationSec);
     if (!Number.isFinite(d) || d <= 0) errors.push(`슬라이드 ${i + 1}: durationSec이 양수가 아닙니다`);
-    if (!s.image && !s.prompt) errors.push(`슬라이드 ${i + 1}: image.rel 또는 prompt 중 하나가 필요합니다`);
-    if (s.transition && !TRANSITIONS.has(s.transition)) warnings.push(`슬라이드 ${i + 1}: 전환 '${s.transition}' 미지원 — cut로 폴백`);
+    // 텍스트(head/sub/bullets/kicker) 또는 이미지·프롬프트 중 하나는 있어야 렌더된다.
+    const hasText = !!(s.head || s.sub || s.kicker || (Array.isArray(s.bullets) && s.bullets.some((b) => b != null && String(b).trim())));
+    if (!s.image && !s.prompt && !hasText) errors.push(`슬라이드 ${i + 1}: image.rel·prompt·화면 텍스트(head/sub/bullets) 중 하나가 필요합니다`);
+    if (s.transition && !TRANSITIONS.has(s.transition)) warnings.push(`슬라이드 ${i + 1}: 전환 '${s.transition}' 미지원 — fade로 폴백`);
+    if (s.motion && !MOTIONS.has(s.motion)) warnings.push(`슬라이드 ${i + 1}: 모션 '${s.motion}' 미지원 — kenburns로 폴백`);
+    if (s.bullets != null && !Array.isArray(s.bullets)) warnings.push(`슬라이드 ${i + 1}: bullets는 배열이어야 합니다 — 무시됨`);
   });
   const total = totalDuration(m);
   if (total > 90) warnings.push(`총 길이 ${total.toFixed(1)}s — 릴/클립 권장 상한(60s)을 초과`);
@@ -92,7 +97,47 @@ function buildFfmpegArgs(m, { concatPath, outPath, audioPath }) {
   return args;
 }
 
+// ---- 프레임 시퀀스 렌더(하이퍼프레임 애니메이션) ---------------------------------------
+// 슬라이드당 여러 프레임을 캡처하므로, 슬라이드별 프레임 수와 mp4 총 프레임 예산을 계산한다.
+const MAX_TOTAL_FRAMES = 2400; // 안전 상한(예: 30fps × 80초) — 폭주 방지
+
+function frameCount(durationSec, fps) {
+  const d = Number(durationSec) > 0 ? Number(durationSec) : 0;
+  const f = Number(fps) > 0 ? Number(fps) : 30;
+  return Math.max(1, Math.round(d * f));
+}
+
+// 매니페스트의 슬라이드별 프레임 수(총합이 상한을 넘으면 비례 축소). { fps, perSlide[], total }
+function framePlan(m) {
+  const fps = Number(m.fps) > 0 ? Number(m.fps) : 30;
+  const slides = Array.isArray(m.slides) ? m.slides : [];
+  let perSlide = slides.map((s) => frameCount(s.durationSec, fps));
+  let total = perSlide.reduce((a, b) => a + b, 0);
+  if (total > MAX_TOTAL_FRAMES && total > 0) {
+    const k = MAX_TOTAL_FRAMES / total;
+    perSlide = perSlide.map((n) => Math.max(1, Math.round(n * k)));
+    total = perSlide.reduce((a, b) => a + b, 0);
+  }
+  return { fps, perSlide, total };
+}
+
+// 프레임 시퀀스(frame-%06d.png)를 고정 fps로 이어붙이는 ffmpeg 인자.
+// 애니메이션 경로 전용 — 각 프레임이 이미 1/fps를 차지하므로 concat-duration이 필요 없다.
+function buildFramesFfmpegArgs(m, { framePattern, outPath, audioPath, startNumber = 1 }) {
+  const [w, h] = ASPECTS[m.aspect] || ASPECTS['9:16'];
+  const fps = Number(m.fps) > 0 ? Number(m.fps) : 30;
+  const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`;
+  const args = ['-y', '-framerate', String(fps), '-start_number', String(startNumber), '-i', framePattern];
+  if (audioPath) args.push('-i', audioPath);
+  args.push('-vf', vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', String(fps));
+  if (audioPath) args.push('-c:a', 'aac', '-shortest');
+  args.push('-movflags', '+faststart', outPath);
+  return args;
+}
+
 module.exports = {
   validateManifest, totalDuration, timeline, resolveSlideImages,
-  buildConcatScript, buildFfmpegArgs, ASPECTS, TRANSITIONS,
+  buildConcatScript, buildFfmpegArgs,
+  frameCount, framePlan, buildFramesFfmpegArgs,
+  ASPECTS, TRANSITIONS, MOTIONS, MAX_TOTAL_FRAMES,
 };

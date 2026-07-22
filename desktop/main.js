@@ -553,22 +553,20 @@ function encodeOne(ffmpegPath, args) {
   });
 }
 
-// 슬라이드 HTML 1장을 오프스크린 창(내장 Chromium)에서 렌더해 PNG 버퍼로 캡처.
-// 하이퍼프레임이 Puppeteer로 하는 일을, 앱에 이미 있는 Chromium으로 추가 설치 없이 수행한다.
-async function captureSlidePng(html, w, h) {
+// 오프스크린 창(내장 Chromium) 하나를 만들어 재사용한다 — 슬라이드마다 loadURL, 프레임마다 seek·캡처.
+const FRAME_SETTLE_MS = 14; // seek 후 컴포지터가 페인트할 시간
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function makeOffscreenWin(w, h) {
   const win = new BrowserWindow({
     width: w, height: h, show: false, useContentSize: true,
     webPreferences: { offscreen: true, sandbox: true, javascript: true },
   });
-  try {
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-    await new Promise((r) => setTimeout(r, 350)); // 폰트·레이아웃 안정화
-    const img = await win.webContents.capturePage();
-    return img.toPNG();
-  } finally { try { win.destroy(); } catch { /* already gone */ } }
+  try { win.webContents.setFrameRate(60); } catch { /* 구버전 electron */ }
+  return win;
 }
 
-// 매니페스트 1건: 슬라이드마다 HTML→PNG 캡처 → ffmpeg concat → mp4. 이미지 없이 텍스트만으로도 렌더된다.
+// 매니페스트 1건: 슬라이드마다 HTML을 프레임 단위로 seek·캡처(하이퍼프레임 애니메이션) →
+// 전역 프레임 시퀀스(frame-%06d.png) → ffmpeg 고정 fps 인코딩 → mp4. 텍스트만으로도 렌더된다.
 async function renderOneManifest(dir, rel, ff, onLine) {
   const base = path.resolve(dir);
   const manAbs = path.resolve(dir, rel);
@@ -580,34 +578,53 @@ async function renderOneManifest(dir, rel, ff, onLine) {
   const [w, h] = slidevideo.ASPECTS[m.aspect] || slidevideo.ASPECTS['9:16'];
   const baseName = path.basename(manAbs).replace(/\.json$/i, '');
   const framesDir = path.join(path.dirname(manAbs), `.${baseName}.frames`);
+  try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch { /* 없음 */ }
   fs.mkdirSync(framesDir, { recursive: true });
-  const framePaths = [];
+  const plan = slidevideo.framePlan(m);
   try {
-    for (let i = 0; i < m.slides.length; i++) {
-      if (isRenderStopped(dir)) return { ok: false, error: '중단됨' };
-      const s = m.slides[i];
-      // 배경 이미지(선택)를 워크스페이스 안에서만 해석
-      let imgAbs = null;
-      if (s.image && s.image.rel) {
-        const a = path.resolve(dir, s.image.rel);
-        if (a.startsWith(base + path.sep) && fs.existsSync(a)) imgAbs = a;
+    const win = await makeOffscreenWin(w, h);
+    let g = 0;
+    try {
+      for (let i = 0; i < m.slides.length; i++) {
+        if (isRenderStopped(dir)) return { ok: false, error: '중단됨' };
+        const s = m.slides[i];
+        // 배경 이미지(선택)를 워크스페이스 안에서만 해석
+        let imgAbs = null;
+        if (s.image && s.image.rel) {
+          const a = path.resolve(dir, s.image.rel);
+          if (a.startsWith(base + path.sep) && fs.existsSync(a)) imgAbs = a;
+        }
+        const html = htmlslide.slideHtml(
+          { head: s.head, sub: s.sub, kicker: s.kicker, bullets: s.bullets, role: s.role, motion: s.motion, transition: s.transition, image: imgAbs ? { abs: imgAbs } : null },
+          { aspect: m.aspect, brand: m.brand || {}, index: i + 1, total: m.slides.length });
+        await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+        await sleep(320); // 폰트·이미지·레이아웃 안정화(슬라이드당 1회)
+        const N = plan.perSlide[i] || 1;
+        let lastPng = null;
+        for (let f = 0; f < N; f++) {
+          if (isRenderStopped(dir)) return { ok: false, error: '중단됨' };
+          const p = N <= 1 ? 0 : f / (N - 1);
+          try {
+            await win.webContents.executeJavaScript(`window.__seek(${p})`);
+            await sleep(FRAME_SETTLE_MS);
+            lastPng = (await win.webContents.capturePage()).toPNG();
+          } catch { /* 캡처 실패 시 직전 프레임 재사용 */ }
+          if (!lastPng) continue;
+          g++;
+          fs.writeFileSync(path.join(framesDir, `frame-${String(g).padStart(6, '0')}.png`), lastPng);
+        }
+        onLine && onLine(`[슬라이드 영상] 씬 ${i + 1}/${m.slides.length} — ${N}프레임`);
       }
-      const html = htmlslide.slideHtml({ head: s.head, sub: s.sub, transition: s.transition, image: imgAbs ? { abs: imgAbs } : null },
-        { aspect: m.aspect, brand: m.brand || {}, index: i + 1, total: m.slides.length });
-      const png = await captureSlidePng(html, w, h);
-      const fp = path.join(framesDir, `slide-${String(i + 1).padStart(3, '0')}.png`);
-      fs.writeFileSync(fp, png);
-      framePaths.push(fp);
-    }
-    const concatPath = path.join(framesDir, 'concat.txt');
-    fs.writeFileSync(concatPath, slidevideo.buildConcatScript(framePaths, m.slides), 'utf8');
+    } finally { try { win.destroy(); } catch { /* gone */ } }
+    if (!g) return { ok: false, error: '캡처된 프레임이 없습니다' };
+    const pattern = path.join(framesDir, 'frame-%06d.png');
     const outAbs = path.join(dir, 'outputs', 'videos', `${baseName}.mp4`);
     let audioAbs = null;
     if (m.audio && m.audio.audioFile) {
       const a = path.resolve(dir, m.audio.audioFile);
       if (a.startsWith(base + path.sep) && fs.existsSync(a)) audioAbs = a;
     }
-    const args = slidevideo.buildFfmpegArgs(m, { concatPath, outPath: outAbs, audioPath: audioAbs });
+    const args = slidevideo.buildFramesFfmpegArgs(m, { framePattern: pattern, outPath: outAbs, audioPath: audioAbs, startNumber: 1 });
     const r = await encodeOne(ff.path, args);
     return r.ok ? { ok: true, outRel: path.join('outputs', 'videos', `${baseName}.mp4`).replace(/\\/g, '/') } : { ok: false, error: r.error };
   } finally {

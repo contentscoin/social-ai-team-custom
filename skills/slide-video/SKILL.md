@@ -1,7 +1,7 @@
 ---
 name: slide-video
 version: 1.0.0
-description: Default short-form video lane for the team. Turns a calendar reel/video/clip/slide slot into a rendered MP4. Three render engines, selected per slot — HyperFrames (default, HTML video-as-code via the installed hyperframes agent skill), Remotion (advanced/premium slots, React video-as-code via the installed remotion agent skill), and the app's built-in Chromium capture (zero-install fallback, static slides). Produces the slide plan, on-screen text, narration, and a TTS-ready script; the chosen engine renders to outputs/videos/*.mp4. Output saves to outputs/videos/. This is the DEFAULT for video slots; full manual production (master/character/scene sheets, gen prompts) is the /video-guide lane, used only on the director's explicit instruction.
+description: Default short-form video lane for the team. Turns a calendar reel/video/clip/slide slot into a rendered MP4. Three render engines, selected per slot — HyperFrames (HTML video-as-code via the installed hyperframes agent skill), Remotion (advanced/premium slots, React video-as-code via the installed remotion agent skill), and the app's built-in Chromium capture (zero-install DEFAULT — now animated hyperframe: Ken Burns motion, kinetic typography, card-news bullet reveal, scene transitions, not static slides). Produces the slide plan, on-screen text, narration, and a TTS-ready script; the chosen engine renders to outputs/videos/*.mp4. Output saves to outputs/videos/. This is the DEFAULT for video slots; full manual production (master/character/scene sheets, gen prompts) is the /video-guide lane, used only on the director's explicit instruction.
 ---
 
 # Slide Video (슬라이드형 영상 — 기본 영상 레인)
@@ -32,14 +32,14 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 
 | 엔진 | 언제 | 저작 방식 | 렌더 |
 |---|---|---|---|
-| **HyperFrames (기본)** | 대부분의 영상 슬롯. Format `slide`/`reel`/`clip`/`video` | 설치된 `hyperframes` 에이전트 스킬로 **HTML 장면**을 작성 (plan→HTML→애니메이션→lint→render 루프) | `npx hyperframes render` → mp4 (로컬, Apache-2.0) |
-| **Remotion (고급)** | 프리미엄 슬롯 — Format에 `-pro`/`프리미엄` 표기가 있거나 Notes에 "고급/프리미엄/pro", 또는 디렉터가 지정 | 설치된 `remotion` 에이전트 스킬로 **React 컴포지션**을 작성 (스프링 물리·정밀 전환·오디오 싱크) | `npx remotion render` → mp4 (로컬) |
-| **앱 내장 캡처 (폴백)** | 위 엔진/Node 22+가 없을 때 | 이 스킬이 슬라이드 매니페스트(JSON)만 저장 | 앱이 내장 Chromium으로 렌더 (정적 슬라이드) |
+| **앱 내장 캡처 (기본)** | 대부분의 영상 슬롯. 설치 불필요 | 이 스킬이 아래 Phase 2 매니페스트(JSON)만 저장 | 앱이 내장 Chromium으로 각 씬을 **프레임 단위 애니메이션 캡처** → mp4 (켄번스 줌·키네틱 타이포·카드뉴스 불릿 순차 등장·씬 진입 전환·진행바) |
+| **HyperFrames (고급 HTML)** | 더 정교한 모션이 필요한 슬롯, 또는 디렉터 지정 | 설치된 `hyperframes` 에이전트 스킬로 **HTML 장면**을 작성 (plan→HTML→애니메이션→lint→render 루프) | `npx hyperframes render` → mp4 (로컬, Apache-2.0) |
+| **Remotion (프리미엄)** | 프리미엄 슬롯 — Format에 `-pro`/`프리미엄` 표기가 있거나 Notes에 "고급/프리미엄/pro", 또는 디렉터가 지정 | 설치된 `remotion` 에이전트 스킬로 **React 컴포지션**을 작성 (스프링 물리·정밀 전환·오디오 싱크) | `npx remotion render` → mp4 (로컬) |
 
 **엔진 판별 절차:**
-1. 슬롯 신호를 본다 — Format에 `-pro`/`프리미엄`이 있거나 Notes에 고급 지시가 있으면 **Remotion**, 아니면 **HyperFrames**.
-2. 선택한 엔진의 에이전트 스킬이 설치돼 있는지 확인 — 설치돼 있으면 그 스킬로 video-as-code 저작 후 로컬 렌더. (설치: 데스크톱 앱 설정 → 셋업의 "영상 렌더 스킬 설치", 또는 `npx skills add heygen-com/hyperframes --all` / `npx skills add remotion`)
-3. 스킬이 없거나 렌더 전제(Node 22+·ffmpeg)가 안 되면 **폴백** — 슬라이드 매니페스트(아래 Phase 2)만 저장하고, 앱 내장 캡처가 mp4를 만든다. 보고에 "엔진 미설치 — 앱 폴백으로 렌더" 명시.
+1. 기본은 **앱 내장 캡처**다 — 설치 없이 애니메이션 하이퍼프레임 영상을 만든다. 대부분의 SMB 카드뉴스형 영상 슬롯에 충분하다.
+2. 씬 물리·정밀 오디오 싱크 등 더 높은 제작 수준이 필요하거나 디렉터가 지정하면 **HyperFrames/Remotion** — 해당 에이전트 스킬이 설치돼 있는지 확인 후 video-as-code로 로컬 렌더. (설치: 데스크톱 앱 설정 → 셋업의 "영상 렌더 스킬 설치", 또는 `npx skills add heygen-com/hyperframes --all` / `npx skills add remotion`)
+3. 어느 경로든 산출물은 `outputs/videos/*.mp4`. 보고에 어느 엔진으로 렌더했는지 명시한다.
 
 **공통 계약(엔진 무관):** 산출 mp4는 `outputs/videos/`에, 사람이 읽는 대본/장면 노트(.md)에 **`Calendar slot: #n`**을 반드시 표기(보드 연결). 이미지 내 한글 텍스트를 굽지 말 것 — 화면 텍스트는 HTML/React가 네이티브로 렌더. AI 생성 비주얼이 있으면 `#AI생성` 고지.
 
@@ -51,15 +51,30 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 
 ---
 
-## Phase 1 — 슬라이드 설계
+## Phase 1 — 슬라이드 설계 (카드뉴스 스토리텔링)
 
-슬라이드형 영상 1편 = **4~8개 슬라이드**. 각 슬라이드는 한 가지 메시지만 담습니다.
+슬라이드형 영상 1편 = **4~8개 씬**. 사진 나열이 아니라 **하나의 서사**로 엮습니다 — 각 씬은 한 가지 메시지만 담고, 다음 씬으로 이유 있게 이어집니다.
 
-- **슬라이드 1 = 훅(0–2초)**: 스크롤을 멈출 한 문장. 브랜드 로고·인트로를 훅보다 앞에 두지 않습니다.
-- **중간 슬라이드**: 정보/과정/포인트를 한 장에 하나씩. 텍스트는 짧게(한 슬라이드 12자 내외 헤드 + 20자 내외 서브).
-- **마지막 슬라이드 = CTA + 루프**: 행동 유도 한 개. 마지막 화면이 첫 화면으로 자연스럽게 되감기는 루프를 설계합니다.
+**씬 역할(`role`)로 서사 골격을 잡습니다:**
 
-각 슬라이드에 대해 정합니다: 화면 텍스트(head/sub), 비주얼(이미지 프롬프트 또는 기존 자산 rel), 지속시간(초), 전환(cut/fade/slide/zoom), 나레이션 한 줄.
+| role | 언제 | 화면 |
+|---|---|---|
+| `hook` | 씬 1 (0–2초) | 스크롤을 멈출 한 문장. 로고·인트로 선행 금지. |
+| `context` | 배경/문제 제기 | "왜 이게 중요한가"를 한 장에. |
+| `point` | 정보/과정/포인트 | 핵심 한 개 (필요하면 `bullets`로 2~4개 순차 등장 — 카드뉴스의 요점 나열). |
+| `tip` | 팁/디테일 | 실전 한 수. |
+| `cta` | 마지막 씬 | 행동 유도 한 개 + **루프**(마지막 화면이 첫 화면으로 되감기게). |
+
+**각 씬에 대해 정합니다:**
+- `kicker`: 상단 눈길 라벨(선택, 8자 내외 — 예 "카페 운영 팁", "3분 레시피").
+- `head`: 핵심 헤드라인(12자 내외). `sub`: 보조 문구(20자 내외).
+- `bullets`: 카드뉴스 요점(선택, 2~4개, 각 12자 내외) — 화면에서 **하나씩 순차로 켜집니다**. point 씬에서 특히 유효.
+- `motion`: 배경 모션 — `kenburns`(기본, 느린 줌+팬), `panLeft`/`panRight`(가로 이동), `kinetic`(텍스트 전진·상승), `static`(정지). 인물·풍경 이미지는 kenburns, 제품 클로즈업은 static/kinetic이 자연스럽습니다.
+- `transition`: 씬 진입 전환 — `fade`(기본), `slide`(아래에서 올라옴), `zoom`(살짝 확대되며 등장), `cut`.
+- `image`(선택): 배경 이미지 rel. 없으면 브랜드색 그라디언트 타이틀 카드로 렌더됩니다(텍스트만으로도 성립).
+- `voiceover`: 나레이션 한 줄.
+
+**모션이 서사를 만듭니다:** 앱이 이 필드들을 프레임 단위로 애니메이션합니다 — 배경은 켄번스로 살아 움직이고, 헤드→서브→불릿이 시간차로 등장하며, 하단 진행바가 씬 진행을 보여줍니다. 그래서 매니페스트는 "사진 목록"이 아니라 **씬별 연출 지시서**입니다.
 
 ---
 
@@ -75,19 +90,29 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
   "platform": "Instagram Reels",
   "aspect": "9:16",
   "fps": 30,
-  "brand": { "primary": "#RRGGBB", "font": "Pretendard" },
+  "brand": { "primary": "#RRGGBB", "accent": "#RRGGBB", "font": "Pretendard" },
   "audio": { "voiceover": true, "ttsScript": "outputs/videos/[...]-tts-[slot].txt", "bgm": "platform-library" },
   "slides": [
-    { "i": 1, "durationSec": 2.5, "transition": "cut", "head": "3초면 끝", "sub": "홈카페 라떼 아트", "image": { "rel": "outputs/creatives/…png" } , "prompt": "SUBJECT… (creative-designer 핸드백용, image가 없을 때)", "voiceover": "라떼 아트, 생각보다 쉬워요" }
+    { "i": 1, "role": "hook", "durationSec": 2.5, "transition": "zoom", "motion": "kenburns",
+      "kicker": "3분 홈카페", "head": "3초면 끝", "sub": "홈카페 라떼 아트",
+      "image": { "rel": "outputs/creatives/…png" }, "prompt": "SUBJECT… (image 없을 때 렌더용, 선택)",
+      "voiceover": "라떼 아트, 생각보다 쉬워요" },
+    { "i": 2, "role": "point", "durationSec": 4, "transition": "slide", "motion": "static",
+      "kicker": "준비물", "head": "딱 3가지",
+      "bullets": ["에스프레소 1샷", "따뜻한 우유", "얕은 잔"],
+      "voiceover": "필요한 건 이 세 가지예요" }
   ]
 }
 ```
 
 규칙:
 - `calendarSlot`은 대상 캘린더 슬롯 번호(정수). 사람이 읽는 헤더에도 **`Calendar slot: #n`**을 반드시 표기 — 보드가 이 인용으로 대본을 슬롯에 연결합니다.
-- **화면 텍스트(`head`/`sub`)는 앱이 HTML로 네이티브 렌더**합니다 — 한글이 이미지에 굽히지 않고 깨끗하게 나옵니다. 그래서 슬라이드는 **텍스트만으로도 렌더됩니다**(배경 이미지는 선택). `head`는 짧은 헤드라인(12자 내외), `sub`는 보조 문구(20자 내외).
-- `image.rel`(배경 이미지, 선택): 있으면 배경으로 깔리고 텍스트가 하단에 얹힙니다. 없으면 브랜드색 그라디언트 배경에 중앙 텍스트. 배경 이미지를 쓰려면 creative-designer가 먼저 렌더한 파일의 rel을 넣습니다(이미지 내 한글 텍스트 금지 — 텍스트는 앱이 얹습니다). `prompt`는 그 배경 이미지를 나중에 렌더할 때 쓸 영문 프롬프트로 남겨둘 수 있습니다(선택).
-- `durationSec` 합이 플랫폼 상한을 넘지 않게(릴스/클립 ≤ 60초 권장, 훅 슬라이드는 3초 이하).
+- **화면 텍스트(`kicker`/`head`/`sub`/`bullets`)는 앱이 HTML로 네이티브 렌더**합니다 — 한글이 이미지에 굽히지 않고 깨끗하게 나오고, 프레임 단위로 애니메이션됩니다(순차 등장). 그래서 씬은 **텍스트만으로도 렌더됩니다**(배경 이미지는 선택).
+- `bullets`는 **배열**(2~4개 권장). 화면에서 하나씩 순차로 켜집니다 — 카드뉴스 요점 나열에 씁니다. 배열이 아니면 무시됩니다.
+- `role`(hook/context/point/tip/cta), `motion`(kenburns/panLeft/panRight/kinetic/static), `transition`(fade/slide/zoom/cut)은 Phase 1 표를 따릅니다. 미지원 값은 기본값으로 폴백(비차단 warning).
+- `image.rel`(배경 이미지, 선택): 있으면 배경으로 깔리고(켄번스 등 모션 적용) 텍스트가 하단에 얹힙니다. 없으면 브랜드색 그라디언트 타이틀 카드에 중앙 텍스트. 배경 이미지는 creative-designer가 먼저 렌더한 파일의 rel을 넣습니다(이미지 내 한글 텍스트 금지 — 텍스트는 앱이 얹습니다). `prompt`는 그 배경 이미지를 나중에 렌더할 영문 프롬프트로 남겨둘 수 있습니다(선택).
+- `brand.accent`(선택): 진행바·불릿 마커·kicker 강조색. 없으면 `primary`를 씁니다.
+- `durationSec` 합이 플랫폼 상한을 넘지 않게(릴스/클립 ≤ 60초 권장, 훅 씬은 3초 이하). point 씬은 불릿이 다 등장할 시간을 주려면 3.5초 이상 권장.
 - JSON 외 다른 내용을 이 파일에 넣지 않습니다.
 
 사람이 읽는 요약 대본도 같은 베이스네임 `.md`로 저장합니다(`outputs/videos/[client-name]-slidevideo-[slot]-[month]-[year].md`) — 헤더에 `Calendar slot: #n`, 슬라이드별 화면 텍스트·나레이션·전환.
@@ -113,9 +138,9 @@ description: Default short-form video lane for the team. Turns a calendar reel/v
 
 ## Phase 5 — 렌더
 
-**기본 경로 (HyperFrames/Remotion 설치됨):** 선택한 엔진의 에이전트 스킬로 video-as-code를 저작하고 로컬 렌더합니다 — HyperFrames는 HTML 장면을 짜 `npx hyperframes render`, Remotion은 React 컴포지션을 짜 `npx remotion render`. 산출 mp4를 `outputs/videos/`에 저장하고, 매니페스트(Phase 2)와 동일 베이스네임 `.md`에 `Calendar slot: #n`·장면 노트를 남깁니다.
+**기본 경로 (앱 내장 캡처):** 매니페스트(Phase 2 JSON)만 저장하면, 앱이 각 씬을 HTML로 조판해 **내장 Chromium(오프스크린)으로 프레임 단위 애니메이션 캡처** → **번들 ffmpeg**로 고정 fps 인코딩해 mp4를 만듭니다(켄번스 모션·키네틱 타이포·불릿 순차 등장·씬 전환·진행바, 한글 네이티브, 배경 이미지 선택). 설치 불필요.
 
-**폴백 경로 (엔진 미설치):** 슬라이드 매니페스트(Phase 2 JSON)만 저장하면, 앱이 각 슬라이드의 `head`/`sub`를 HTML로 조판해 **내장 Chromium(오프스크린)으로 렌더** → **번들 ffmpeg**로 이어붙여 mp4를 만듭니다(정적 슬라이드, 한글 네이티브, 배경 이미지 선택).
+**고급 경로 (HyperFrames/Remotion 설치됨):** 선택한 엔진의 에이전트 스킬로 video-as-code를 저작하고 로컬 렌더합니다 — HyperFrames는 HTML 장면을 짜 `npx hyperframes render`, Remotion은 React 컴포지션을 짜 `npx remotion render`. 산출 mp4를 `outputs/videos/`에 저장하고, 매니페스트(Phase 2)와 동일 베이스네임 `.md`에 `Calendar slot: #n`·장면 노트를 남깁니다.
 
 - 두 경로 모두 최종 mp4가 생기면 보드에서 그 릴 카드가 visual 단계로 전진합니다. mp4는 사람 검토 후 발행 대기열로 갑니다 — **자동 렌더가 자동 발행을 뜻하지 않습니다.**
 - 어느 경로로 렌더했는지(엔진명/폴백)와 렌더 전제 충족 여부를 보고에 명시합니다.
