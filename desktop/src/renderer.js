@@ -2825,7 +2825,7 @@ async function openSettings(section) {
       $('#sheet-ai').onclick = async () => {
         const ch = chSel.value; if (!ch) return;
         const btn = $('#sheet-ai'); const old = btn.textContent;
-        btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (최대 2분)');
+        btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (최대 5분)');
         try {
           const r = await window.api.sheet.generate(dir, ch);
           if (seq !== settingsSeq) return;

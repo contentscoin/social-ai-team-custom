@@ -1054,10 +1054,13 @@ ipcMain.handle('sheet:generate', async (_e, dir, channel) => {
     const name = (channelRegistry.REGISTRY[channel] || {}).name || channel;
     const platformDir = promptlab.PLATFORM_DIRECTION[channel] || '';
     const instr = channelsheets.draftPrompt(brand, channel, name, platformDir);
-    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: 120_000 });
-    if (!r.ok) return { ok: false, error: '초안 생성에 실패했습니다 (엔진 응답 없음)' };
+    // 초안은 세 필드(마스터·캐릭터·지침) 합계 2000~3300자 마크다운 — 2분이면 자주 잘린다. 5분.
+    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: 300_000 });
+    if (!r.ok) {
+      return { ok: false, error: '초안 생성에 실패했습니다' + (r.timedOut ? ' (시간 초과 5분)' : '') + (r.tail ? ` — ${String(r.tail).trim().slice(-200)}` : ' (엔진 응답 없음)') };
+    }
     const draft = channelsheets.parseDraft(r.out);
-    if (!draft) return { ok: false, error: '초안 파싱에 실패했습니다 — 다시 시도하세요' };
+    if (!draft) return { ok: false, error: '초안 파싱에 실패했습니다 — 다시 시도하세요' + (r.tail ? ` (${String(r.tail).trim().slice(-150)})` : '') };
     return { ok: true, channel, draft };
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
