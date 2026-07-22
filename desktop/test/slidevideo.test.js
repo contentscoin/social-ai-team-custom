@@ -37,6 +37,47 @@ test('validateManifest — 미지원 aspect/전환·과길이는 warning(비차�
   assert.match(r.warnings.join(' '), /aspect|전환|초과|wipe|폴백/);
 });
 
+test('validateManifest — 텍스트만 있어도 통과(이미지 없이), 미지원 motion·bullets 타입은 warning', () => {
+  // head/bullets만 있고 이미지·프롬프트 없어도 렌더 가능 → error 아님
+  const textOnly = { calendarSlot: 1, slides: [{ durationSec: 2, head: '핵심', bullets: ['a', 'b'] }] };
+  assert.equal(sv.validateManifest(textOnly).ok, true);
+  // 화면 텍스트·이미지·프롬프트 모두 없으면 error
+  assert.equal(sv.validateManifest({ calendarSlot: 1, slides: [{ durationSec: 2 }] }).ok, false);
+  // 미지원 모션·잘못된 bullets 타입은 warning(비차단)
+  const m = { calendarSlot: 1, slides: [{ durationSec: 2, head: 'x', motion: 'spin', bullets: 'not-array' }] };
+  const r = sv.validateManifest(m);
+  assert.equal(r.ok, true);
+  assert.match(r.warnings.join(' '), /모션|motion|bullets/);
+});
+
+test('framePlan/frameCount — 슬라이드별 프레임 수·상한 축소', () => {
+  assert.equal(sv.frameCount(2.5, 30), 75);
+  assert.equal(sv.frameCount(0, 30), 1); // 최소 1프레임
+  const plan = sv.framePlan(validManifest());
+  assert.equal(plan.fps, 30);
+  assert.deepEqual(plan.perSlide, [75, 90]); // 2.5*30, 3*30
+  assert.equal(plan.total, 165);
+  // 상한 초과 시 비례 축소
+  const huge = { fps: 30, slides: [{ durationSec: 200 }, { durationSec: 200 }] };
+  const hp = sv.framePlan(huge);
+  assert.ok(hp.total <= sv.MAX_TOTAL_FRAMES, '총 프레임이 상한 이하로 축소');
+});
+
+test('buildFramesFfmpegArgs — 프레임 시퀀스 image2 입력 + fps 고정', () => {
+  const args = sv.buildFramesFfmpegArgs(validManifest(), { framePattern: '/w/.f/frame-%06d.png', outPath: '/w/o.mp4', audioPath: '/w/n.mp3' });
+  const s = args.join(' ');
+  assert.match(s, /-framerate 30/);
+  assert.match(s, /-i \/w\/\.f\/frame-%06d\.png/);
+  assert.match(s, /scale=1080:1920/);
+  assert.match(s, /libx264/);
+  assert.match(s, /-c:a aac/);
+  assert.match(s, /-shortest/);
+  assert.equal(args[args.length - 1], '/w/o.mp4');
+  // 오디오 없으면 aac 없음
+  const noAudio = sv.buildFramesFfmpegArgs(validManifest(), { framePattern: '/w/.f/frame-%06d.png', outPath: '/w/o.mp4' }).join(' ');
+  assert.doesNotMatch(noAudio, /-c:a aac/);
+});
+
 test('timeline — 시작초·프레임수 누적', () => {
   const t = sv.timeline(validManifest());
   assert.equal(t[0].startSec, 0);
