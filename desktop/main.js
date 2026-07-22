@@ -1067,6 +1067,36 @@ ipcMain.handle('sheet:generate', async (_e, dir, channel) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+// 디렉터 고도화 — 편집 중인 시트(payload) + 사용자 요청으로 질의응답/개선.
+// 저장본이 아니라 렌더러가 보내는 "화면의 현재 내용"을 컨텍스트로 쓴다(미저장 편집분 반영).
+ipcMain.handle('sheet:refine', async (_e, dir, channel, payload) => {
+  try {
+    if (!channelRegistry.REGISTRY[channel] || channel === 'etc') return { ok: false, error: '알 수 없는 채널입니다' };
+    const p = payload || {};
+    const q = String(p.question || '').trim().slice(0, 2000);
+    if (!q) return { ok: false, error: '요청 내용을 입력하세요' };
+    const brand = promptlab.brandContext(dir);
+    const name = (channelRegistry.REGISTRY[channel] || {}).name || channel;
+    const sheets = {
+      brand: String(p.brand || '').slice(0, 4000),
+      characters: (Array.isArray(p.characters) ? p.characters : []).slice(0, 5)
+        .map((c) => ({ name: String((c && c.name) || '').slice(0, 60), text: String((c && c.text) || '').slice(0, 4000) })),
+      guidelines: String(p.guidelines || '').slice(0, 4000),
+    };
+    const instr = channelsheets.refinePrompt(brand, channel, name, sheets, q);
+    const REFINE_TIMEOUT_MS = 420_000; // 시트 전문 재작성까지 포함될 수 있어 초안과 동일 여유
+    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: REFINE_TIMEOUT_MS });
+    if (!r.ok) {
+      return { ok: false, error: '고도화에 실패했습니다' + (r.timedOut ? ` (시간 초과 ${Math.round(REFINE_TIMEOUT_MS / 60000)}분)` : '') + (r.tail ? ` — ${String(r.tail).trim().slice(-200)}` : ' (엔진 응답 없음)') };
+    }
+    const res = channelsheets.parseRefine(r.out);
+    if (!res) return { ok: false, error: '응답 파싱에 실패했습니다 — 다시 시도하세요' + (r.tail ? ` (${String(r.tail).trim().slice(-150)})` : '') };
+    const changed = !!(res.master || res.characters.length || res.guidelines);
+    return { ok: true, channel, reply: res.reply, draft: changed ? { master: res.master, characters: res.characters, guidelines: res.guidelines } : null };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
 // ---- 클라이언트 공용 브랜드 시트 + 로고 (전 채널 공유) ----------------------------
 ipcMain.handle('sheet:getBrand', safe((_e, dir) => channelsheets.getBrand(dir)));
 ipcMain.handle('sheet:saveBrand', safe((_e, dir, data) => channelsheets.saveBrand(dir, data || {})));

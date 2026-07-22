@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld('api', {
     save: (dir, channel, data) => ipcRenderer.invoke('sheet:save', dir, channel, data),
     lock: (dir, channel, locked) => ipcRenderer.invoke('sheet:lock', dir, channel, locked),
     generate: (dir, channel) => ipcRenderer.invoke('sheet:generate', dir, channel),
+    refine: (dir, channel, payload) => ipcRenderer.invoke('sheet:refine', dir, channel, payload),
     genRef: (dir, channel, which, index) => ipcRenderer.invoke('sheet:genRef', dir, channel, which, index),
     uploadRef: (dir, channel, which, index) => ipcRenderer.invoke('sheet:uploadRef', dir, channel, which, index),
     // 클라이언트 공용 브랜드 시트 + 로고 (전 채널 공유)
