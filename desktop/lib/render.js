@@ -165,9 +165,11 @@ async function ensureIma2Serve(onLine) {
 // 설정된 ima2 서버 URL(사용자가 watchdog 등으로 직접 유지하는 서버). 있으면 앱은 자기 serve를
 // 띄우지 않고 이 주소로 붙는다(--server). 비었으면 기존처럼 자동 기동.
 function ima2ServerUrl() { try { return String((secrets.get('ima2') || {}).server || '').trim(); } catch { return ''; } }
-function ima2GenArgs(prompt, tmp, serverUrl) {
+function ima2GenArgs(prompt, tmp, serverUrl, refs) {
   const a = ['gen', prompt, '-d', tmp, '--quality', 'high'];
   if (serverUrl) a.push('--server', serverUrl);
+  // 레퍼런스 이미지(--ref, 최대 5장) — 채널 캐릭터/마스터 앵커로 인물·제품 픽셀 일관성 확보
+  for (const r of (Array.isArray(refs) ? refs : []).slice(0, 5)) a.push('--ref', r);
   return a;
 }
 // 배치 시작 전 프로바이더 예열 — ima2면 serve를 미리 띄워 첫 렌더 전에 뜰 시간을 준다.
@@ -181,8 +183,13 @@ async function genIma2(dir, job, onLine) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sat-ima2-'));
   const prompt = finalizeImagePrompt(job.prompt, job.negative);
   const serverUrl = ima2ServerUrl();
-  onLine && onLine(`[render] ima2 생성 중… (quality=high + negative fused${serverUrl ? ' · ' + serverUrl : ''})`);
-  const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl), onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
+  // 레퍼런스 앵커 수집 — job.refAbs(단일) + job.refs(배열). 실제 존재하는 파일만, 중복 제거, 최대 5장.
+  const refCand = [];
+  if (job.refAbs) refCand.push(job.refAbs);
+  if (Array.isArray(job.refs)) for (const r of job.refs) if (r) refCand.push(r);
+  const refs = [...new Set(refCand)].filter((p) => { try { return fs.existsSync(p); } catch { return false; } }).slice(0, 5);
+  onLine && onLine(`[render] ima2 생성 중… (quality=high + negative fused${refs.length ? ` · 레퍼런스 ${refs.length}장` : ''}${serverUrl ? ' · ' + serverUrl : ''})`);
+  const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl, refs), onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
   let r = await run();
   // 서버가 죽어 있으면: URL 미지정 시 자동 기동, 지정 시 사용자 서버가 뜰 때까지만 몇 번 재시도.
   if (!r.ok && IMA2_DOWN.test(r.out)) {

@@ -1059,6 +1059,44 @@ ipcMain.handle('sheet:generate', async (_e, dir, channel) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+// 레퍼런스 이미지 생성 — 캐릭터/마스터 시트 텍스트로 앵커 이미지를 1회 생성해 시트에 저장(context/channel-sheets/refs/).
+// 이후 락인하면 그 채널의 모든 이미지 생성에 ima2 --ref 앵커로 전달돼 인물·제품이 픽셀로 재현된다.
+ipcMain.handle('sheet:genRef', async (_e, dir, channel, which) => {
+  try {
+    if (!channelRegistry.REGISTRY[channel] || channel === 'etc') return { ok: false, error: '알 수 없는 채널입니다' };
+    const kind = which === 'master' ? 'master' : 'character';
+    const sheet = channelsheets.get(dir, channel) || {};
+    const text = kind === 'master' ? sheet.master : sheet.character;
+    if (!text || !text.trim()) return { ok: false, error: `${kind === 'master' ? '마스터' : '캐릭터'} 시트 내용을 먼저 저장하세요` };
+    const log = (line) => send('log', { source: 'sheet', line, dir });
+    const provider = render.defaultImageProvider({ ima2: true });
+    const brief = kind === 'master'
+      ? `Style and mood reference board for this channel — a single representative hero frame capturing the palette, lighting character, composition and material finish. ${text}`
+      : `Character reference sheet — the canonical recurring subject for this channel shown clearly for identity reference (front, neutral clean seamless background, even lighting, full wardrobe and features visible). ${text}`;
+    let prompt = brief, negative = null;
+    try {
+      const c = await promptlab.compile(dir, { kind: 'image', provider, topic: `${channel} ${kind} reference`, channel, prompt: brief, size: 'square', count: 1 }, log);
+      if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
+    } catch { /* 브리프 원문으로 */ }
+    const base = `chref-${channel}-${kind}`;
+    // 레퍼런스 생성 자체는 앵커 없이(fresh) — 기존 ref를 먹이지 않는다.
+    const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base, size: 'square', count: 1, env: { ima2: true } }, log);
+    if (!r.ok || !r.rel) return { ok: false, error: r.error || '레퍼런스 생성에 실패했습니다' };
+    // outputs/creatives/<base>.<ext> → context/channel-sheets/refs/<base>.<ext> 로 이동(레퍼런스 격리 — 보드 스캔·게이트에 안 잡히게)
+    const srcAbs = path.join(dir, r.rel);
+    const ext = path.extname(r.rel) || '.png';
+    const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+    fs.mkdirSync(refsDir, { recursive: true });
+    const destAbs = path.join(refsDir, `${base}${ext}`);
+    try { fs.copyFileSync(srcAbs, destAbs); fs.rmSync(srcAbs, { force: true }); }
+    catch (e) { return { ok: false, error: '레퍼런스 저장 실패: ' + e.message }; }
+    const relFromDir = path.relative(dir, destAbs).replace(/\\/g, '/');
+    channelsheets.save(dir, channel, kind === 'master' ? { masterRef: relFromDir } : { characterRef: relFromDir });
+    return { ok: true, channel, which: kind, rel: relFromDir };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
 
 // ---- 워크스페이스 백업·복원 -----------------------------------------------------
 ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));

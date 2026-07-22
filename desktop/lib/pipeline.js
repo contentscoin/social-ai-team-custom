@@ -11,7 +11,11 @@ const { runCmd, envWithPath, isWin, killTree } = require('./proc');
 // 경로를 막는다. 정상 스테이지(캘린더·카피 팬아웃 포함)는 이 안에 끝난다.
 const STAGE_TIMEOUT_MS = 30 * 60 * 1000;
 const config = require('./config');
+const channelsheets = require('./channelsheets');
 const { makeParser, finalText } = require('./stream');
+
+// 채널 지침을 주입할 콘텐츠 생성 단계 — 락인된 채널 지침이 카피·영상·비주얼 브리프에 반영된다.
+const CONTENT_STAGES = new Set(['copy', 'shortform', 'visuals', 'visuals-generate']);
 
 const isMac = process.platform === 'darwin';
 
@@ -162,7 +166,10 @@ function runStage(dir, stage, opts = {}, onLine) {
   const now = new Date();
   const dow = ['일', '월', '화', '수', '목', '금', '토'][now.getDay()];
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + spec.prompt + extra;
+  // 콘텐츠 단계엔 락인된 채널 지침을 프롬프트 앞에 주입 (채널별 톤·규칙 강제)
+  let chBlock = '';
+  if (CONTENT_STAGES.has(stage)) { try { chBlock = channelsheets.contentGuidelines(dir) || ''; } catch { /* 없음 */ } }
+  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + chBlock + spec.prompt + extra;
 
   // 이 단계에 적용할 엔진 — 단계별 오버라이드 우선, 없으면 전역 토글. (구간별로 엔진을
   // 나눠 돌릴 수 있어 한도를 분산한다. 예: 캘린더=Claude, 카피=Codex)

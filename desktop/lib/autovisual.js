@@ -5,6 +5,7 @@
 const board = require('./board');
 const promptlab = require('./promptlab');
 const render = require('./render');
+const channelsheets = require('./channelsheets');
 
 // 포맷 문자열로 캐러셀 여부·기본 장수 추정 — 대부분의 SNS는 여러 장을 쓴다
 function inferCount(post, fallback) {
@@ -29,6 +30,7 @@ async function renderAll(dir, opts, onLine) {
   const R = opts._render || render;
   const PL = opts._promptlab || promptlab;
   const B = opts._board || board;
+  const CS = opts._sheets || channelsheets;
   const b = B.buildBoard(dir);
   const provider = opts.provider || R.defaultImageProvider({ ima2: opts.ima2 });
   const style = opts.style || '';
@@ -66,9 +68,13 @@ async function renderAll(dir, opts, onLine) {
       }, onLine);
       if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
     } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
+    // 채널 시트가 락인돼 있으면 그 레퍼런스 이미지를 --ref 앵커로 — 같은 캐릭터·제품 재현.
+    let refs = [];
+    try { refs = CS.refImages(dir, p.channel) || []; } catch { /* 없음 */ }
+    if (refs.length) onLine && onLine(`[비주얼] ${cid} — 채널 레퍼런스 ${refs.length}장 앵커링`);
     let r;
     try {
-      r = await R.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
+      r = await R.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, refs, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
       results.push({ uid: p.uid, id: cid, ok: !!r.ok, files: r.files || [], count: (r.files || []).length, error: r.error });
       onLine && onLine(r.ok ? `[비주얼] ✔ ${cid} — ${(r.files || []).length}장` : `[비주얼] ✖ ${cid} — ${r.error}`);
     } catch (e) {

@@ -2482,8 +2482,24 @@ async function openSettings(section) {
           <label class="small muted">마스터 시트 — 전체 비주얼 아이덴티티 (스타일·팔레트 HEX·조명·구도·재질)</label>
           <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽에서 들어오는 부드러운 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백, 타이트 크롭. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 12px"></textarea>
           <label class="small muted">캐릭터 시트 — 반복 등장 주체 (모델·마스코트·제품 페르소나). 없으면 "반복 주체 없음 — 오브젝트/손 중심".</label>
-          <textarea id="sheet-character" rows="5" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 화장기 적은 내추럴. 오트밀색 니트 + 리넨 앞치마. 차분하고 다정한 표정. 항상 같은 인물로 등장." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 4px"></textarea>
-          <div class="btn-grid" style="margin-top:10px">
+          <textarea id="sheet-character" rows="5" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 화장기 적은 내추럴. 오트밀색 니트 + 리넨 앞치마. 차분하고 다정한 표정. 항상 같은 인물로 등장." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 12px"></textarea>
+          <label class="small muted">지침 — 이 채널 콘텐츠 규칙 (카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약 등). 카피·이미지 모두에 적용.</label>
+          <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그는 끝에 3~5개. '최고/1위' 등 과장 표현 금지. 가격은 본문에 직접 쓰지 않음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 4px"></textarea>
+          <div style="margin:14px 0 4px;padding-top:12px;border-top:1px solid var(--line)">
+            <b class="small">레퍼런스 이미지 (픽셀 일관성 앵커)</b>
+            <p class="muted small" style="margin:4px 0 10px;line-height:1.55">텍스트 시트만으로는 <b>같은 얼굴·같은 제품</b>을 매번 재현하지 못합니다. 캐릭터/마스터 시트로 레퍼런스 이미지를 <b>1회 생성</b>해 두면, 락인 시 이 채널의 모든 이미지 생성에 <code>--ref</code> 앵커로 전달돼 외형이 고정됩니다(ima2). 시트 내용을 먼저 <b>저장</b>한 뒤 생성하세요.</p>
+            <div style="display:flex;gap:12px">
+              <div style="flex:1;text-align:center">
+                <div id="sheet-ref-character-box" style="aspect-ratio:1;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px"><span class="muted small">캐릭터 레퍼런스 없음</span></div>
+                <button id="sheet-ref-character" type="button" class="small" style="width:100%">캐릭터 레퍼런스 생성</button>
+              </div>
+              <div style="flex:1;text-align:center">
+                <div id="sheet-ref-master-box" style="aspect-ratio:1;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px"><span class="muted small">마스터 레퍼런스 없음</span></div>
+                <button id="sheet-ref-master" type="button" class="small" style="width:100%">마스터 레퍼런스 생성</button>
+              </div>
+            </div>
+          </div>
+          <div class="btn-grid" style="margin-top:14px">
             <button id="sheet-ai" type="button">AI 초안 생성</button>
             <button id="sheet-save" type="button">저장</button>
             <button id="sheet-lock" type="button">락 걸기</button>
@@ -2652,9 +2668,16 @@ async function openSettings(section) {
       const chSel = $('#sheet-ch');
       const mEl = $('#sheet-master');
       const cEl = $('#sheet-character');
+      const gEl = $('#sheet-guidelines');
       const badge = $('#sheet-lock-badge');
       const lockBtn = $('#sheet-lock');
       const setStatus = (t) => { const el = $('#sheet-status'); if (el) el.textContent = t || ''; };
+      const setRefBox = (which, rel) => {
+        const box = $(`#sheet-ref-${which}-box`);
+        if (!box) return;
+        if (rel) box.innerHTML = `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">`;
+        else box.innerHTML = `<span class="muted small">${which === 'character' ? '캐릭터' : '마스터'} 레퍼런스 없음</span>`;
+      };
       let curLocked = false;
       const refreshList = async () => {
         const items = await window.api.sheet.list(dir).catch(() => []);
@@ -2669,6 +2692,9 @@ async function openSettings(section) {
         if (seq !== settingsSeq) return;
         mEl.value = (s && s.master) || '';
         cEl.value = (s && s.character) || '';
+        gEl.value = (s && s.guidelines) || '';
+        setRefBox('character', s && s.characterRef);
+        setRefBox('master', s && s.masterRef);
         curLocked = !!(s && s.locked);
         badge.textContent = curLocked ? '🔒 락됨 · 이 채널 이미지에 적용 중' : '락 해제';
         badge.style.color = curLocked ? 'var(--ok)' : '';
@@ -2680,7 +2706,7 @@ async function openSettings(section) {
       if (chSel) chSel.onchange = () => loadCh(chSel.value);
       $('#sheet-save').onclick = async () => {
         const ch = chSel.value; if (!ch) return;
-        const r = await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value });
+        const r = await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value, guidelines: gEl.value });
         if (r && r.ok) { setStatus('저장됨'); toast('채널 시트 저장됨'); await refreshList(); await loadCh(ch); }
         else setStatus((r && r.error) || '저장 실패');
       };
@@ -2688,8 +2714,8 @@ async function openSettings(section) {
         const ch = chSel.value; if (!ch) return;
         // 락 걸기 전 현재 편집분을 먼저 저장(내용 없으면 락 불가)
         if (!curLocked) {
-          if (!mEl.value.trim() && !cEl.value.trim()) { setStatus('시트 내용을 먼저 입력하세요'); return; }
-          await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value });
+          if (!mEl.value.trim() && !cEl.value.trim() && !gEl.value.trim()) { setStatus('시트 내용을 먼저 입력하세요'); return; }
+          await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value, guidelines: gEl.value });
         }
         const r = await window.api.sheet.lock(dir, ch, !curLocked);
         if (r && r.ok) { toast(!curLocked ? '락 — 이 채널 이미지에 시트 적용' : '락 해제됨'); await loadCh(ch); await refreshList(); }
@@ -2705,11 +2731,29 @@ async function openSettings(section) {
           if (r && r.ok && r.draft) {
             if (r.draft.master) mEl.value = r.draft.master;
             if (r.draft.character) cEl.value = r.draft.character;
+            if (r.draft.guidelines) gEl.value = r.draft.guidelines;
             setStatus('초안 생성됨 — 검토·수정 후 [저장]을 누르세요');
           } else setStatus((r && r.error) || '초안 생성 실패');
         } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
       };
+      // 레퍼런스 이미지 생성 — 저장된 시트 텍스트로 앵커 이미지를 만들어 채널에 저장(락인 시 --ref로 적용)
+      const genRef = async (which) => {
+        const ch = chSel.value; if (!ch) return;
+        const btn = $(`#sheet-ref-${which}`); const old = btn.textContent;
+        await window.api.sheet.save(dir, ch, { master: mEl.value, character: cEl.value, guidelines: gEl.value });
+        btn.disabled = true; btn.textContent = '생성 중…';
+        setStatus(`${which === 'character' ? '캐릭터' : '마스터'} 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)`);
+        try {
+          const r = await window.api.sheet.genRef(dir, ch, which);
+          if (seq !== settingsSeq) return;
+          if (r && r.ok && r.rel) { setRefBox(which, r.rel); setStatus('레퍼런스 생성됨 — 락을 걸면 이 채널 이미지에 앵커로 적용됩니다'); await refreshList(); }
+          else setStatus((r && r.error) || '레퍼런스 생성 실패');
+        } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
+        finally { btn.disabled = false; btn.textContent = old; }
+      };
+      $('#sheet-ref-character').onclick = () => genRef('character');
+      $('#sheet-ref-master').onclick = () => genRef('master');
     }
   }
   // 백업 — 목록 렌더 + 생성/복원/삭제

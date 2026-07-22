@@ -106,18 +106,67 @@ test('draftPrompt — 브랜드·플랫폼 재료를 넣고 JSON 출력 형식�
 });
 
 test('parseDraft — 평문 JSON / 코드펜스 감싼 JSON / claude {result} 래핑 모두 파싱', () => {
-  // 평문
+  // 평문 (guidelines 미지정 시 '')
   let d = channelsheets.parseDraft('{"master":"M","character":"C"}');
-  assert.deepEqual(d, { master: 'M', character: 'C' });
+  assert.deepEqual(d, { master: 'M', character: 'C', guidelines: '' });
   // 잡텍스트에 섞인 JSON
   d = channelsheets.parseDraft('여기 결과입니다:\n{"master":"MM","character":"CC"}\n끝');
-  assert.deepEqual(d, { master: 'MM', character: 'CC' });
+  assert.deepEqual(d, { master: 'MM', character: 'CC', guidelines: '' });
   // claude json 모드 {result:"<inner json string>"} 래핑
   d = channelsheets.parseDraft(JSON.stringify({ result: '{"master":"RM","character":"RC"}' }));
-  assert.deepEqual(d, { master: 'RM', character: 'RC' });
+  assert.deepEqual(d, { master: 'RM', character: 'RC', guidelines: '' });
   // 파싱 불가 / 빈 시트
   assert.equal(channelsheets.parseDraft('nope'), null);
   assert.equal(channelsheets.parseDraft('{"master":"","character":""}'), null);
+});
+
+test('guidelines(지침) — 저장·되읽기, compileDirective·draftPrompt·parseDraft에 반영', () => {
+  const dir = tmp();
+  channelsheets.save(dir, 'instagram', { master: 'M', guidelines: '반말 금지, 해시태그 3~5개' });
+  assert.equal(channelsheets.get(dir, 'instagram').guidelines, '반말 금지, 해시태그 3~5개');
+  // 락인하면 이미지 compileDirective에 지침 블록 포함
+  channelsheets.setLock(dir, 'instagram', true);
+  const out = channelsheets.compileDirective(dir, 'instagram');
+  assert.match(out, /채널 지침 — 준수 규칙/);
+  assert.match(out, /해시태그 3~5개/);
+  // draftPrompt는 guidelines 필드를 요구, parseDraft는 파싱
+  assert.match(channelsheets.draftPrompt({}, 'instagram', '인스타그램', ''), /"guidelines"/);
+  const d = channelsheets.parseDraft('{"master":"M","character":"C","guidelines":"G"}');
+  assert.deepEqual(d, { master: 'M', character: 'C', guidelines: 'G' });
+  // guidelines만 있어도 parseDraft 성공(빈 시트 아님)
+  assert.deepEqual(channelsheets.parseDraft('{"guidelines":"G"}'), { master: '', character: '', guidelines: 'G' });
+});
+
+test('refImages — 락인된 채널의 존재하는 레퍼런스만 abs로, 경로 탈출 차단, 락 안 되면 빈 배열', () => {
+  const dir = tmp();
+  const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+  fs.mkdirSync(refsDir, { recursive: true });
+  fs.writeFileSync(path.join(refsDir, 'c.png'), 'x');
+  // 캐릭터 ref 존재, 마스터 ref는 없는 파일, anchorImage는 경로 탈출
+  channelsheets.save(dir, 'instagram', {
+    master: 'M', characterRef: 'context/channel-sheets/refs/c.png',
+    masterRef: 'context/channel-sheets/refs/missing.png', anchorImage: '../../etc/passwd',
+  });
+  // 락 안 됐으면 빈 배열
+  assert.deepEqual(channelsheets.refImages(dir, 'instagram'), []);
+  channelsheets.setLock(dir, 'instagram', true);
+  const refs = channelsheets.refImages(dir, 'instagram');
+  assert.equal(refs.length, 1);              // 존재하는 캐릭터 ref만
+  assert.ok(refs[0].endsWith('c.png'));
+});
+
+test('contentGuidelines — 락인된 채널 지침만 채널명과 함께 집계, 없으면 빈 문자열', () => {
+  const dir = tmp();
+  assert.equal(channelsheets.contentGuidelines(dir), '');
+  channelsheets.save(dir, 'instagram', { guidelines: '존댓말만' });
+  channelsheets.save(dir, 'threads', { guidelines: '질문형 훅' });
+  // 저장만 하고 락 안 하면 집계 안 됨
+  assert.equal(channelsheets.contentGuidelines(dir), '');
+  channelsheets.setLock(dir, 'instagram', true);
+  const block = channelsheets.contentGuidelines(dir);
+  assert.match(block, /채널별 지침/);
+  assert.match(block, /인스타그램\(instagram\): 존댓말만/);
+  assert.doesNotMatch(block, /질문형 훅/); // threads는 락 안 됨 → 제외
 });
 
 test('save 원자성 — .tmp 잔여물 없이 최종 파일만 남는다', () => {
