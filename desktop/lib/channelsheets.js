@@ -64,10 +64,12 @@ function save(dir, channel, data = {}) {
     characters = cur.characters || [];
   }
   const next = {
-    master: str(data.master, cur.master || '', 4000),
-    guidelines: str(data.guidelines, cur.guidelines || '', 4000), // 지침 — 이미지·카피에 공통 적용되는 채널 규칙
-    characters, // 여러 캐릭터 시트 [{name, text, ref}]
-    masterRef: rel(data.masterRef, cur.masterRef), // 마스터 레퍼런스(스타일 보드) 앵커
+    master: str(data.master, cur.master || '', 4000), // 브랜드 시트(전체 비주얼 아이덴티티/스타일 가이드)
+    guidelines: str(data.guidelines, cur.guidelines || '', 4000), // 가이드 시트(콘텐츠·편집 지침)
+    characters, // 캐릭터 시트 여러 개 [{name, text, ref}]
+    masterRef: rel(data.masterRef, cur.masterRef), // 브랜드 레퍼런스(스타일 보드) 앵커
+    logoRef: rel(data.logoRef, cur.logoRef), // 로고 이미지 자산 rel (업로드/생성) — 색·스타일 근거·컴포짓용
+    logoNote: str(data.logoNote, cur.logoNote || '', 2000), // 로고 사용 규칙(여백·색·이미지 내 렌더 금지 등)
     anchorImage: rel(data.anchorImage, cur.anchorImage), // (구) 단일 앵커 — 하위호환
     locked: data.locked != null ? !!data.locked : !!cur.locked,
     updatedAt: new Date().toISOString(),
@@ -106,9 +108,10 @@ function list(dir) {
       return {
         channel: ch,
         name: channelRegistry.REGISTRY[ch].name,
-        has: !!(s && (s.master || s.guidelines || chars.length)),
+        has: !!(s && (s.master || s.guidelines || chars.length || s.logoRef || s.logoNote)),
         locked: !!(s && s.locked),
         characterCount: chars.length,
+        hasLogo: !!(s && (s.logoRef || s.logoNote)),
         refCount: [(s && s.masterRef), ...chars.map((c) => c.ref), (s && s.anchorImage)].filter(Boolean).length,
         masterRef: (s && s.masterRef) || '',
         anchorImage: (s && s.anchorImage) || '',
@@ -236,9 +239,11 @@ function compileDirective(dir, channel) {
   if (!s) return '';
   const chars = s.characters || [];
   const parts = [];
-  if (s.master && s.master.trim()) parts.push(`[마스터 시트 — 고정 비주얼 아이덴티티]\n${s.master.trim()}`);
+  if (s.master && s.master.trim()) parts.push(`[브랜드 시트 — 고정 비주얼 아이덴티티]\n${s.master.trim()}`);
+  // 로고: 색·스타일 근거로만 반영, 이미지 안에 로고·워드마크를 렌더하지는 말라(앱이 따로 얹는다).
+  if (s.logoNote && s.logoNote.trim()) parts.push(`[로고 — 색·스타일 근거로만 반영, 이미지 내 로고·텍스트 렌더 금지]\n${s.logoNote.trim()}`);
   chars.forEach((c) => { if (c.text && c.text.trim()) parts.push(`[캐릭터 시트 · ${c.name} — 반복 등장 주체 고정]\n${c.text.trim()}`); });
-  if (s.guidelines && s.guidelines.trim()) parts.push(`[채널 지침 — 준수 규칙]\n${s.guidelines.trim()}`);
+  if (s.guidelines && s.guidelines.trim()) parts.push(`[가이드 시트 — 준수 규칙]\n${s.guidelines.trim()}`);
   if (!parts.length) return '';
   if (s.locked) {
     const hasRef = s.masterRef || s.anchorImage || chars.some((c) => c.ref);
@@ -246,7 +251,7 @@ function compileDirective(dir, channel) {
       ? `이 채널은 잠금된 레퍼런스 이미지가 있어 생성 시 --ref 앵커로 전달된다 — 그 레퍼런스의 인물·제품 외형을 그대로 유지하라. `
       : '';
     return `\n[채널 시트 락인 — ${channel} · 반드시 준수]\n`
-      + `이 채널의 모든 이미지는 아래 마스터/캐릭터 시트를 일관되게 따른다(팔레트·조명·스타일·등장 주체를 프레임 간 고정). ${refNote}`
+      + `이 채널의 모든 이미지는 아래 브랜드/캐릭터 시트를 일관되게 따른다(팔레트·조명·스타일·등장 주체를 프레임 간 고정). ${refNote}`
       + `VISUAL DIRECTION·플랫폼 방향보다 이 락인 시트가 우선한다.\n`
       + parts.join('\n\n') + '\n\n';
   }

@@ -2480,31 +2480,52 @@ async function openSettings(section) {
         <div id="sec-forms-rd"></div>
       </div>
       <div data-body="sheet" class="hidden">
-        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>채널 시트 락인</b> — 채널마다 <b>마스터 시트</b>(전체 스타일·팔레트·조명·구도)와 <b>캐릭터 시트</b>(반복 등장 주체)를 정해 락을 걸면, 그 채널의 <b>모든 이미지 생성</b>이 이 시트를 최우선 일관성 축으로 따릅니다(플랫폼 방향·VISUAL DIRECTION보다 우선). 채널별로 얼굴·톤·색이 프레임마다 흔들리는 문제를 잡습니다.</p>
+        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>채널 콘텐츠 시트</b> — 채널마다 콘텐츠 생성에 필요한 시트를 요소별로 구성합니다: <b>브랜드 시트</b>(전체 룩·스타일) · <b>로고</b>(자산) · <b>캐릭터 시트</b>(반복 등장 주체) · <b>가이드 시트</b>(콘텐츠 규칙). 락을 걸면 그 채널의 <b>모든 이미지·카피 생성</b>이 이 시트들을 최우선으로 따릅니다.</p>
         <div id="sheet-noclient" class="muted small hidden" style="margin:10px 0">먼저 클라이언트를 선택하세요.</div>
         <div id="sheet-editor">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
             <select id="sheet-ch" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px"></select>
             <span id="sheet-lock-badge" class="small muted" style="white-space:nowrap"></span>
           </div>
-          <label class="small muted">마스터 시트 — 전체 비주얼 아이덴티티 (스타일·팔레트 HEX·조명·구도·재질)</label>
-          <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽에서 들어오는 부드러운 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백, 타이트 크롭. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 12px"></textarea>
-          <div style="display:flex;gap:12px;align-items:center;margin:-4px 0 14px">
+
+          <b class="small" style="color:var(--accent-hover)">① 브랜드 시트</b>
+          <p class="muted small" style="margin:3px 0 5px">전체 비주얼 아이덴티티 — 스타일·팔레트 HEX·조명·구도·재질 (모든 이미지에 공통 적용될 "룩의 규칙").</p>
+          <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:0 0 8px"></textarea>
+          <div style="display:flex;gap:12px;align-items:center;margin:0 0 16px">
             <div id="sheet-ref-master-box" style="width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center"></div>
             <div style="flex:1;min-width:0">
-              <button id="sheet-ref-master" type="button" class="small">마스터 스타일 레퍼런스 생성</button>
-              <p class="muted small" style="margin-top:4px;line-height:1.45">마스터 시트로 스타일 보드 이미지를 만들어 앵커로 씁니다(선택). 저장 후 생성.</p>
+              <button id="sheet-ref-master" type="button" class="small">브랜드 스타일 레퍼런스 생성</button>
+              <p class="muted small" style="margin-top:4px;line-height:1.45">브랜드 시트로 스타일 보드 이미지를 만들어 앵커로 씁니다(선택).</p>
             </div>
           </div>
-          <label class="small muted">지침 — 이 채널 콘텐츠 규칙 (카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약 등). 카피·이미지 모두에 적용.</label>
-          <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그는 끝에 3~5개. '최고/1위' 등 과장 표현 금지. 가격은 본문에 직접 쓰지 않음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:5px 0 4px"></textarea>
-          <div style="margin:16px 0 4px;padding-top:12px;border-top:1px solid var(--line)">
-            <b class="small">캐릭터 시트 (여러 개 가능)</b>
-            <p class="muted small" style="margin:4px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. 각각 레퍼런스 이미지를 만들어 두면, 락인 시 이 채널 이미지에 최대 5장까지 <code>--ref</code> 앵커로 쓰입니다(같은 얼굴·같은 제품 재현). 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
+
+          <div style="padding-top:12px;border-top:1px solid var(--line)">
+            <b class="small" style="color:var(--accent-hover)">② 로고</b>
+            <p class="muted small" style="margin:3px 0 8px">브랜드 로고 자산. 색·스타일 근거로만 반영하고 <b>이미지 안엔 렌더하지 않습니다</b>(앱이 따로 얹음).</p>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+              <div id="sheet-logo-box" style="width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center"></div>
+              <div style="flex:1;min-width:0;display:flex;gap:6px;flex-wrap:wrap">
+                <button id="sheet-logo-up" type="button" class="small">로고 파일 업로드</button>
+                <button id="sheet-logo-clear" type="button" class="small">제거</button>
+              </div>
+            </div>
+            <textarea id="sheet-logo-note" rows="2" placeholder="로고 사용 규칙(선택) — 예) 로고 컬러 #8C6B4F 갈색을 팔레트 근거로. 여백 확보. 이미지 내 워드마크 금지." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:var(--text);font-size:12.5px;line-height:1.55;resize:vertical;margin-bottom:16px"></textarea>
+          </div>
+
+          <div style="padding-top:12px;border-top:1px solid var(--line)">
+            <b class="small" style="color:var(--accent-hover)">③ 캐릭터 시트 (여러 개 가능)</b>
+            <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. 각각 레퍼런스 이미지를 만들어 두면, 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰입니다(같은 얼굴·같은 제품 재현). 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
             <div id="sheet-chars"></div>
             <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
           </div>
-          <div class="btn-grid" style="margin-top:14px">
+
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
+            <b class="small" style="color:var(--accent-hover)">④ 가이드 시트</b>
+            <p class="muted small" style="margin:3px 0 5px">콘텐츠·편집 규칙 — 카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약, 전략별 세부. 카피·이미지 모두에 적용.</p>
+            <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그 끝에 3~5개. '최고/1위' 과장 금지." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:0"></textarea>
+          </div>
+
+          <div class="btn-grid" style="margin-top:16px">
             <button id="sheet-ai" type="button">AI 초안 + 마스터 이미지</button>
             <button id="sheet-save" type="button">저장</button>
             <button id="sheet-lock" type="button">락 걸기</button>
@@ -2673,6 +2694,7 @@ async function openSettings(section) {
       const chSel = $('#sheet-ch');
       const mEl = $('#sheet-master');
       const gEl = $('#sheet-guidelines');
+      const logoNoteEl = $('#sheet-logo-note');
       const charsBox = $('#sheet-chars');
       const badge = $('#sheet-lock-badge');
       const lockBtn = $('#sheet-lock');
@@ -2680,7 +2702,12 @@ async function openSettings(section) {
       const setMasterRef = (rel) => {
         const box = $('#sheet-ref-master-box');
         if (!box) return;
-        box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">` : '<span class="muted" style="font-size:10px">마스터<br>레퍼런스</span>';
+        box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">` : '<span class="muted" style="font-size:10px">브랜드<br>레퍼런스</span>';
+      };
+      const setLogoBox = (rel) => {
+        const box = $('#sheet-logo-box');
+        if (!box) return;
+        box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain" alt="로고">` : '<span class="muted" style="font-size:10px">로고<br>없음</span>';
       };
       let curLocked = false;
       let charState = []; // [{name, text, ref}]
@@ -2724,6 +2751,8 @@ async function openSettings(section) {
         if (seq !== settingsSeq) return;
         mEl.value = (s && s.master) || '';
         gEl.value = (s && s.guidelines) || '';
+        if (logoNoteEl) logoNoteEl.value = (s && s.logoNote) || '';
+        setLogoBox(s && s.logoRef);
         charState = ((s && s.characters) || []).map((c) => ({ name: c.name || '캐릭터', text: c.text || '', ref: c.ref || '' }));
         renderChars();
         setMasterRef(s && s.masterRef);
@@ -2733,10 +2762,22 @@ async function openSettings(section) {
         lockBtn.textContent = curLocked ? '락 해제' : '락 걸기';
         setStatus('');
       };
-      const saveAll = (ch) => window.api.sheet.save(dir, ch, { master: mEl.value, guidelines: gEl.value, characters: charState });
+      const saveAll = (ch) => window.api.sheet.save(dir, ch, { master: mEl.value, guidelines: gEl.value, characters: charState, logoNote: logoNoteEl ? logoNoteEl.value : undefined });
       await refreshList();
       if (seq === settingsSeq && chSel && chSel.value) await loadCh(chSel.value);
       if (chSel) chSel.onchange = () => loadCh(chSel.value);
+      $('#sheet-logo-up').onclick = async () => {
+        const ch = chSel.value; if (!ch) return;
+        syncChars(); await saveAll(ch); // 로고 노트 등 현재 편집분 보존
+        const r = await window.api.sheet.setLogo(dir, ch);
+        if (r && r.ok && r.rel) { setLogoBox(r.rel); setStatus('로고 업로드됨'); await refreshList(); }
+        else if (r && !r.canceled) setStatus((r && r.error) || '로고 업로드 실패');
+      };
+      $('#sheet-logo-clear').onclick = async () => {
+        const ch = chSel.value; if (!ch) return;
+        const r = await window.api.sheet.clearLogo(dir, ch);
+        if (r && r.ok) { setLogoBox(''); setStatus('로고 제거됨'); await refreshList(); }
+      };
       $('#sheet-char-add').onclick = () => {
         syncChars();
         if (charState.length >= 5) { setStatus('캐릭터는 최대 5개까지 (ima2 레퍼런스 상한)'); return; }
@@ -2754,7 +2795,7 @@ async function openSettings(section) {
         const ch = chSel.value; if (!ch) return;
         syncChars();
         if (!curLocked) {
-          const has = mEl.value.trim() || gEl.value.trim() || charState.some((c) => c.text.trim() || c.ref);
+          const has = mEl.value.trim() || gEl.value.trim() || (logoNoteEl && logoNoteEl.value.trim()) || charState.some((c) => c.text.trim() || c.ref);
           if (!has) { setStatus('시트 내용을 먼저 입력하세요'); return; }
           await saveAll(ch);
         }

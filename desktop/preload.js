@@ -107,6 +107,8 @@ contextBridge.exposeInMainWorld('api', {
     lock: (dir, channel, locked) => ipcRenderer.invoke('sheet:lock', dir, channel, locked),
     generate: (dir, channel) => ipcRenderer.invoke('sheet:generate', dir, channel),
     genRef: (dir, channel, which, index) => ipcRenderer.invoke('sheet:genRef', dir, channel, which, index),
+    setLogo: (dir, channel) => ipcRenderer.invoke('sheet:setLogo', dir, channel),
+    clearLogo: (dir, channel) => ipcRenderer.invoke('sheet:clearLogo', dir, channel),
   },
   prompt: {
     compile: (dir, job) => ipcRenderer.invoke('prompt:compile', dir, job),

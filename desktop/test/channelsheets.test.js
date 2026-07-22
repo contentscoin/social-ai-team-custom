@@ -95,7 +95,7 @@ test('compileDirective — 내용 있으면 락 없이도 스타일 가이드로
   channelsheets.setLock(dir, 'instagram', true);
   const out = channelsheets.compileDirective(dir, 'instagram');
   assert.match(out, /채널 시트 락인/);
-  assert.match(out, /마스터 시트/);
+  assert.match(out, /브랜드 시트/);
   assert.match(out, /캐릭터 시트/);
   assert.match(out, /우선/); // 플랫폼 방향보다 우선한다는 지시
 });
@@ -194,7 +194,7 @@ test('guidelines(지침) — 저장·되읽기, compileDirective·draftPrompt·p
   // 락인하면 이미지 compileDirective에 지침 블록 포함
   channelsheets.setLock(dir, 'instagram', true);
   const out = channelsheets.compileDirective(dir, 'instagram');
-  assert.match(out, /채널 지침 — 준수 규칙/);
+  assert.match(out, /가이드 시트 — 준수 규칙/);
   assert.match(out, /해시태그 3~5개/);
   // draftPrompt는 guidelines 필드를 요구, parseDraft는 파싱
   assert.match(channelsheets.draftPrompt({}, 'instagram', '인스타그램', ''), /"guidelines"/);
@@ -202,6 +202,29 @@ test('guidelines(지침) — 저장·되읽기, compileDirective·draftPrompt·p
   assert.deepEqual(d, { master: 'M', character: 'C', guidelines: 'G' });
   // guidelines만 있어도 parseDraft 성공(빈 시트 아님)
   assert.deepEqual(channelsheets.parseDraft('{"guidelines":"G"}'), { master: '', character: '', guidelines: 'G' });
+});
+
+test('로고 — logoRef/logoNote 저장, compileDirective에 로고 노트 주입, 사진 --ref로는 미사용', () => {
+  const dir = tmp();
+  const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+  fs.mkdirSync(refsDir, { recursive: true });
+  fs.writeFileSync(path.join(refsDir, 'chlogo-instagram.png'), 'x');
+  channelsheets.save(dir, 'instagram', {
+    master: '브랜드 룩',
+    logoRef: 'context/channel-sheets/refs/chlogo-instagram.png',
+    logoNote: '로고 갈색 #8C6B4F를 팔레트 근거로. 이미지 내 워드마크 금지.',
+  });
+  const s = channelsheets.get(dir, 'instagram');
+  assert.equal(s.logoRef, 'context/channel-sheets/refs/chlogo-instagram.png');
+  assert.match(s.logoNote, /워드마크 금지/);
+  channelsheets.setLock(dir, 'instagram', true);
+  const out = channelsheets.compileDirective(dir, 'instagram');
+  assert.match(out, /로고 — 색·스타일 근거로만/); // 로고 노트 주입
+  assert.match(out, /#8C6B4F/);
+  // 로고는 사진 --ref 앵커에 포함되지 않는다(로고가 이미지에 렌더되는 것 방지)
+  assert.equal(channelsheets.refImages(dir, 'instagram').length, 0);
+  // list에 hasLogo 노출
+  assert.equal(channelsheets.list(dir).find((x) => x.channel === 'instagram').hasLogo, true);
 });
 
 test('refImages — 락인된 채널의 존재하는 레퍼런스만 abs로, 경로 탈출 차단, 락 안 되면 빈 배열', () => {
