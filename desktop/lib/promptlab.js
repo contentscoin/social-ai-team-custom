@@ -55,11 +55,45 @@ function platformDirective(channel, kind) {
     : '';
 }
 
-/** 사진형 모델 공통 — 해상도·사실감 앵커 (프롬프트 꼬리에 합침) */
+/** 사진형 모델 공통 — 디테일·사실감 앵커 (프롬프트 꼬리에 합침). 일반어("ultra detailed") 대신
+ *  구체적 질감·초점·빛 언어로 실제 디테일을 끌어낸다. */
 const QUALITY_TAIL =
-  'ultra detailed, sharp focus, natural materials and textures, professional color grading, ' +
-  'high dynamic range without clipping, coherent lighting, photorealistic finish, ' +
-  'magazine-quality campaign still';
+  'crisp fine detail with true-to-life material textures, one hero element in sharp focus with ' +
+  'gentle depth-of-field falloff, natural light shaping highlights and soft shadows, faithful color ' +
+  'rendition, clean noise-free finish, photorealistic campaign still';
+
+// ---- 컷 변주(단조로움 방지) ---------------------------------------------------------
+// 포스트마다 다른 구도·앵글·거리를 결정론적으로 배정해, 같은 채널의 컷들이 정면·중앙·같은 배경으로
+// 수렴하는 문제를 막는다. 주체·팔레트·브랜드 톤은 유지하고 '어떻게 보여주는가'만 바꾼다.
+const SHOT_RECIPES = [
+  { key: 'establishing', en: 'wide establishing shot with real environmental context, the subject placed within a layered scene, deep background' },
+  { key: 'macro', en: 'tight macro close-up on the key detail, extreme shallow depth of field, texture forward' },
+  { key: 'overhead', en: 'top-down overhead flat-lay, clean geometric arrangement, even orthographic framing' },
+  { key: 'candid', en: 'candid in-hands or over-the-shoulder angle with a sense of motion, subject off-center' },
+  { key: 'lowhero', en: 'low-angle hero shot looking slightly up, bold aspirational presence, strong foreground' },
+  { key: 'negative', en: 'minimalist composition with generous negative space, subject on a rule-of-thirds line, calm and airy' },
+  { key: 'diagonal', en: 'dynamic diagonal composition with leading lines and energetic asymmetry' },
+  { key: 'story', en: 'medium shot pairing the subject with one supporting prop that tells a small human story' },
+];
+function hashSeed(s) { let h = 0; const str = String(s || ''); for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return h; }
+function shotRecipe(seed) { return SHOT_RECIPES[hashSeed(seed) % SHOT_RECIPES.length]; }
+// 카루셀 i번째 슬라이드 프레이밍 — 포스트 시드로 시작점을 흩뿌려 시리즈끼리도 프레이밍이 겹치지 않게.
+function shotFraming(i, seed) { return SHOT_RECIPES[(hashSeed(seed) + (Number(i) || 0)) % SHOT_RECIPES.length]; }
+
+// 컴파일 지시문에 넣을 컷 변주 블록(영상 제외).
+function varietyDirective(job) {
+  if (job.kind === 'video') return '';
+  const r = shotRecipe(job.varietySeed || `${job.channel || ''}-${job.topic || ''}`);
+  return `\n[컷 변주 — 단조로움 방지 · 구도 최우선 축]\n`
+    + `이 컷의 구도·앵글·거리는 다음을 기본 축으로 장면에 맞게 적용하라: ${r.en}.\n`
+    + `같은 채널의 다른 컷들과 프레이밍·시점·거리·시간대·배경이 뚜렷이 달라야 한다 — 정면·아이레벨·중앙배치·같은 배경의 반복을 피하라. 주체·팔레트·브랜드 톤은 유지하되 '어떻게 보여주는가'를 매 컷 바꿔라.\n\n`;
+}
+
+// 디테일 레이어 — 구체 표면질감·깊이·히어로 초점으로 정밀도를 끌어올린다(영상 제외).
+const DETAIL_BLOCK =
+  `\n[디테일 레이어 — 사실감·정밀도]\n`
+  + `주체에 어울리는 구체적 표면 질감을 최소 2가지 명시하라(예: 유리의 결로·물방울, 원단의 짜임, 나무 결, 빵의 크럼 구조, 브러시드 메탈 그레인, 피부의 모공·솜털). `
+  + `전경·중경·배경의 깊이 단서를 넣고 초점이 맞는 히어로 디테일 1곳을 지정하라. 빛이 재질에 닿아 만드는 하이라이트·미세 그림자·반투명감을 서술해 촉각적 사실감을 높여라.\n\n`;
 
 const DEFAULT_NEGATIVE =
   'blurry, soft focus, low resolution, jpeg artifacts, noise, overexposed, underexposed, ' +
@@ -263,18 +297,23 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
       + `단, 이 앱의 사진형 이미지 모델용이므로: 프롬프트는 영어, 이미지 내 텍스트/로고 렌더 금지(TEXT RULE — 텍스트는 앱이 따로 얹는다), negative는 아래 JSON의 negative 필드로 분리한다. SD 퀄리티 꼬리(sharp focus 등)는 붙이지 말고 킷 문법의 재질·조명·색으로 퀄리티를 낸다.\n\n`
     : '';
   const platformBlock = platformDirective(job.channel, job.kind);
-  // 채널 시트 락인 — 락 걸린 채널이면 마스터/캐릭터 시트를 최우선 일관성 축으로 주입(플랫폼 방향보다 우선).
+  // 채널 시트 — 마스터/캐릭터/지침 텍스트를 주입(락 걸리면 최우선+레퍼런스 앵커, 아니면 스타일 가이드).
   const sheetBlock = job.kind !== 'video' ? channelsheets.compileDirective(dir, job.channel) : '';
+  const varietyBlock = varietyDirective(job); // 컷 변주(단조 방지)
+  const detailBlock = job.kind !== 'video' ? DETAIL_BLOCK : ''; // 디테일 레이어
   const instr =
     `너는 시니어 비주얼 프롬프트 엔지니어다. 아래 재료로 ${target}에 넣을 **고퀄리티** 최종 생성 프롬프트를 만들어라.\n` +
     kitDirective +
     sheetBlock +
     platformBlock +
+    varietyBlock +
+    detailBlock +
     `[규칙]\n` +
     `- 기획 언어(목표/필러/앵글/engagement)를 그대로 옮기지 말고 카메라가 찍을 수 있는 시각 언어로 번역하라.\n` +
+    `- 채널 스타일 시트·플랫폼 아트 디렉션은 스타일의 하드 제약이다 — 팔레트·조명·무드·주체를 그대로 따르고, 운영자 브리프·VD와 스타일이 충돌하면 시트가 우선한다.\n` +
     `- 프롬프트는 영어 (브랜드·제품 고유명사는 원문 유지).\n` +
     `- 이미지 프롬프트는 반드시 이 6요소를 한 문단(또는 콤마 연결)으로 포함:\n` +
-    `  1) SUBJECT 구체 사물·수량·재질·상태  2) SETTING/장소·시간대  3) COMPOSITION 구도\n` +
+    `  1) SUBJECT 구체 사물·수량·재질·상태  2) SETTING/장소·시간대  3) COMPOSITION 구도(위 컷 변주 축 반영)\n` +
     `  4) LIGHTING 조명  5) STYLE+렌즈감  6) COLOR(브랜드 팔레트 색 이름화)\n` +
     (kitOn
       ? `- 프롬프트 본문은 전부 긍정형 — "no text/no logo" 같은 부정문을 본문에 넣지 말라. 텍스트·로고·워터마크 회피는 JSON의 negative 필드에만 넣는다.\n`
@@ -399,5 +438,9 @@ module.exports = {
   QUALITY_TAIL,
   DEFAULT_NEGATIVE,
   PLATFORM_DIRECTION,
+  SHOT_RECIPES,
+  shotRecipe,
+  shotFraming,
   _platformDirective: platformDirective,
+  _varietyDirective: varietyDirective,
 };

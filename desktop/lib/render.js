@@ -11,7 +11,7 @@ const { runCmd, isWin } = require('./proc');
 const secrets = require('./secrets');
 const config = require('./config');
 const { svgToPng, extractSvg, extractSvgAll } = require('./svg2png');
-const { finalizeImagePrompt } = require('./promptlab');
+const { finalizeImagePrompt, shotFraming } = require('./promptlab');
 const engine = require('./engine');
 
 const SIZES = { square: [1080, 1080], portrait: [1080, 1350], story: [1080, 1920], landscape: [1200, 675] };
@@ -567,9 +567,11 @@ function availability(env) {
 }
 
 // job: {kind:'image'|'video', provider, base, prompt, size, duration?, refAbs?}
-// 캐러셀 슬라이드 지시 — 한 세트로 응집되되 슬라이드마다 앵글·크롭을 달리한다
-function slideDirective(i, n) {
-  return `\n\n(Carousel slide ${i} of ${n}: keep the SAME subject, brand palette, lighting, camera character and material finish as one cohesive premium series, but vary the camera angle / crop / composition so the slides read as a set — not identical duplicates. Maintain sharp focus and photoreal texture. No text or logos in the image.)`;
+// 캐러셀 슬라이드 지시 — 한 세트로 응집되되 슬라이드마다 프레이밍을 뚜렷이 달리한다(단조 방지).
+// seed(부모 base)로 슬라이드별 프레이밍을 회전시켜, 같은 정면·같은 거리의 반복을 막는다.
+function slideDirective(i, n, seed) {
+  const f = shotFraming(i, seed);
+  return `\n\n(Carousel slide ${i} of ${n}: keep the SAME subject, brand palette, lighting character and material finish as one cohesive premium series, but make THIS slide's framing distinct — ${f.en}. Vary angle, crop, distance and background from the other slides so they read as a set, never near-duplicates. Keep one hero detail in sharp focus. No text or logos in the image.)`;
 }
 // 단일 프로바이더 1회 시도 — 캐스케이드는 generate()가 담당
 async function generateOnce(dir, job, onLine) {
@@ -593,7 +595,7 @@ async function generateOnce(dir, job, onLine) {
       if (job.stopped && job.stopped()) break;
       if (hasSlide(i)) { const r = existRel(i); if (r) files.push(r); continue; } // 이미 있음 — top-up 스킵
       onLine && onLine(`[render] ${i}/${count}장 생성 중…`);
-      const slideJob = { ...job, count: 1, base: `${job.base}_${i}`, prompt: job.prompt + slideDirective(i, count) };
+      const slideJob = { ...job, count: 1, base: `${job.base}_${i}`, prompt: job.prompt + slideDirective(i, count, job.base) };
       try {
         const r = await fn(dir, slideJob, onLine);
         if (r.ok) { files.push(...(r.files || [r.rel])); made++; }
