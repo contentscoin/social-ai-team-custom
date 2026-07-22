@@ -2505,7 +2505,7 @@ async function openSettings(section) {
             <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
           </div>
           <div class="btn-grid" style="margin-top:14px">
-            <button id="sheet-ai" type="button">AI 초안 생성</button>
+            <button id="sheet-ai" type="button">AI 초안 + 마스터 이미지</button>
             <button id="sheet-save" type="button">저장</button>
             <button id="sheet-lock" type="button">락 걸기</button>
           </div>
@@ -2773,7 +2773,18 @@ async function openSettings(section) {
             if (r.draft.master) mEl.value = r.draft.master;
             if (r.draft.guidelines) gEl.value = r.draft.guidelines;
             if (r.draft.character) { syncChars(); if (!charState.length) charState.push({ name: '캐릭터 1', text: '', ref: '' }); charState[0] = { ...charState[0], text: r.draft.character }; renderChars(); }
-            setStatus('초안 생성됨 — 검토·수정 후 [저장]을 누르세요 (캐릭터는 추가로 더 만들 수 있습니다)');
+            // 이어서 마스터 스타일 레퍼런스 이미지까지 자동 생성(저장 포함). 텍스트 초안은 이미 채워져 있어
+            // 이미지 생성이 실패해도 초안은 남는다.
+            if (mEl.value.trim()) {
+              setStatus('텍스트 초안 완료 — 이어서 마스터 레퍼런스 이미지를 생성합니다… (이미지 엔진 · 최대 몇 분)');
+              const okRef = await genMasterRef();
+              if (seq !== settingsSeq) return;
+              setStatus(okRef
+                ? '초안 + 마스터 레퍼런스 이미지 완료 — 검토·수정 후 [저장]/[락]. 캐릭터 레퍼런스는 각 카드에서 생성하세요.'
+                : '텍스트 초안은 완료됐습니다 — 마스터 레퍼런스 이미지 생성만 실패(다시 시도 가능). 초안은 유지됩니다.');
+            } else {
+              setStatus('텍스트 초안 완료 — 검토·수정 후 [저장]을 누르세요.');
+            }
           } else setStatus((r && r.error) || '초안 생성 실패');
         } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
@@ -2781,17 +2792,19 @@ async function openSettings(section) {
       // 레퍼런스 이미지 생성 — 저장된 시트 텍스트로 앵커 이미지를 만들어 저장(락인 시 --ref로 적용).
       // 함수 선언(호이스팅) — renderChars가 genCharRef를 참조하므로 TDZ를 피한다.
       async function genMasterRef() {
-        const ch = chSel.value; if (!ch) return;
+        const ch = chSel.value; if (!ch) return false;
         syncChars(); await saveAll(ch);
         const btn = $('#sheet-ref-master'); const old = btn.textContent;
         btn.disabled = true; btn.textContent = '생성 중…'; setStatus('마스터 스타일 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)');
+        let okv = false;
         try {
           const r = await window.api.sheet.genRef(dir, ch, 'master');
-          if (seq !== settingsSeq) return;
-          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('마스터 레퍼런스 생성됨'); await refreshList(); }
+          if (seq !== settingsSeq) return false;
+          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('마스터 레퍼런스 생성됨'); await refreshList(); okv = true; }
           else setStatus((r && r.error) || '레퍼런스 생성 실패');
         } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
         finally { btn.disabled = false; btn.textContent = old; }
+        return okv;
       }
       async function genCharRef(i) {
         const ch = chSel.value; if (!ch) return;
