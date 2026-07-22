@@ -1182,7 +1182,11 @@ function showGateInfo(el, n, i) {
   // 실행 버튼은 도달 가능한 노드까지만 — 앞 게이트의 도장을 우회해 뒷 단계를 돌리지 못하게
   const reachable = typeof i === 'number' ? i <= S.gates.current : true;
   popover(el, `<b>${n.label}</b><p class="muted" style="margin-top:4px">${n.done ? '파일 증거 확인됨' : '아직 산출물 없음'}${appr ? `<br>승인: ${new Date(appr.approvedAt).toLocaleString('ko-KR')}` : ''}</p>` + (n.stage && !S.running && reachable ? `<button id="pop-run" style="margin-top:8px">이 단계 실행</button>` : (n.stage && !reachable ? '<p class="muted small" style="margin-top:6px">앞 게이트 승인 후 실행할 수 있습니다</p>' : '')));
-  const b = $('#pop-run'); if (b) b.onclick = () => { hidePopover(); runStage(n.stage); };
+  const b = $('#pop-run'); if (b) b.onclick = () => {
+    // 비주얼 생성은 스타일 선택 팝오버를 거치고, 나머지는 바로 실행
+    if (n.stage === 'visuals-generate') { confirmRun(el, n.stage, n.label); }
+    else { hidePopover(); runStage(n.stage); }
+  };
 }
 function renderCTA() {
   const cta = $('#gate-cta'); const label = $('span', cta); const icon = $('use', cta);
@@ -1226,11 +1230,28 @@ function renderCTA() {
   else if (n.stage) { label.textContent = `${n.label} 실행`; cta.onclick = (e) => confirmRun(e.currentTarget, n.stage, n.label); }
   else { cta.disabled = true; label.textContent = n.label; }
 }
-function confirmRun(anchor, stage, name) {
+async function confirmRun(anchor, stage, name) {
+  // 비주얼 생성(전체) 실행 시 이 자리에서 이미지 스타일을 고르게 — 고르면 기본값으로 저장되어
+  // 이 일괄 실행(및 오토파일럿)에 적용된다. (execStage가 config.getImageStyle()을 읽음)
+  let styleRow = '';
+  if (stage === 'visuals-generate') {
+    let styles = [], cur = '';
+    try { styles = await window.api.render.styles() || []; cur = await window.api.engine.getImageStyle() || ''; } catch { /* 목록 없음 */ }
+    const opts = ['<option value="">스타일 자동 (미지정)</option>']
+      .concat((styles || []).map((s) => `<option value="${esc(s.key)}" ${s.key === cur ? 'selected' : ''}>${esc(s.label)}</option>`)).join('');
+    styleRow = `<label class="small muted" style="display:block;margin:8px 0 3px">이미지 스타일 (전체 생성에 적용)</label>
+      <select id="pop-style" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px">${opts}</select>`;
+  }
   popover(anchor, `<b>${name} 실행</b><p class="muted" style="margin:6px 0">팀이 클라이언트 폴더에서 작업을 시작합니다.</p>
+    ${styleRow}
     <input id="pop-extra" placeholder="추가 지시 (선택)" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px">
     <button id="pop-go" style="margin-top:8px;width:100%">▶ 실행</button>`);
-  $('#pop-go').onclick = () => { const extra = $('#pop-extra').value.trim(); hidePopover(); runStage(stage, extra); };
+  const styleSel = $('#pop-style');
+  if (styleSel) styleSel.onchange = () => window.api.engine.setImageStyle(styleSel.value).catch(() => {});
+  $('#pop-go').onclick = () => {
+    if (styleSel) window.api.engine.setImageStyle(styleSel.value).catch(() => {}); // 실행 직전 저장 보장
+    const extra = $('#pop-extra').value.trim(); hidePopover(); runStage(stage, extra);
+  };
 }
 async function runStage(stage, extra) {
   if (S.running) { toast('다른 단계가 실행 중입니다'); return; }
