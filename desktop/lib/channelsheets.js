@@ -66,28 +66,85 @@ function list(dir) {
     });
 }
 
-// AI 초안 지시문 — 브랜드 컨텍스트 + 플랫폼 방향으로 마스터/캐릭터 시트 초안을 만든다(순수 함수).
-// brand: promptlab.brandContext(dir) 결과. platformDir: PLATFORM_DIRECTION[channel] (없으면 '').
+// 채널별 시트 방향 — 각 채널의 비주얼 전략에 맞게 마스터/캐릭터 시트가 무엇을 담아야 하는지.
+// AI 초안이 채널마다 뚜렷이 다른 시트를 쓰도록 이 방향을 주입한다.
+const CHANNEL_SHEET_GUIDE = {
+  instagram: {
+    focus: '부러움을 유발하는 화보형 피드 — 연출과 사진 자체가 후킹.',
+    master: '동경을 자아내는 에디토리얼 화보 아이덴티티: 절제된 통일 팔레트(HEX 3~5), 부드러운 방향광·골든아워 조명 무드, 매트 필름그레인 마감, 단일 주체+넉넉한 여백의 타이트 크롭. "남들이 부러워할 순간"이 매 장면에 담기게.',
+    character: '피드의 얼굴이 되는 동경형 인물/모델 또는 제품-히어로. 일관된 스타일링·복장·분위기, natural skin texture·visible pores. 매 컷 같은 주체로 등장해 브랜드의 이상적 라이프스타일을 체현.',
+  },
+  threads: {
+    focus: '텍스트·화두 중심 — 스크롤을 멈추는 단독컷 + 댓글형 이미지 체인.',
+    master: '즉시 읽히는 고대비 단독 프레임 아이덴티티: 강한 그래픽 명료성, 체인 전반에 고정되는 DNA 팔레트/악센트(HEX), 과장 없는 솔직·호기심 톤. 시리즈가 한 세트로 읽히되 매 컷 프레이밍은 다르게.',
+    character: '반복되는 화려한 얼굴이 아니라 — 시리즈에 계속 등장하는 손·오브젝트·소품·공간을 고정한다. 인물이 나오면 손/제스처 위주로 부수적. "반복 오브젝트/손/장소"를 정의(모델보다 이쪽).',
+  },
+  naver: {
+    focus: '정보 전달·디테일·신뢰 — 소제목을 뒷받침하는 깔끔한 정보컷.',
+    master: '밝고 균일한 조명의 정보성 다큐멘터리 아이덴티티: 사실 그대로의 정직한 색, 정돈된 중립 스테이징, 보조적·비주장적. 각 이미지는 본문 한 구간을 정확히 설명하도록.',
+    character: '페르소나보다 "제품·대상 자체"를 정보용으로 일관되게 제시(각도·배경 규약 고정). 인물이 필요하면 신뢰가는 안내자형, 매 글 같은 톤.',
+  },
+  naver_clip: {
+    focus: '세로 숏폼 영상 — 다이나믹·모션·썸네일 가독.',
+    master: '세로 숏폼 모션 친화 아이덴티티: 모션에 맞는 프레이밍, 썸네일/커버에서 튀는 브랜드 악센트색, 첫 프레임 후킹, 안전 여백(자막 영역).',
+    character: '클립 시리즈를 이끄는 일관된 진행자/등장 주체 — 활기차고 친근, 매 클립 같은 인물/톤.',
+  },
+  kakao_channel: {
+    focus: '친근한 소식·프로모션 — 메시지 카드로 작게 보임.',
+    master: '친근하고 따뜻한 프로모션 아이덴티티: 초대하는 따뜻한 팔레트, 명확한 초점(오퍼/주체), 작은 카드에서도 읽히는 단순·깔끔 구성.',
+    character: '따뜻하고 친숙한 브랜드 페르소나/마스코트 또는 대표 제품 — 일관된 다정한 제시.',
+  },
+  facebook: {
+    focus: '공감·커뮤니티·실제 순간.',
+    master: '따뜻하고 다가가기 쉬운 실제 순간 아이덴티티: 부드러운 자연광, 일상적 진정성, 정직한 색·질감.',
+    character: '공감가는 일상형 인물/가족 — 매 컷 자연스러운 동일 인물, natural skin texture.',
+  },
+  linkedin: {
+    focus: '신뢰·전문성(과장 없이).',
+    master: '차분하고 믿음직한 에디토리얼 아이덴티티: 균일한 소프트 조명, 절제된 쿨-뉴트럴 팔레트, 정돈된 프레이밍.',
+    character: '신뢰가는 대변인/전문가형 인물 — 일관된 차림·톤, natural skin texture.',
+  },
+  x: {
+    focus: '썸네일에서 즉시 읽히는 강한 한 컷.',
+    master: '작은 크기에서도 즉시 읽히는 고대비 아이덴티티: 강한 그래픽 명료성, 뚜렷한 형태 분리, 일관된 악센트색.',
+    character: '강하고 아이코닉한 반복 주체/마크 — 즉각 인지되는 일관 제시.',
+  },
+  _default: {
+    focus: '이 채널 콘텐츠 목적에 맞는 일관된 비주얼 아이덴티티.',
+    master: '통일된 팔레트(HEX 3~5)·조명 무드·구도·재질 언어를 정의한 브랜드 비주얼 아이덴티티.',
+    character: '반복 등장하는 주체(인물/제품/오브젝트)를 일관되게 고정. 사람이면 natural skin texture.',
+  },
+};
+
+// AI 초안 지시문 — 채널별 시트 방향 + 브랜드 정체성(제품·서비스·로고·회사명) + 무드로 초안 작성(순수 함수).
+// brand: promptlab.brandContext(dir) 결과(identity 포함). platformDir: PLATFORM_DIRECTION[channel] (없으면 '').
 function draftPrompt(brand = {}, channel = '', channelName = '', platformDir = '') {
   const b = brand || {};
   const palette = (b.palette && b.palette.length) ? b.palette.join(' ') : '(팔레트 미지정 — 무드에서 추론)';
+  const g = CHANNEL_SHEET_GUIDE[channel] || CHANNEL_SHEET_GUIDE._default;
   return (
-    `너는 SNS 채널의 비주얼 아트 디렉터다. 아래 브랜드 자료와 플랫폼 방향을 종합해, 이 채널의 모든 이미지가 ` +
-    `프레임 간 일관되게 따를 "마스터 시트"와 "캐릭터 시트"를 작성하라.\n\n` +
+    `너는 SNS 채널의 비주얼 아트 디렉터다. 이 채널의 특성에 맞는 "마스터 시트"와 "캐릭터 시트", "지침"을 작성하라. ` +
+    `채널마다 결과가 뚜렷이 달라야 한다.\n\n` +
     `[채널] ${channelName || channel} (${channel})\n` +
-    (platformDir ? `[플랫폼 방향]\n${platformDir}\n\n` : '') +
-    `[브랜드 무드]\n${b.summary || '-'}\n` +
+    `[이 채널의 전략] ${g.focus}\n` +
+    (platformDir ? `[플랫폼 방향(참고)] ${platformDir}\n` : '') +
+    `\n[이 채널 마스터 시트 방향]\n${g.master}\n` +
+    `\n[이 채널 캐릭터 시트 방향]\n${g.character}\n` +
+    (b.identity ? `\n[브랜드 정체성 — 마스터 시트에 반영]\n${b.identity}\n` : '') +
+    `\n[브랜드 무드]\n${b.summary || '-'}\n` +
     (b.photography ? `[브랜드 포토 스타일]\n${b.photography}\n` : '') +
     (b.dos ? `[브랜드 DO]\n${b.dos}\n` : '') +
     (b.donts ? `[브랜드 DON'T]\n${b.donts}\n` : '') +
     `브랜드 팔레트: ${palette}\n\n` +
     `[작성 규칙]\n` +
+    `- 위 "이 채널 마스터/캐릭터 시트 방향"을 이 채널에 맞게 구체화하되 브랜드 정체성·무드·팔레트와 결합하라.\n` +
     `- 마스터 시트: 전체 스타일·무드·팔레트(HEX 3~5색을 색 이름과 함께)·조명 성격·구도 규약·재질 언어를 고정한다. ` +
-    `카메라/조명은 장비명이 아니라 결과로 서술(shallow DoF, warm key + cool rim 등). SD 구식 어휘(masterpiece/8k/best quality) 금지.\n` +
-    `- 캐릭터 시트: 이 채널에 반복 등장하는 주체(모델·마스코트·제품 페르소나)의 외형·복장·연령대·분위기·표정 톤을 고정한다. ` +
-    `등장 주체가 사람이면 natural skin texture, visible pores를 명시. 반복 주체가 없으면 "반복 주체 없음 — 오브젝트/손 중심" 원칙을 적는다.\n` +
-    `- 지침(guidelines): 이 채널 콘텐츠 전반의 규칙 — 카피 톤·어미, 해시태그·이모지 규칙, 금지 표현, 포맷 규약, 이미지 연출 금지사항 등 카피와 이미지 모두에 적용될 채널 운영 지침을 적는다.\n` +
-    `- 한국어로 서술하되 시각 키워드(HEX·렌즈감·재질)는 영어를 섞어도 된다. 이미지 안 텍스트/로고 금지 원칙을 마스터에 포함.\n` +
+    `**브랜드 정체성(회사명·취급 제품/서비스·로고에서 온 색·무드·상징 요소)을 반영**하되, 이미지 안에 로고·회사명·텍스트를 렌더하지는 말라(앱이 따로 얹는다 — 로고는 색/스타일 근거로만 사용). ` +
+    `카메라/조명은 장비명이 아니라 결과로 서술(shallow DoF, warm key + cool rim). SD 구식 어휘(masterpiece/8k/best quality) 금지.\n` +
+    `- 캐릭터 시트: 이 채널의 반복 등장 주체를 위 방향대로 정의(채널에 따라 인물 모델일 수도, 손/오브젝트/제품일 수도 있다). ` +
+    `사람이면 natural skin texture, visible pores 명시. 반복 주체가 없어야 하는 채널이면 "반복 주체 없음 — 오브젝트/손 중심" 원칙과 고정할 오브젝트/공간을 적는다.\n` +
+    `- 지침(guidelines): 이 채널 콘텐츠 전반 규칙 — 카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약, 이미지 연출 금지사항.\n` +
+    `- 한국어로 서술하되 시각 키워드(HEX·렌즈감·재질)는 영어를 섞어도 된다.\n` +
     `- 마스터·캐릭터는 각 250~500자, 지침은 150~400자. 추상어는 구체 사물·제스처로 환원.\n` +
     `- 출력은 JSON 하나만: {"master":"...","character":"...","guidelines":"..."} (코드펜스 금지)`
   );
@@ -169,4 +226,4 @@ function contentGuidelines(dir) {
   return `[채널별 지침 — 락인, 반드시 준수]\n각 채널의 카피·영상은 아래 해당 채널 지침을 최우선으로 따른다.\n${lines.join('\n')}\n\n`;
 }
 
-module.exports = { get, save, setLock, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir };
+module.exports = { get, save, setLock, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir, CHANNEL_SHEET_GUIDE };

@@ -169,19 +169,23 @@ function sectionSlice(md, titles, max = 900) {
 function brandContext(dir) {
   let md = '';
   try { md = fs.readFileSync(path.join(dir, 'context', 'brand-style.md'), 'utf8'); } catch { /* 없음 */ }
-  if (!md) return { palette: [], summary: '', dos: '', donts: '', photography: '' };
+  if (!md) return { palette: [], summary: '', dos: '', donts: '', photography: '', identity: '' };
   const palette = [...new Set([...md.matchAll(/#[0-9a-f]{6}\b/gi)].map((m) => m[0]))].slice(0, 6);
   // 요약: 무드/톤/타깃 관련 줄만 앞쪽에서 추림
   const lines = md.split(/\r?\n/).filter((l) => /무드|톤|mood|tone|타깃|target|personality|퍼스낼리티|스타일|aesthetic|팔레트|color|photography|비주얼/i.test(l)).slice(0, 14);
   const dos = sectionSlice(md, 'DO|Dos|해야\\s*할|권장');
   const donts = sectionSlice(md, "DON'?T|Donts|하지\\s*말|금지|피해야");
   const photography = sectionSlice(md, 'Visual Photography Style|Photography|비주얼|사진\\s*스타일|Visual Style');
+  // 브랜드 정체성 — 회사명·취급 제품/서비스·로고. 마스터 시트에 반영할 사실(이미지엔 텍스트로 굽지 않음).
+  const idSection = sectionSlice(md, 'Brand Identity|브랜드\\s*정체성|회사|기업|소개|About|제품|서비스|Products?|Services?|Company|취급\\s*품목|업종');
+  const idLines = md.split(/\r?\n/).filter((l) => /회사명|상호|브랜드명|제품명|제품\s*[:：]|서비스\s*[:：]|로고|logo|메뉴|판매|취급|업종/i.test(l)).slice(0, 12).join('\n');
   return {
     palette,
     summary: lines.join('\n').slice(0, 1400),
     dos: dos.slice(0, 700),
     donts: donts.slice(0, 700),
     photography: photography.slice(0, 700),
+    identity: (idSection || idLines).slice(0, 800),
   };
 }
 
