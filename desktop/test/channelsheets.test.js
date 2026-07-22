@@ -106,6 +106,25 @@ test('draftPrompt — 브랜드·플랫폼 재료를 넣고 JSON 출력 형식�
   assert.match(p, /"character"/);
 });
 
+test('draftPrompt — 채널별 시트 방향이 다르게 반영되고, 브랜드 정체성(제품·로고)을 마스터에 반영', () => {
+  const ig = channelsheets.draftPrompt({ identity: '회사명: 콩볶는집 · 제품: 스페셜티 원두 · 로고: 갈색 원형' }, 'instagram', '인스타그램', '');
+  const th = channelsheets.draftPrompt({}, 'threads', '스레드', '');
+  const nb = channelsheets.draftPrompt({}, 'naver', '네이버 블로그', '');
+  // 채널마다 시트 방향이 다르다
+  assert.match(ig, /화보|동경/);
+  assert.match(th, /손|오브젝트|고대비/);
+  assert.match(nb, /정보성|다큐멘터리/);
+  // 브랜드 정체성(회사명·제품)이 재료로 들어가고, 로고는 이미지에 렌더하지 않음
+  assert.match(ig, /콩볶는집/);
+  assert.match(ig, /스페셜티 원두/);
+  assert.match(ig, /브랜드 정체성/);
+  assert.match(ig, /렌더하지는 말라/);
+  // 채널 가이드는 모든 등록 채널을 커버
+  for (const ch of ['instagram', 'threads', 'naver', 'naver_clip', 'kakao_channel']) {
+    assert.ok(channelsheets.CHANNEL_SHEET_GUIDE[ch], `가이드 누락: ${ch}`);
+  }
+});
+
 test('parseDraft — 평문 JSON / 코드펜스 감싼 JSON / claude {result} 래핑 모두 파싱', () => {
   // 평문 (guidelines 미지정 시 '')
   let d = channelsheets.parseDraft('{"master":"M","character":"C"}');
