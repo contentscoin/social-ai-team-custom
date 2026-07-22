@@ -98,6 +98,13 @@ contextBridge.exposeInMainWorld('api', {
   post: {
     deleteAssets: (dir, uid, opts) => ipcRenderer.invoke('post:deleteAssets', dir, uid, opts),
   },
+  sheet: {
+    list: (dir) => ipcRenderer.invoke('sheet:list', dir),
+    get: (dir, channel) => ipcRenderer.invoke('sheet:get', dir, channel),
+    save: (dir, channel, data) => ipcRenderer.invoke('sheet:save', dir, channel, data),
+    lock: (dir, channel, locked) => ipcRenderer.invoke('sheet:lock', dir, channel, locked),
+    generate: (dir, channel) => ipcRenderer.invoke('sheet:generate', dir, channel),
+  },
   prompt: {
     compile: (dir, job) => ipcRenderer.invoke('prompt:compile', dir, job),
   },
