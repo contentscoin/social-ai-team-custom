@@ -17,6 +17,28 @@ test('compile — 스타일 프리셋이 프롬프트 앞에 명시된다(svg �
   assert.equal(r.style, 'infographic');
 });
 
+test('platformDirective — 채널별 방향 주입, 영상/미지정은 빈 문자열', () => {
+  const ig = promptlab._platformDirective('instagram', 'image');
+  assert.match(ig, /aspirational editorial/i);
+  assert.match(ig, /최우선 축/);
+  const nb = promptlab._platformDirective('naver', 'image');
+  assert.match(nb, /informative supporting/i);
+  assert.equal(promptlab._platformDirective('instagram', 'video'), ''); // 영상 제외
+  assert.equal(promptlab._platformDirective('unknown', 'image'), '');    // 미지정 채널
+});
+
+test('PLATFORM_DIRECTION — 공냥 철칙(SD어휘·무대지정 배제, 인물 피부질감)', () => {
+  const banned = ['masterpiece', 'best quality', '8k', '4k', 'uhd', 'ultra-detailed', 'highly detailed', 'professional', 'polished', 'magazine-cover'];
+  for (const [ch, d] of Object.entries(promptlab.PLATFORM_DIRECTION)) {
+    const low = d.toLowerCase();
+    for (const bad of banned) assert.equal(low.includes(bad), false, `${ch}에 금지어 "${bad}"`);
+  }
+  // 인물 노출 채널엔 자연 피부 질감(철칙7)
+  for (const ch of ['instagram', 'facebook', 'linkedin', 'x']) {
+    assert.match(promptlab.PLATFORM_DIRECTION[ch], /natural skin texture/i, `${ch} 피부질감 누락`);
+  }
+});
+
 test('compile — photoreal 프리셋도 실제 적용된다(품질꼬리 단어 충돌로 무시되지 않음)', async () => {
   const dir = tmp();
   // 프롬프트에 이미 'photorealistic finish'가 들어가도 실사형 지시어 전체가 붙어야 한다

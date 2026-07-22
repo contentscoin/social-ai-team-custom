@@ -228,3 +228,40 @@ Present the posts and summary table. Offer:
 - `/content-calendar` — Produces the post topics this skill writes Threads posts for
 - `/publisher` — Reads the BLOTATO FLAG field, generates infographics, and schedules posts via Blotato
 - `/social-media-manager` — Orchestrates via Route F (Platform-Specific Content)
+
+## 스레드 체인 & 사진 동반 기획 (플랫폼 고도화 지침)
+
+스레드는 **텍스트가 메인, 사진은 텍스트를 이어가는 두 번째 트랙**이다. 화두·질문으로 반응을 터뜨리는 게 핵심. 기존 BLOTATO FLAG(인포그래픽 핸드오프)는 유지하고 아래를 얹는다.
+
+### 1. 화두 오프너 (반응 유발탄)
+첫 문장은 그 자체로 완결되면서 반론·공감·궁금증을 부른다. 셋 중 하나로 연다:
+- 핫테이크: "다들 X 한다는데, 그게 사실 손해다."
+- 도발 질문: "왜 아무도 X를 말 안 할까?"
+- 역설: "잘 팔리는 건 좋은 게 아니라 __ 한 것이다."
+
+"스레드 시작합니다" 류 예고는 금지(기존 규칙 유지). 오프너는 standalone.
+
+### 2. 댓글 체인(self-reply)으로 페이오프 계단
+오프너 → 셀프 답글로 긴장을 한 단계씩 올린다. 각 답글은 개별 standalone이면서 앞 글을 이어받는다.
+- 질문/CTA는 마지막이 아니라 **2~3번째 답글**(몰입 최고점)에 배치.
+- 산출 문서 표기: `Post n/N (self-reply)`. **번호는 문서 표기 전용 — 실제 게시엔 번호를 넣지 않는다**(스레드엔 번호 관습 없음).
+
+### 3. 이어지는 사진 — 실제 렌더로 가능한 만큼만
+기본 렌더(gpt-image)는 seed·레퍼런스 앵커가 없어 **같은 인물/제품을 그대로 재현하지 못한다.** 그래서 체인 사진은:
+- **DNA 고정 = 배경·팔레트(HEX 3~5색)·조명 성격·무드만** 프레임 간 동일하게. 앵글·거리·디테일만 스윕.
+- **반복되는 얼굴은 지양** — 손·오브젝트·공간 중심으로 이어가면 연속성이 자연스럽다.
+- **동일 인물/제품 연속이 꼭 필요하면**: 1번 컷을 앵커로 생성 → 2·3번은 `social-creative-designer`의 edit/composite 레인(Nano Banana, `input_image_path_1=앵커컷`)으로 앵커를 넘겨 편집 연속성을 확보한다(이 경로만 동일 대상 재현 가능).
+- 각 답글 PHOTO 필드 앞에 공유 DNA 한 줄을 글자 그대로 반복: `DNA: [배경 · #HEX 팔레트 · 조명 성격 · 무드]`
+
+### 4. 사진 + 카피 동시 기획
+체인 포스트는 카피와 사진을 한 단위로 함께 쓴다. 각 답글 아래에:
+
+```
+Post n/N (self-reply):
+[copy]
+n/500 chars
+PHOTO: [이 답글이 이어받는 컷 — VISUAL DIRECTION 규약, 이미지 내 텍스트 금지]
+```
+
+### 5. 스레드 사진 톤 — '부러움'이 아니라 '호기심/진실성'
+IG식 글로시 히어로컷을 스레드에 그대로 쓰지 않는다. 스크롤을 멈추는 단독 강렬컷이되 **raw·honest** 톤(제품 홍보 거부감 방지). 텍스트가 본질인 카드만 BLOTATO 인포그래픽으로 분리하고, 사진 컷 안에는 텍스트를 넣지 않는다(앱이 오버레이).
