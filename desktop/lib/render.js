@@ -179,6 +179,9 @@ async function warmupImageProvider(provider, env, onLine) {
   return { ok: true };
 }
 const IMA2_DOWN = /server unreachable|ima2 serve/i;
+// 생성 대기 초과 — ima2 gen이 잡을 제출(requestId)하고 내부 대기를 하다 초과되면 abort하지만
+// 잡은 서버에서 계속 돈다. 이 신호를 잡아 고아 잡을 취소하고 레퍼런스를 줄여 재시도한다.
+const IMA2_TIMEOUT = /aborted due to timeout|operation was aborted|generation in progress|timed?\s*out|\btimeout\b/i;
 async function genIma2(dir, job, onLine) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sat-ima2-'));
   const prompt = finalizeImagePrompt(job.prompt, job.negative);
@@ -187,12 +190,13 @@ async function genIma2(dir, job, onLine) {
   const refCand = [];
   if (job.refAbs) refCand.push(job.refAbs);
   if (Array.isArray(job.refs)) for (const r of job.refs) if (r) refCand.push(r);
-  const refs = [...new Set(refCand)].filter((p) => { try { return fs.existsSync(p); } catch { return false; } }).slice(0, 5);
+  let refs = [...new Set(refCand)].filter((p) => { try { return fs.existsSync(p); } catch { return false; } }).slice(0, 5);
   onLine && onLine(`[render] ima2 생성 중… (quality=high + negative fused${refs.length ? ` · 레퍼런스 ${refs.length}장` : ''}${serverUrl ? ' · ' + serverUrl : ''})`);
   const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl, refs), onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
+  const hasImg = () => (fs.existsSync(tmp) ? fs.readdirSync(tmp) : []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
   let r = await run();
   // 서버가 죽어 있으면: URL 미지정 시 자동 기동, 지정 시 사용자 서버가 뜰 때까지만 몇 번 재시도.
-  if (!r.ok && IMA2_DOWN.test(r.out)) {
+  if (!r.ok && !hasImg().length && IMA2_DOWN.test(r.out)) {
     if (!serverUrl) await ensureIma2Serve(onLine);
     for (let i = 0; i < 4 && !r.ok && IMA2_DOWN.test(r.out); i++) {
       if (job.stopped && job.stopped()) break;
@@ -200,8 +204,26 @@ async function genIma2(dir, job, onLine) {
       r = await run();
     }
   }
-  const made = (fs.existsSync(tmp) ? fs.readdirSync(tmp) : []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
-  if (!r.ok || !made.length) return err('ima2', r.tail || 'ima2가 이미지를 만들지 못했습니다');
+  // 생성 대기 초과 → 고아 잡(requestId) 취소 + 레퍼런스 축소 후 최대 2회 재시도.
+  if (!r.ok && !hasImg().length && IMA2_TIMEOUT.test(r.out)) {
+    for (let i = 0; i < 2 && !r.ok && !hasImg().length; i++) {
+      if (job.stopped && job.stopped()) break;
+      const id = (String(r.out).match(/req[_a-z0-9]+/i) || [])[0];
+      if (id) { try { await runCmd('ima2', ['cancel', id, ...(serverUrl ? ['--server', serverUrl] : [])], null, { cwd: dir, timeoutMs: 20_000 }); } catch { /* best effort */ } }
+      if (refs.length > 1) { refs = refs.slice(0, 1); onLine && onLine('[render] 대기 초과 — 레퍼런스를 1장으로 줄여 재시도'); }
+      onLine && onLine(`[render] ima2 생성 대기 초과 — 재시도 ${i + 1}/2`);
+      await new Promise((res) => setTimeout(res, 3000));
+      r = await run();
+    }
+  }
+  const made = hasImg();
+  if (!r.ok || !made.length) {
+    const timedOut = IMA2_TIMEOUT.test(r.out || '') || r.timedOut;
+    const msg = timedOut
+      ? 'ima2 생성이 서버 대기 시간을 초과했습니다(timeout) — 서버가 느리거나 레퍼런스가 많을 수 있습니다. `ima2 ps --json`으로 진행 상태를 확인하거나, 다시 시도하거나, 레퍼런스를 줄이세요.'
+      : (r.tail || 'ima2가 이미지를 만들지 못했습니다');
+    return err('ima2', msg);
+  }
   const { abs, rel } = outName(dir, 'creatives', job.base, path.extname(made[0]).slice(1));
   fs.copyFileSync(path.join(tmp, made[0]), abs);
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* tmp */ }
