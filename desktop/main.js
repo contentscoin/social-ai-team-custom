@@ -1104,6 +1104,29 @@ ipcMain.handle('sheet:genRef', async (_e, dir, channel, which, index) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+// 로고 이미지 업로드 — 기존 로고 파일을 골라 시트에 등록(색·스타일 근거·컴포짓용). 사진 --ref로는 쓰지 않는다.
+ipcMain.handle('sheet:setLogo', async (_e, dir, channel) => {
+  try {
+    if (!channelRegistry.REGISTRY[channel] || channel === 'etc') return { ok: false, error: '알 수 없는 채널입니다' };
+    const r = await dialog.showOpenDialog(win, {
+      title: '로고 이미지 선택', properties: ['openFile'],
+      filters: [{ name: '이미지', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+    const src = r.filePaths[0];
+    const ext = (path.extname(src) || '.png').toLowerCase();
+    const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+    fs.mkdirSync(refsDir, { recursive: true });
+    const destAbs = path.join(refsDir, `chlogo-${channel}${ext}`);
+    fs.copyFileSync(src, destAbs);
+    const relFromDir = path.relative(dir, destAbs).replace(/\\/g, '/');
+    channelsheets.save(dir, channel, { logoRef: relFromDir });
+    return { ok: true, channel, rel: relFromDir };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
+ipcMain.handle('sheet:clearLogo', safe((_e, dir, channel) => channelsheets.save(dir, channel, { logoRef: '' })));
 
 // ---- 워크스페이스 백업·복원 -----------------------------------------------------
 ipcMain.handle('bk:create', safe((_e, dir) => backup.createBackup(dir)));
