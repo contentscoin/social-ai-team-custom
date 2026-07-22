@@ -75,6 +75,8 @@ contextBridge.exposeInMainWorld('api', {
     stop: (dir) => ipcRenderer.invoke('auto:stop', dir),
     status: (dir) => ipcRenderer.invoke('auto:status', dir),
     runningDirs: () => ipcRenderer.invoke('auto:runningDirs'),
+    getAutoApprove: () => ipcRenderer.invoke('cfg:getAutoApprove'),
+    setAutoApprove: (on) => ipcRenderer.invoke('cfg:setAutoApprove', on),
   },
   hist: {
     list: (dir) => ipcRenderer.invoke('hist:list', dir),

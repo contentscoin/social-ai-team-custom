@@ -1208,7 +1208,8 @@ function renderCTA() {
   }
   icon.setAttribute('href', '#i-play');
   const n = S.gates.nodes[S.gates.current];
-  const needsStamp = ['calendar', 'copy', 'verify', 'compliance'].includes(n.key);
+  // 승인 게이트 여부는 gates.js가 판정한 n.needsStamp를 신뢰(단일 정본) — 비주얼 브리프 포함.
+  const needsStamp = !!n.needsStamp;
   if (n.key === 'foundation') { label.textContent = '온보딩 인터뷰 시작'; cta.onclick = () => prefillChat('브랜드 온보딩 인터뷰를 시작해줘. 질문을 하나씩 해줘.'); }
   else if (n.done && needsStamp && !n.approved) { cta.classList.add('approve'); icon.setAttribute('href', '#i-stamp'); label.textContent = `${n.label} 검토 → 승인`; cta.onclick = () => openApproveSheet(n); }
   else if (n.key === 'publish') {
@@ -1287,8 +1288,14 @@ $('#gate-auto').onclick = (e) => {
   if (!b || !b.foundation || !b.foundation.brand) { toast('브랜드 스타일이 먼저 필요합니다 — 온보딩을 진행하세요'); return; }
   popover(e.currentTarget, `<b>오토파일럿</b>
     <p class="muted small" style="margin:6px 0;line-height:1.6">캘린더 → 카피 → 릴스 → 비주얼 브리프 → 컴플라이언스까지, 증거가 없는 단계를 자동으로 이어서 실행합니다.
-    <b>승인 도장이 필요한 지점(캘린더·카피·비주얼)에서는 멈추고</b> 알림을 보냅니다. 이미지 생성은 비주얼 브리프 승인 후에만 진행합니다.</p>
-    <button id="pop-auto-go" style="margin-top:6px;width:100%">▶ 오토파일럿 시작</button>`);
+    <b>승인 도장이 필요한 지점(캘린더·카피·검증·비주얼)에서는 멈추고</b> 알림을 보냅니다. 이미지 생성은 비주얼 브리프 승인 후에만 진행합니다.</p>
+    <label class="small" style="display:flex;align-items:flex-start;gap:8px;margin:10px 0;line-height:1.5;cursor:pointer"><input type="checkbox" id="pop-auto-approve" style="margin-top:2px"><span>승인 게이트 자동 통과 <span class="muted">— 멈추지 않고 끝까지 진행합니다(증거가 있는 게이트에 자동 도장). 컴플라이언스·발행은 제외.</span></span></label>
+    <button id="pop-auto-go" style="margin-top:2px;width:100%">▶ 오토파일럿 시작</button>`);
+  const ck = $('#pop-auto-approve');
+  if (ck) {
+    window.api.auto.getAutoApprove().then((v) => { ck.checked = !!v; }).catch(() => {});
+    ck.onchange = () => { window.api.auto.setAutoApprove(ck.checked); toast(ck.checked ? '오토파일럿 자동 승인 켜짐' : '오토파일럿 자동 승인 꺼짐'); };
+  }
   $('#pop-auto-go').onclick = () => { hidePopover(); startAutopilot(); };
 };
 async function startAutopilot() {
@@ -1327,6 +1334,7 @@ window.api.onAuto((ev) => {
   if (!S.client || ev.dir !== S.client.dir) return; // 로그는 뷰 클라이언트만
   if (ev.state === 'stage') logLine('autopilot', `▸ ${STAGE_LABEL[STAGE2COL[ev.stage]] || ev.stage} 단계 실행`);
   else if (ev.state === 'skip') logLine('autopilot', `⤳ ${STAGE_LABEL[STAGE2COL[ev.stage]] || ev.stage} — 이미 완료됨, 건너뜀`);
+  else if (ev.state === 'auto-approve') logLine('autopilot', `✓ ${ev.message || '자동 승인'} (자동 통과)`);
   else if (ev.state === 'paused') { logLine('autopilot', `⏸ 일시정지 — ${ev.message}`); toast(ev.message); }
   else if (ev.state === 'done') { logLine('autopilot', `✔ ${ev.message}`); toast(ev.message); }
   else if (ev.state === 'failed') { logLine('autopilot', `✖ ${ev.message}`); toast('오토파일럿 중단: ' + ev.message); }

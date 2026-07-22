@@ -16,6 +16,12 @@ const NODES = [
   { key: 'publish', label: '발행', stage: 'review' },
 ];
 
+// 승인 도장이 필요한 노드(단일 정본) — computeGates·오토파일럿·렌더러 CTA가 이 목록을 공유한다.
+// visuals(비주얼 브리프)는 이미지 생성 비용 전 사람 검수 게이트다 — 예전엔 이 목록에서 빠져
+// UI엔 승인 버튼이 안 뜨는데 오토파일럿은 visuals 승인을 요구해 교착되는 버그가 있었다.
+const STAMP_NODES = ['calendar', 'copy', 'verify', 'visuals', 'compliance'];
+function needsStamp(key) { return STAMP_NODES.includes(key); }
+
 function gatesPath(dir) { return path.join(dir, 'context', 'gates.json'); }
 function load(dir) {
   const p = gatesPath(dir);
@@ -83,18 +89,18 @@ function computeGates(board, gatesData) {
     ...n,
     done: !!evidence[n.key],
     approved: ok.has(n.key),
+    needsStamp: needsStamp(n.key), // 승인 도장이 필요한 게이트인지 — 렌더러 CTA가 이 값을 읽는다
     blocked: n.key === 'publish' && board.compliance && board.compliance.block > 0,
   }));
-  // done = evidence && (auto nodes) — approval gates: calendar/copy/compliance need a stamp to unlock the NEXT node
+  // done = evidence && (auto nodes) — approval gates need a stamp to unlock the NEXT node
   let current = 0;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    const needsStamp = ['calendar', 'copy', 'verify', 'compliance'].includes(n.key);
-    const cleared = n.done && (!needsStamp || n.approved);
+    const cleared = n.done && (!n.needsStamp || n.approved);
     if (cleared) current = Math.min(i + 1, nodes.length - 1);
     else break;
   }
   return { nodes, current, approvals: gatesData.approvals || [] };
 }
 
-module.exports = { NODES, load, approve, approvedSet, computeGates };
+module.exports = { NODES, STAMP_NODES, needsStamp, load, approve, approvedSet, computeGates };
