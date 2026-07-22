@@ -8,17 +8,16 @@ const channelsheets = require('../lib/channelsheets');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'chsheets-'));
 
-test('save/get — 저장 후 되읽기, 미지의 채널은 거부', () => {
+test('save/get — 저장 후 되읽기(구 character는 characters[0]로 승격), 미지의 채널은 거부', () => {
   const dir = tmp();
   const r = channelsheets.save(dir, 'instagram', { master: '따뜻한 미니멀 #F5F1E8', character: '바리스타 1인' });
   assert.equal(r.ok, true);
   assert.equal(r.channel, 'instagram');
   const s = channelsheets.get(dir, 'instagram');
   assert.equal(s.master, '따뜻한 미니멀 #F5F1E8');
-  assert.equal(s.character, '바리스타 1인');
+  assert.equal(s.characters[0].text, '바리스타 1인'); // 구 단일 character → characters[]
   assert.equal(s.locked, false);
   assert.ok(s.updatedAt);
-  // 파일 위치 확인
   assert.equal(fs.existsSync(path.join(channelsheets.sheetsDir(dir), 'instagram.json')), true);
   // 미지의 채널 / etc 는 저장 거부
   assert.equal(channelsheets.save(dir, 'etc', { master: 'x' }).ok, false);
@@ -28,15 +27,47 @@ test('save/get — 저장 후 되읽기, 미지의 채널은 거부', () => {
 test('save — 부분 갱신은 기존 필드를 보존하고 길이 제한', () => {
   const dir = tmp();
   channelsheets.save(dir, 'threads', { master: 'M1', character: 'C1' });
-  // master만 갱신 — character 보존
+  // master만 갱신 — 캐릭터 보존
   channelsheets.save(dir, 'threads', { master: 'M2' });
   const s = channelsheets.get(dir, 'threads');
   assert.equal(s.master, 'M2');
-  assert.equal(s.character, 'C1');
+  assert.equal(s.characters[0].text, 'C1');
   // 4000자 초과는 절단
   const big = 'x'.repeat(5000);
   channelsheets.save(dir, 'threads', { master: big });
   assert.equal(channelsheets.get(dir, 'threads').master.length, 4000);
+});
+
+test('여러 캐릭터 시트 — characters[] 저장·컴파일 주입·레퍼런스 앵커(락인 시)', () => {
+  const dir = tmp();
+  const refsDir = path.join(channelsheets.sheetsDir(dir), 'refs');
+  fs.mkdirSync(refsDir, { recursive: true });
+  fs.writeFileSync(path.join(refsDir, 'a.png'), 'x');
+  fs.writeFileSync(path.join(refsDir, 'b.png'), 'x');
+  fs.writeFileSync(path.join(refsDir, 'c.png'), 'x');
+  channelsheets.save(dir, 'instagram', {
+    master: '마스터 룩',
+    characters: [
+      { name: '바리스타 지은', text: '20대 여성 바리스타', ref: 'context/channel-sheets/refs/a.png' },
+      { name: '시그니처 라떼', text: '라떼아트가 있는 잔', ref: 'context/channel-sheets/refs/b.png' },
+      { name: '빈칸', text: '', ref: '' }, // 빈 항목은 제거
+    ],
+  });
+  const s = channelsheets.get(dir, 'instagram');
+  assert.equal(s.characters.length, 2); // 빈 항목 제거
+  assert.equal(s.characters[1].name, '시그니처 라떼');
+  // setCharacterRef — 특정 캐릭터의 ref 설정(다른 캐릭터와 겹치지 않게 c.png)
+  channelsheets.setCharacterRef(dir, 'instagram', 0, 'context/channel-sheets/refs/c.png');
+  assert.equal(channelsheets.get(dir, 'instagram').characters[0].ref, 'context/channel-sheets/refs/c.png');
+  // 락인 → 컴파일에 두 캐릭터 모두 주입, 레퍼런스 2장 앵커
+  channelsheets.setLock(dir, 'instagram', true);
+  const out = channelsheets.compileDirective(dir, 'instagram');
+  assert.match(out, /바리스타 지은/);
+  assert.match(out, /시그니처 라떼/);
+  assert.equal(channelsheets.refImages(dir, 'instagram').length, 2);
+  // 최대 5개까지만
+  channelsheets.save(dir, 'instagram', { characters: Array.from({ length: 8 }, (_, i) => ({ name: `C${i}`, text: `t${i}` })) });
+  assert.equal(channelsheets.get(dir, 'instagram').characters.length, 5);
 });
 
 test('setLock — 저장 안 된 채널은 락 거부, 저장 후 락/해제 토글', () => {
