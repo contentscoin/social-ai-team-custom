@@ -161,6 +161,68 @@ test('extractPublishBody — 네이버 BODY 뒤 IMAGE SLOT + 6요소 프롬프�
   assert.doesNotMatch(text, /SUBJECT|COMPOSITION|LIGHTING|IMAGE SLOT|AR 3:4|VISUAL DIRECTION/i);
 });
 
+test('extractPublishBody — 한국어 프롬프트 라벨에 단어가 끼어도 제거 (이미지 생성 프롬프트:)', () => {
+  const { text } = extractPublishBody([
+    'POST 4 — 원두 소개',
+    'CAPTION: 갓 볶은 원두, 지금 만나보세요.',
+    '',
+    '이미지 생성 프롬프트: a hero shot of coffee beans, 85mm, warm key light',
+    '최종 이미지 프롬프트: macro, glossy beans, no text or logos',
+    '',
+    'HASHTAGS: #원두',
+  ].join('\n'));
+  assert.match(text, /갓 볶은 원두/);
+  assert.match(text, /#원두/);
+  assert.doesNotMatch(text, /프롬프트|hero shot|85mm|macro|no text/i);
+});
+
+test('extractPublishBody — 마크다운 헤딩으로 온 프롬프트(## 이미지 프롬프트)도 본문에 새지 않는다', () => {
+  // 네이버 본문의 ## 소제목은 유지되지만, ## 이미지 프롬프트 헤딩과 그 아래 프롬프트는 제거
+  const { text } = extractPublishBody([
+    'POST 1 — 신상 소개',
+    'BODY:',
+    '이번 주 신상이 입고됐습니다.',
+    '',
+    '## 상세 스펙',
+    '가볍고 튼튼한 소재를 썼어요.',
+    '',
+    '## 이미지 프롬프트',
+    'A premium product hero shot, softbox lighting, 85mm, muted tones,',
+    'absolutely no text, letters, logos, or watermarks.',
+    '',
+    'TAGS: 신상',
+  ].join('\n'));
+  assert.match(text, /이번 주 신상이 입고/);
+  assert.match(text, /상세 스펙/);            // 진짜 소제목은 유지
+  assert.match(text, /가볍고 튼튼한 소재/);
+  assert.match(text, /#신상/);
+  assert.doesNotMatch(text, /이미지 프롬프트|hero shot|softbox|85mm|no text/i);
+});
+
+test('extractPublishBody — 오버스트립 방지: "프롬프트"가 들어간 정상 본문/소제목은 유지', () => {
+  // 글쓰기 계정: 캡션 안의 '오늘의 프롬프트:'는 렌더 계약이 아니라 정상 본문 — 지우면 안 됨
+  const cap = extractPublishBody([
+    'POST 1 — 글쓰기 챌린지',
+    'CAPTION: 오늘의 프롬프트: 좋아하는 계절을 묘사해보세요.',
+    'HASHTAGS: #글쓰기',
+  ].join('\n'));
+  assert.match(cap.text, /오늘의 프롬프트: 좋아하는 계절/);
+  assert.match(cap.text, /#글쓰기/);
+  // 네이버 본문의 '## 프롬프트 예시 3가지'는 프롬프트를 다루는 소제목 — 유지(라벨 헤딩만 제거해야 함)
+  const nb = extractPublishBody([
+    'POST 2 — AI 글쓰기',
+    'BODY:',
+    'AI로 글쓰기를 시작해봅니다.',
+    '',
+    '## 프롬프트 예시 3가지',
+    '첫째, 구체적으로. 둘째, 맥락을. 셋째, 예시를.',
+    '',
+    'TAGS: AI글쓰기',
+  ].join('\n'));
+  assert.match(nb.text, /프롬프트 예시 3가지/);
+  assert.match(nb.text, /첫째, 구체적으로/);
+});
+
 test('extractPublishBody — 프롬프트 필드 오탐 방지: 한국어 본문은 그대로 유지', () => {
   // "장소:"·"액션" 같은 한국어는 프롬프트 필드가 아니므로 보존
   const { text } = extractPublishBody([

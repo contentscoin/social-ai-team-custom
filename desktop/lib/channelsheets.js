@@ -259,19 +259,20 @@ function draftPrompt(brand = {}, channel = '', channelName = '', platformDir = '
   );
 }
 
-// AI 초안 응답 파싱 — {master, characters[], guidelines} 추출(구 단일 character도 수용). 실패 시 null.
-// characters: [{name, text}] 최대 5개(시트 상한과 동일). character는 첫 캐릭터 text의 하위호환 별칭.
-function parseDraft(out) {
+// 엔진 응답에서 JSON 오브젝트 추출 — 잡텍스트 속 JSON, claude json 모드 {result:"..."} 래핑 해제.
+function sheetJson(out) {
   const s = String(out || '');
   const tryParse = (t) => { try { return JSON.parse(t); } catch { return null; } };
   let j = tryParse(s.trim());
   if (!j) { const m = s.match(/\{[\s\S]*\}/); if (m) j = tryParse(m[0]); }
-  // claude json 모드는 {result:"..."} 래핑 — 내부 JSON을 다시 파싱
   if (j && typeof j.result === 'string') {
     const inner = tryParse(j.result.trim()) || (() => { const m = j.result.match(/\{[\s\S]*\}/); return m ? tryParse(m[0]) : null; })();
     if (inner) j = inner;
   }
-  if (!j) return null;
+  return j;
+}
+// master/characters/guidelines 정규화 — parseDraft·parseRefine 공용.
+function draftFields(j) {
   const master = typeof j.master === 'string' ? j.master.trim() : '';
   const guidelines = typeof j.guidelines === 'string' ? j.guidelines.trim() : '';
   let characters = (Array.isArray(j.characters) ? j.characters : [])
@@ -284,13 +285,52 @@ function parseDraft(out) {
   if (!characters.length && typeof j.character === 'string' && j.character.trim()) {
     characters = [{ name: '캐릭터 1', text: j.character.trim().slice(0, 4000) }];
   }
-  if (!master && !characters.length && !guidelines) return null;
-  return {
-    master: master.slice(0, 4000),
-    character: characters.length ? characters[0].text : '', // 하위호환(구 호출자)
-    characters,
-    guidelines: guidelines.slice(0, 4000),
-  };
+  return { master: master.slice(0, 4000), characters, guidelines: guidelines.slice(0, 4000) };
+}
+
+// AI 초안 응답 파싱 — {master, characters[], guidelines} 추출(구 단일 character도 수용). 실패 시 null.
+// characters: [{name, text}] 최대 5개(시트 상한과 동일). character는 첫 캐릭터 text의 하위호환 별칭.
+function parseDraft(out) {
+  const j = sheetJson(out);
+  if (!j) return null;
+  const f = draftFields(j);
+  if (!f.master && !f.characters.length && !f.guidelines) return null;
+  return { master: f.master, character: f.characters.length ? f.characters[0].text : '', characters: f.characters, guidelines: f.guidelines };
+}
+
+// 디렉터 고도화 지시문 — 현재 시트 전문 + 사용자 요청으로 질의응답/개선(순수 함수).
+// 질문이면 reply만, 수정이면 바뀐 필드를 "그 필드 전체 완성본"으로 돌려받는다(부분 조각 금지).
+function refinePrompt(brand = {}, channel = '', channelName = '', sheets = {}, question = '') {
+  const b = brand || {};
+  const g = CHANNEL_SHEET_GUIDE[channel] || CHANNEL_SHEET_GUIDE._default;
+  const chars = (sheets.characters || []).map((c, i) => `(${i + 1}) ${c.name || `캐릭터 ${i + 1}`}\n${c.text || ''}`).join('\n\n') || '(없음)';
+  return (
+    `너는 SNS 채널의 비주얼 아트 디렉터다. 아래 "현재 시트"를 보고 사용자 요청에 답하거나 시트를 고도화하라.\n\n` +
+    `[채널] ${channelName || channel} (${channel})\n` +
+    `[이 채널의 전략] ${g.focus}\n` +
+    (b.identity ? `[브랜드 정체성]\n${b.identity}\n` : '') +
+    (b.summary ? `[브랜드 무드]\n${b.summary}\n` : '') +
+    `\n[현재 브랜드 시트 — master(클라이언트 공용)]\n${sheets.brand || '(없음)'}\n` +
+    `\n[현재 캐릭터 시트 — characters]\n${chars}\n` +
+    `\n[현재 가이드 시트 — guidelines]\n${sheets.guidelines || '(없음)'}\n` +
+    `\n[사용자 요청]\n${question}\n\n` +
+    `[규칙]\n` +
+    `- 요청이 질문/상담이면 reply에 한국어로 답하고 시트 필드는 생략한다. 수정 요청이면 바뀐 필드만 포함하되, 각 필드는 조각이 아니라 그 필드 전체를 다시 쓴 완성본이어야 한다.\n` +
+    `- 캐릭터를 하나라도 바꾸면 characters 배열 전체를 돌려준다(안 바뀐 캐릭터 포함, 순서 유지, 최대 5개). 삭제 요청이면 그 항목을 뺀 배열을 돌려준다.\n` +
+    `- 기존 시트의 마크다운 구조(## 소제목 + 불릿)와 분량 수준을 유지하고, 요청과 무관한 내용은 바꾸지 않는다.\n` +
+    `- reply는 무엇을 어떻게 반영했는지(또는 질문에 대한 답) 2~4문장 한국어 요약.\n` +
+    `- 출력은 JSON 하나만: {"reply":"...","master":"...","characters":[{"name":"...","text":"..."}],"guidelines":"..."} — master/characters/guidelines는 바뀐 것만 포함. 코드펜스 금지.`
+  );
+}
+
+// 고도화 응답 파싱 — {reply, master, characters[], guidelines} (시트 필드는 바뀐 것만, 없으면 빈 값). 실패 시 null.
+function parseRefine(out) {
+  const j = sheetJson(out);
+  if (!j) return null;
+  const f = draftFields(j);
+  const reply = (typeof j.reply === 'string' ? j.reply.trim() : '').slice(0, 2000);
+  if (!reply && !f.master && !f.characters.length && !f.guidelines) return null;
+  return { reply, master: f.master, characters: f.characters, guidelines: f.guidelines };
 }
 
 // 채널 시트를 이미지 프롬프트 컴파일에 주입할 지시문. 내용(마스터/캐릭터/지침 텍스트)이 있으면
@@ -359,4 +399,4 @@ function contentGuidelines(dir) {
   return `[채널별 지침 — 락인, 반드시 준수]\n각 채널의 카피·영상은 아래 해당 채널 지침을 최우선으로 따른다.\n${lines.join('\n')}\n\n`;
 }
 
-module.exports = { get, save, setLock, setCharacterRef, getBrand, saveBrand, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, sheetsDir, CHANNEL_SHEET_GUIDE };
+module.exports = { get, save, setLock, setCharacterRef, getBrand, saveBrand, list, compileDirective, refImages, contentGuidelines, draftPrompt, parseDraft, refinePrompt, parseRefine, sheetsDir, CHANNEL_SHEET_GUIDE };

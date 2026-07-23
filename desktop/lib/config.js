@@ -9,7 +9,7 @@ const FILE = path.join(DIR, 'settings.json');
 
 const imagestyles = require('./imagestyles');
 
-const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {}, imageStyle: '', autopilotAutoApprove: false }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드; imageStyle: 이미지 생성 기본 스타일('' = 미지정); autopilotAutoApprove: 오토파일럿이 승인 게이트를 자동 통과
+const DEFAULTS = { engine: 'claude', sessions: {}, models: { claude: '', codex: '' }, budgetUsd: 0, stageEngines: {}, imageStyle: '', imageQuality: 'high', autopilotAutoApprove: false }; // engine: 'claude' | 'codex'; model '' = CLI 기본값; budgetUsd 0 = 예산 미설정; stageEngines: 단계별 엔진 오버라이드; imageStyle: 이미지 생성 기본 스타일('' = 미지정); imageQuality: ima2 생성 품질(low|medium|high, 발행 이미지 기본); autopilotAutoApprove: 오토파일럿이 승인 게이트를 자동 통과
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
@@ -87,6 +87,21 @@ function setImageStyle(key) {
   return cfg.imageStyle;
 }
 
+// ima2 생성 품질 — low|medium|high. high는 medium 대비 체감 2~4배 느리다(GPT Image 백엔드).
+// 발행용 최종 이미지의 기본값. 시트 레퍼런스 등은 호출부에서 개별 override 할 수 있다.
+const IMAGE_QUALITIES = ['low', 'medium', 'high'];
+function getImageQuality() {
+  const v = String(load().imageQuality || '').toLowerCase();
+  return IMAGE_QUALITIES.includes(v) ? v : 'high';
+}
+function setImageQuality(q) {
+  const cfg = load();
+  const v = String(q || '').toLowerCase();
+  cfg.imageQuality = IMAGE_QUALITIES.includes(v) ? v : 'high';
+  save(cfg);
+  return cfg.imageQuality;
+}
+
 // 오토파일럿 자동 승인 — true면 승인 도장이 필요한 게이트(캘린더·카피·검증·비주얼 브리프)를
 // 증거가 있을 때 자동으로 통과한다. 컴플라이언스(안전 게이트)와 발행은 대상이 아니다.
 function getAutopilotAutoApprove() { return !!load().autopilotAutoApprove; }
@@ -122,4 +137,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getImageQuality, setImageQuality, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };

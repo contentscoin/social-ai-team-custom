@@ -265,6 +265,7 @@ for (const b of $$('#view-seg button')) b.onclick = () => {
   applyViewSeg();
   // 템플릿은 fingerprint로 불필요 재빌드를 건너뛰므로 dirty/전환 시 갱신
   if (S.board && (S.viewDirty[S.view] || S.view === 'template')) renderBoardViews(false);
+  if (S.view === 'foundation') renderFoundation(); // 같은 클라이언트면 편집 중이던 내용 유지
   renderHero();
 };
 for (const b of $$('#engine-seg button')) b.onclick = async () => {
@@ -380,8 +381,15 @@ function renderChannels() {
     const badge = $('.cc-badge', el);
     const direct = (S.channels && S.channels.direct && S.channels.direct[ch.key]) || {};
     if (ch.publishRoute === 'manual') {
-      badge.textContent = '수동 발행'; badge.style.cursor = 'pointer'; badge.style.color = 'var(--warn)';
-      badge.title = '수동 발행 체크리스트 열기';
+      if (direct.browser) { // 네이버·카카오 — 세션 브라우저 발행
+        badge.textContent = direct.connected ? '브라우저 연결됨' : '로그인 필요';
+        badge.style.color = direct.connected ? 'var(--ok)' : 'var(--warn)';
+        badge.title = direct.connected ? '앱에서 작성 창 열기' : '브라우저 로그인';
+      } else {
+        badge.textContent = '수동 발행'; badge.style.color = 'var(--warn)';
+        badge.title = '수동 발행 체크리스트 열기';
+      }
+      badge.style.cursor = 'pointer';
       badge.onclick = (e) => { e.stopPropagation(); openPublishPanel(ch.key); };
       pressable(badge);
     } else if (direct.connected) {
@@ -633,6 +641,8 @@ function applyViewSeg() {
   $('#month-cal').classList.toggle('hidden', S.view !== 'month');
   const tb = $('#template-board');
   if (tb) tb.classList.toggle('hidden', S.view !== 'template');
+  const fd = $('#foundation');
+  if (fd) fd.classList.toggle('hidden', S.view !== 'foundation');
 }
 function brandHandle() {
   const n = (S.client && (S.client.name || S.client.id)) || 'brand';
@@ -947,13 +957,18 @@ function renderHero() {
   const b = S.board;
   const hero = $('#hero');
   const parseFailed = !!(S.client && b && b.hasCalendar && !b.posts.length);
-  const showHero = !S.client || !b || !b.hasCalendar || parseFailed;
+  // 파운데이션은 캘린더 이전(기반) 단계 — 캘린더가 없어도 히어로 대신 파운데이션을 보여준다
+  const showHero = !S.client || (S.view !== 'foundation' && (!b || !b.hasCalendar || parseFailed));
   hero.classList.toggle('hidden', !showHero);
   $('#timeline').classList.toggle('hidden', showHero || S.view !== 'timeline');
   $('#kanban').classList.toggle('hidden', showHero || S.view !== 'kanban');
   $('#month-cal').classList.toggle('hidden', showHero || S.view !== 'month');
   const tb = $('#template-board');
   if (tb) tb.classList.toggle('hidden', showHero || S.view !== 'template');
+  const fd = $('#foundation');
+  if (fd) fd.classList.toggle('hidden', showHero || S.view !== 'foundation');
+  // 파운데이션 뷰가 열려 있는데 클라이언트가 바뀌었으면 그 클라이언트의 시트로 재렌더
+  if (!showHero && S.view === 'foundation' && S.client && renderFoundation._dir !== S.client.dir) renderFoundation();
   if (!showHero) return;
   if (!S.client) {
     hero.innerHTML = `<div class="hero-card"><h3>클라이언트로 시작하세요</h3><p>좌측 레일의 + 버튼으로 클라이언트 폴더를 만들면, 팀이 그 폴더 안에서 브랜드·캘린더·콘텐츠를 관리합니다.</p></div>`;
@@ -1219,7 +1234,7 @@ function renderCTA() {
       const connected = Object.entries(direct).filter(([, v]) => v.connected).map(([k]) => CH_NAME[k] || k);
       if (popover(e.currentTarget, `<b>발행 단계</b><p class="muted" style="margin:6px 0">${connected.length
         ? `API 연결: ${connected.join(', ')} — 채널 카드의 배지에서 발행 패널을 여세요.`
-        : '설정 → 채널에서 API 토큰을 연결하면 앱에서 바로 발행·예약할 수 있습니다.'}<br>Instagram·네이버는 수동 체크리스트로 발행합니다.</p>
+        : '설정 → 채널에서 API 토큰을 연결하면 앱에서 바로 발행·예약할 수 있습니다.'}<br>네이버·카카오채널은 설정 → 채널에서 1회 로그인하면 앱 내장 창으로 작성합니다.</p>
         <div style="display:flex;flex-direction:column;gap:6px">
         ${connected.length ? '' : '<button id="pop-connect">채널 API 연결하기</button>'}
         <button id="pop-review">월말 성과 리뷰 실행</button></div>`)) {
@@ -1880,7 +1895,8 @@ async function openRenderPanel(p) {
       <p class="small muted" style="margin:4px 0">시안을 선택하면 대표컷(1번)으로 확정하고, 설정한 장수만큼 나머지를 이어서 생성합니다.</p>
       <div id="rp-vlist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
     </div>
-    <p class="muted small" style="margin-top:4px">컴파일러는 브랜드 팔레트·카피의 VISUAL DIRECTION·프롬프트 팩을 재료로 씁니다. 결과는 수정 가능합니다.</p>`;
+    <div id="rp-images" style="margin-top:10px"></div>
+    <p class="muted small" style="margin-top:4px">컴파일러는 기획 의도(목표·앵글)·브랜드 팔레트·카피의 VISUAL DIRECTION·프롬프트 팩을 재료로 씁니다. 결과는 수정 가능합니다.</p>`;
   const syncKind = (kind) => {
     if (kind === 'cardnews') {
       // 카드뉴스는 한글 타이포가 핵심 — claude-svg 레인 전용 (사진 모델은 한글이 깨진다)
@@ -1922,6 +1938,8 @@ async function openRenderPanel(p) {
       const r = await window.api.prompt.compile(S.client.dir, {
         kind, provider: $('#rp-provider').value,
         topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
+        // 기획 의도·컨셉을 컴파일러에 전달 — 텍스트→이미지 맥락 이해(F)
+        objective: p.objective || '', pillar: p.pillar || '', angle: p.angle || '', notes: p.notes || '', visual: p.visual || '',
         prompt: $('#rp-prompt').value.trim(),
         size: $('#rp-size').value, duration: Number($('#rp-dur').value) || 5,
         count: Number(($('#rp-count') && $('#rp-count').value) || 1) || 1,
@@ -1974,9 +1992,104 @@ async function openRenderPanel(p) {
       }
       $('#rp-varea').classList.add('hidden');
       if (S.client && S.client.dir === dir) refreshBoard(false);
+      refreshImageManager();
     };
   }
   showVariants(); // 이전 라운드의 시안이 남아 있으면 패널을 열 때 바로 보여준다
+
+  // ---- 이미지 관리 — 목록·개별 삭제·다중선택 재생성(가이드)·추가 생성 ----------------
+  const IMG_RE = /\.(png|jpe?g|webp|gif)$/i;
+  const shortId = () => Date.now().toString(36).slice(-4) + Math.floor(Math.random() * 46656).toString(36);
+  // 최신 보드의 이 카드(생성/삭제 후 p는 stale이라 uid로 다시 찾는다)로 이미지 목록을 구한다.
+  function currentImageRels() {
+    const fresh = (S.board && S.board.posts && S.board.posts.find((x) => x.uid === p.uid)) || p;
+    return postRenderRels(fresh).filter((r) => IMG_RE.test(r));
+  }
+  // 생성/삭제 후: 보드를 새로 읽어(파일 증거 반영) 이미지 목록을 갱신.
+  async function afterImageChange(dir) {
+    try { if (S.client && S.client.dir === dir) await refreshBoard(false); } catch { /* best effort */ }
+    await refreshImageManager();
+  }
+  async function refreshImageManager() {
+    const box = $('#rp-images'); if (!box) return;
+    const rels = currentImageRels();
+    if (!rels.length) { box.innerHTML = '<p class="small muted" style="margin:8px 0">이 카드에 연결된 생성 이미지가 없습니다 — 위에서 생성하세요.</p>'; return; }
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 6px">
+        <b class="small">생성된 이미지 ${rels.length}장</b>
+        <label class="small muted" style="margin-left:auto;display:flex;gap:4px;align-items:center"><input type="checkbox" id="rp-img-all"> 전체 선택</label>
+      </div>
+      <div id="rp-img-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${rels.map((rel) => `
+        <div style="position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+          <img src="${esc(satUrl(rel))}" style="width:100%;height:96px;object-fit:cover;display:block" loading="lazy" alt="">
+          <label style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,.5);border-radius:4px;padding:0 3px"><input type="checkbox" class="rp-img-sel" data-rel="${esc(rel)}"></label>
+          <button class="rp-img-del" data-rel="${esc(rel)}" title="이 이미지 삭제" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:4px;width:20px;height:20px;line-height:1;cursor:pointer">×</button>
+          <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);color:#fff;font-size:10px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(rel.split(/[\\/]/).pop())}</span>
+        </div>`).join('')}</div>
+      <textarea id="rp-guide" class="rp-input" rows="2" placeholder="재생성 가이드 (선택) — 예: 더 밝게, 제품을 더 크게, 배경은 단순하게, 손이 보이게" style="margin-top:8px"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+        <button id="rp-regen" style="flex:1">선택 이미지 재생성 (가이드 반영)</button>
+        <select id="rp-addn" class="rp-input" style="width:82px" title="추가로 더 만들 장수"><option value="1">+1장</option><option value="2" selected>+2장</option><option value="3">+3장</option><option value="4">+4장</option></select>
+        <button id="rp-addmore">추가 생성</button>
+      </div>
+      <p class="small muted" style="margin:5px 0 0">재생성: 선택한 이미지를 지우고 같은 수만큼 가이드를 반영해 새로 만듭니다. 추가 생성: 기존은 그대로 두고 N장을 더 만듭니다.</p>`;
+    const allBox = $('#rp-img-all', box);
+    if (allBox) allBox.onchange = (e) => $$('.rp-img-sel', box).forEach((c) => { c.checked = e.target.checked; });
+    for (const d of $$('.rp-img-del', box)) d.onclick = async () => {
+      if (!confirm('이 이미지 1장을 삭제할까요?\n(다른 이미지·본문은 그대로 유지됩니다.)')) return;
+      const r = await window.api.post.deleteImage(S.client.dir, d.dataset.rel);
+      if (r && r.ok) { toast('이미지 삭제됨'); await afterImageChange(S.client && S.client.dir); }
+      else toast('삭제 실패: ' + ((r && r.error) || '알 수 없음'));
+    };
+    const regen = $('#rp-regen', box); if (regen) regen.onclick = () => regenerateSelected(box);
+    const addm = $('#rp-addmore', box); if (addm) addm.onclick = () => addMoreImages(box);
+  }
+  // 재생성 = 선택 이미지 삭제 + 같은 수만큼 가이드 반영 새 이미지 생성(고유 base라 슬롯 충돌 없음).
+  async function regenerateSelected(box) {
+    const sel = $$('.rp-img-sel', box).filter((c) => c.checked).map((c) => c.dataset.rel);
+    if (!sel.length) { toast('재생성할 이미지를 선택하세요'); return; }
+    const prompt = $('#rp-prompt').value.trim();
+    if (!prompt) { toast('먼저 프롬프트를 입력/컴파일하세요'); return; }
+    const guide = (($('#rp-guide', box) || {}).value || '').trim();
+    const provider = $('#rp-provider').value;
+    const dir = S.client.dir;
+    const btn = $('#rp-regen', box); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '재생성 중… (로그 탭에서 진행 확인)';
+    try {
+      for (const rel of sel) { try { await window.api.post.deleteImage(dir, rel); } catch { /* 계속 */ } }
+      const gprompt = prompt + (guide ? `\n\n(Revision guidance — apply to the regenerated image: ${guide})` : '');
+      const r = await window.api.render.generate(dir, {
+        kind: 'image', provider, prompt: gprompt,
+        negative: $('#rp-negative').value.trim() || null,
+        base: `${rpUid}-r${shortId()}`, size: $('#rp-size').value, count: sel.length,
+      });
+      toast(r && r.ok ? `재생성 완료 — ${(r.files || []).length || 1}장` : '재생성 실패: ' + ((r && r.error) || '알 수 없음'));
+    } catch (e) { toast('재생성 실패: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; await afterImageChange(dir); }
+  }
+  // 추가 생성 = 기존 이미지는 두고 N장을 고유 base로 더 생성(가이드 있으면 반영).
+  async function addMoreImages(box) {
+    const prompt = $('#rp-prompt').value.trim();
+    if (!prompt) { toast('먼저 프롬프트를 입력/컴파일하세요'); return; }
+    const n = Number(($('#rp-addn', box) || {}).value) || 2;
+    const guide = (($('#rp-guide', box) || {}).value || '').trim();
+    const provider = $('#rp-provider').value;
+    const dir = S.client.dir;
+    const btn = $('#rp-addmore', box); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '추가 생성 중…';
+    try {
+      const gprompt = prompt + (guide ? `\n\n(Variation guidance: ${guide})` : '');
+      const r = await window.api.render.generate(dir, {
+        kind: 'image', provider, prompt: gprompt,
+        negative: $('#rp-negative').value.trim() || null,
+        base: `${rpUid}-x${shortId()}`, size: $('#rp-size').value, count: n,
+      });
+      toast(r && r.ok ? `${(r.files || []).length || n}장 추가 완료` : '추가 생성 실패: ' + ((r && r.error) || '알 수 없음'));
+    } catch (e) { toast('추가 생성 실패: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; await afterImageChange(dir); }
+  }
+  refreshImageManager();
+
   $('#rp-go').onclick = async () => {
     const kind = $('#rp-kind button.active').dataset.k;
     const provider = $('#rp-provider').value;
@@ -2019,7 +2132,7 @@ async function openRenderPanel(p) {
     } catch (e) { toast('생성 실패: ' + e.message); }
     finally {
       go.disabled = false; go.textContent = '▶ 생성';
-      if (S.client && S.client.dir === dir) refreshBoard(false);
+      await afterImageChange(dir); // 보드 갱신 후 새 이미지를 목록에 반영
     }
   };
 }
@@ -2175,7 +2288,8 @@ async function openCompose(chKey, p, direct) {
   const draft = await window.api.pub2.draft(S.client.dir, p.lane, p.topic);
   const limits = { x: 280, threads: 500 };
   const limit = limits[chKey];
-  const isApi = !!direct.connected;
+  const isBrowser = !!direct.browser; // 네이버·카카오 — 세션 브라우저 발행
+  const isApi = !!direct.connected && !isBrowser; // 토큰 API 직접 발행
   const renders = postRenderRels(p);
   const copies = postCopyRels(p);
   const canImage = !!direct.image && renders.length > 0;
@@ -2237,8 +2351,15 @@ async function openCompose(chKey, p, direct) {
       <button id="cmp-now" class="accent" style="flex:1">지금 발행</button>
       <input type="datetime-local" id="cmp-when" class="rp-input" style="flex:1">
       <button id="cmp-later">예약</button>
+    </div>` : (isBrowser ? `<div style="margin-top:8px">
+      ${direct.connected
+        ? `<button type="button" id="cmp-browser" class="accent" style="width:100%">🌐 ${esc(direct.label || CH_NAME[chKey] || chKey)} 로그인 창에서 자동 작성</button>
+           <p class="muted small" style="margin:6px 0 0">로그인된 작성 창이 열립니다 — 본문은 클립보드에 복사(붙여넣기 Ctrl/⌘+V)되고 이미지 폴더가 열립니다. 이미지 첨부 후 창에서 발행하세요.</p>`
+        : `<button type="button" id="cmp-login" class="accent" style="width:100%">🔑 ${esc(direct.label || CH_NAME[chKey] || chKey)} 로그인 (최초 1회)</button>
+           <p class="muted small" style="margin:6px 0 0">처음 한 번만 로그인하면 세션이 저장돼, 다음부터는 바로 작성 창이 열립니다. 아이디·비밀번호는 앱에 저장하지 않습니다.</p>`}
+      <button type="button" id="cmp-mark" style="width:100%;margin-top:8px">${p.published ? '발행 기록 유지됨' : '창에서 올린 뒤 — 발행됨으로 표시'}</button>
     </div>` : `<p class="muted small" style="margin-top:8px">수동 채널입니다. 위 버튼으로 복사·이미지 확인 후 플랫폼에서 발행하고, 목록 체크박스를 켜세요.</p>
-      <button type="button" id="cmp-mark" class="accent" style="width:100%;margin-top:6px">${p.published ? '발행 기록 유지됨' : '플랫폼에 올렸음 — 발행됨으로 표시'}</button>`}`;
+      <button type="button" id="cmp-mark" class="accent" style="width:100%;margin-top:6px">${p.published ? '발행 기록 유지됨' : '플랫폼에 올렸음 — 발행됨으로 표시'}</button>`)}`;
   const ta = $('#cmp-text');
   let imageRel = selectedRel;
   const refreshMock = () => {
@@ -2319,6 +2440,39 @@ async function openCompose(chKey, p, direct) {
       refreshBoard(false);
     } catch (e) { toast('기록 실패: ' + e.message); }
   };
+  // 세션 브라우저 채널(네이버·카카오) — 최초 1회 로그인 / 로그인된 작성 창 열기.
+  if (isBrowser) {
+    const reopen = async () => {
+      S.channels = await window.api.channels.check();
+      const d2 = (S.channels && S.channels.direct && S.channels.direct[chKey]) || {};
+      openCompose(chKey, p, d2);
+    };
+    const loginBtn = $('#cmp-login');
+    if (loginBtn) loginBtn.onclick = async () => {
+      loginBtn.disabled = true; loginBtn.textContent = '로그인 창 열림 — 로그인 후 창을 닫으세요…';
+      try {
+        const r = await window.api.pub2.login(chKey);
+        if (r && r.connected) { toast(`${direct.label || chKey} 로그인됨 — 이제 자동 작성이 가능합니다`); await reopen(); }
+        else { toast('로그인이 확인되지 않았습니다 — 다시 시도하세요'); loginBtn.disabled = false; loginBtn.textContent = `🔑 ${direct.label || chKey} 로그인 (최초 1회)`; }
+      } catch (e) { toast('로그인 실패: ' + e.message); loginBtn.disabled = false; }
+    };
+    const browserBtn = $('#cmp-browser');
+    if (browserBtn) browserBtn.onclick = async () => {
+      if (!ta.value.trim()) { toast('본문이 비어 있습니다'); return; }
+      const old = browserBtn.textContent;
+      browserBtn.disabled = true; browserBtn.textContent = '작성 창 여는 중…';
+      try {
+        const r = await window.api.pub2.publishNow(S.client.dir, {
+          uid: p.uid, channel: chKey, title: (draft.ok && draft.title) || p.topic, text: ta.value, imageRels: renders,
+        });
+        if (r && r.ok) toast(r.message || '작성 창을 열었습니다 — 창에서 발행을 마무리하세요');
+        else if (r && r.needsLogin) { toast(r.error || '로그인이 필요합니다'); await reopen(); }
+        else toast('실패: ' + ((r && r.error) || '알 수 없음'));
+      } catch (e) { toast('실패: ' + e.message); }
+      finally { browserBtn.disabled = false; browserBtn.textContent = old; }
+    };
+    return; // 브라우저 채널은 API payload/발행 경로를 타지 않는다
+  }
   if (!isApi) return;
   const payload = () => {
     const useImg = $('#cmp-img') && $('#cmp-img').checked;
@@ -2449,6 +2603,452 @@ function bindSetupButtons(root, after) {
     }
   };
 }
+// ---- 파운데이션 뷰 — 브랜드·캐릭터 기반 설계(콘텐츠 시트) ---------------------------
+// 절차: ① 기획(시트 작성/AI 초안) → ② 레퍼런스 이미지 → ③ 디렉터 고도화(질의응답) → ④ 락인.
+// 락인된 시트는 그 채널의 모든 이미지·카피 생성에 최우선 주입된다. 같은 클라이언트로 탭을
+// 오가는 동안은 재렌더하지 않아 편집분이 유지된다(클라이언트가 바뀌면 renderHero가 재렌더).
+let foundationSeq = 0;
+async function renderFoundation() {
+  const root = $('#foundation');
+  if (!root) return;
+  const dir = S.client && S.client.dir;
+  if (renderFoundation._dir === dir && root.childElementCount) return; // 같은 클라이언트 — 편집분 유지
+  renderFoundation._dir = dir;
+  const fseq = ++foundationSeq;
+  if (!dir) {
+    root.innerHTML = '<div class="hero-card" style="margin:48px auto;width:420px;max-width:90%"><h3>클라이언트로 시작하세요</h3><p>좌측 레일의 + 버튼으로 클라이언트를 만들면 파운데이션(브랜드·캐릭터 기반)을 설계할 수 있습니다.</p></div>';
+    return;
+  }
+  const ta = 'width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical';
+  const refBox = 'width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center';
+  const stepBox = 'border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px';
+  root.innerHTML = `
+  <div style="max-width:880px;margin:0 auto;padding:20px 24px 60px">
+    <h2 style="margin:0 0 4px">파운데이션</h2>
+    <p class="muted small" style="margin:0 0 16px;line-height:1.6">브랜드·캐릭터 기반 설계 — <b>① 기획 → ② 레퍼런스 이미지 → ③ 디렉터 고도화 → ④ 락인</b> 순서로 진행합니다. 락인된 시트는 그 채널의 모든 이미지·카피 생성에 최우선 적용됩니다.</p>
+
+    <div style="${stepBox}">
+      <b class="small" style="color:var(--accent-hover)">① 기획 — 시트 작성</b>
+      <p class="muted small" style="margin:4px 0 12px;line-height:1.55"><b>[AI 초안 + 이미지]</b>가 이 채널의 시트(캐릭터 1~3개)와 레퍼런스 이미지까지 자동 생성합니다. <b>[전체 채널 AI 초안]</b>은 락 안 된 모든 채널의 텍스트 초안을 한 번에 만들어 저장합니다(이미지는 채널별로).</p>
+
+      <b class="small">브랜드 시트 (클라이언트 공용 — 전 채널 공유)</b>
+      <p class="muted small" style="margin:3px 0 5px">전체 비주얼 아이덴티티 — 스타일·팔레트 HEX·조명·구도·재질. 모든 채널 이미지에 공통 적용될 "룩의 규칙".</p>
+      <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="${ta};margin:0 0 10px"></textarea>
+
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+        <div id="sheet-logo-box" style="${refBox}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button id="sheet-logo-up" type="button" class="small">로고 파일 업로드</button>
+            <button id="sheet-logo-clear" type="button" class="small">제거</button>
+          </div>
+          <p class="muted small" style="margin-top:4px;line-height:1.45">로고는 색·스타일 근거로만 반영 — <b>이미지 안엔 렌더하지 않습니다</b>(앱이 따로 얹음).</p>
+        </div>
+      </div>
+      <textarea id="sheet-logo-note" rows="2" placeholder="로고 사용 규칙(선택) — 예) 로고 컬러 #8C6B4F 갈색을 팔레트 근거로. 여백 확보. 이미지 내 워드마크 금지." style="${ta};margin:0 0 8px"></textarea>
+      <button id="sheet-brand-save" type="button" class="small">공용 브랜드·로고 저장</button>
+
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <select id="sheet-ch" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px"></select>
+        </div>
+        <b class="small">캐릭터 시트 (채널별 · 여러 개 가능)</b>
+        <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. 텍스트만으로는 픽셀 일관성이 안 되므로 ②에서 레퍼런스 이미지를 붙입니다.</p>
+        <div id="sheet-chars"></div>
+        <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
+
+        <div style="margin-top:14px">
+          <b class="small">가이드 시트 (채널별)</b>
+          <p class="muted small" style="margin:3px 0 5px">콘텐츠·편집 규칙 — 카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약, 전략별 세부. 카피·이미지 모두에 적용.</p>
+          <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그 끝에 3~5개. '최고/1위' 과장 금지." style="${ta};margin:0"></textarea>
+        </div>
+      </div>
+
+      <div class="btn-grid" style="margin-top:14px">
+        <button id="sheet-ai" type="button">AI 초안 + 이미지</button>
+        <button id="sheet-ai-all" type="button">전체 채널 AI 초안</button>
+        <button id="sheet-save" type="button">채널 시트 저장</button>
+      </div>
+    </div>
+
+    <div style="${stepBox}">
+      <b class="small" style="color:var(--accent-hover)">② 레퍼런스 이미지 — 앵커 확보</b>
+      <p class="muted small" style="margin:4px 0 12px;line-height:1.55">브랜드 스타일 보드와 캐릭터 <b>턴어라운드 모델 시트</b>(정면·측면·후면)를 생성하거나, 갖고 있는 <b>참고 이미지를 업로드</b>합니다. 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰여 같은 얼굴·같은 제품을 재현합니다. 캐릭터별 생성/업로드 버튼은 ①의 각 캐릭터 카드 안에 있습니다.</p>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div id="sheet-ref-master-box" style="${refBox}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button id="sheet-ref-master" type="button" class="small">브랜드 스타일 레퍼런스 생성</button>
+            <button id="sheet-ref-master-up" type="button" class="small">참고 이미지 업로드</button>
+            <button id="sheet-imgs-all" type="button" class="small">이 채널 이미지 일괄 생성 (병렬)</button>
+          </div>
+          <p class="muted small" style="margin-top:4px;line-height:1.45">[일괄 생성]은 브랜드 레퍼런스 + 이 채널 캐릭터 턴어라운드 전체를 병렬로 다시 만듭니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="${stepBox}">
+      <b class="small" style="color:var(--accent-hover)">③ 디렉터와 고도화 — 질의응답</b>
+      <p class="muted small" style="margin:4px 0 10px;line-height:1.55">현재 화면의 시트(저장 전 편집분 포함)를 디렉터가 보고 질문에 답하거나 시트를 고쳐줍니다. 바뀐 필드는 편집기에 바로 적용되니 검토 후 저장하세요.</p>
+      <div id="sheet-refine-log" style="display:none;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="sheet-refine-input" rows="2" placeholder="예) 캐릭터를 20대 남성 바리스타로 바꿔줘 · 팔레트를 더 차분하게 · 지침에 릴스 전략 추가 · 지금 시트에서 약한 부분이 뭐야?  (Ctrl/⌘+Enter 전송)" style="flex:1;${ta}"></textarea>
+        <button id="sheet-refine-send" type="button">보내기</button>
+      </div>
+    </div>
+
+    <div style="border:1px solid var(--accent);border-radius:12px;padding:16px">
+      <b class="small" style="color:var(--accent-hover)">④ 락인 — 이 채널에 적용</b>
+      <p class="muted small" style="margin:4px 0 10px;line-height:1.55">락을 걸면 이 채널의 모든 이미지·카피 생성이 공용 브랜드 + 채널 시트를 최우선으로 따르고, 레퍼런스 이미지가 <code>--ref</code> 앵커로 전달됩니다.</p>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button id="sheet-lock" type="button">락 걸기</button>
+        <span id="sheet-lock-badge" class="small muted" style="white-space:nowrap"></span>
+      </div>
+    </div>
+    <p id="sheet-status" class="muted small" style="margin-top:10px"></p>
+  </div>`;
+
+  const chSel = $('#sheet-ch');
+  const mEl = $('#sheet-master');
+  const gEl = $('#sheet-guidelines');
+  const logoNoteEl = $('#sheet-logo-note');
+  const charsBox = $('#sheet-chars');
+  const badge = $('#sheet-lock-badge');
+  const lockBtn = $('#sheet-lock');
+  const setStatus = (t) => { const el = $('#sheet-status'); if (el) el.textContent = t || ''; };
+  const setMasterRef = (rel) => {
+    const box = $('#sheet-ref-master-box');
+    if (!box) return;
+    box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">` : '<span class="muted" style="font-size:10px">브랜드<br>레퍼런스</span>';
+  };
+  const setLogoBox = (rel) => {
+    const box = $('#sheet-logo-box');
+    if (!box) return;
+    box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain" alt="로고">` : '<span class="muted" style="font-size:10px">로고<br>없음</span>';
+  };
+  let curLocked = false;
+  let charState = []; // [{name, text, ref}]
+  const syncChars = () => {
+    if (!charsBox) return;
+    const names = charsBox.querySelectorAll('.sc-name');
+    const texts = charsBox.querySelectorAll('.sc-text');
+    charState = charState.map((c, i) => ({
+      name: (names[i] && names[i].value) || c.name || `캐릭터 ${i + 1}`,
+      text: (texts[i] && texts[i].value) || '',
+      ref: c.ref || '',
+    }));
+  };
+  const renderChars = () => {
+    if (!charsBox) return;
+    charsBox.innerHTML = charState.length ? charState.map((c, i) => `
+      <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input class="sc-name" data-i="${i}" value="${esc(c.name || '')}" placeholder="캐릭터 이름 (예: 바리스타 지은 / 시그니처 라떼)" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12.5px">
+          <button class="sc-del small" data-i="${i}" type="button">삭제</button>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div style="width:64px;height:64px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center">${c.ref ? `<img src="${satUrl(c.ref)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="ref">` : '<span class="muted" style="font-size:10px">레퍼런스<br>없음</span>'}</div>
+          <textarea class="sc-text" data-i="${i}" rows="4" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 오트밀색 니트 + 리넨 앞치마. 항상 같은 인물." style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;line-height:1.55;resize:vertical">${esc(c.text || '')}</textarea>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button class="sc-genref small" data-i="${i}" type="button">이 캐릭터 레퍼런스 생성</button>
+          <button class="sc-upref small" data-i="${i}" type="button">참고 이미지 업로드</button>
+        </div>
+      </div>`).join('') : '<p class="muted small">캐릭터가 없습니다. "+ 캐릭터 추가" 또는 [AI 초안 + 이미지]로 시작하세요.</p>';
+    charsBox.querySelectorAll('.sc-del').forEach((b) => { b.onclick = () => { syncChars(); charState.splice(Number(b.dataset.i), 1); renderChars(); }; });
+    charsBox.querySelectorAll('.sc-genref').forEach((b) => { b.onclick = () => genCharRef(Number(b.dataset.i)); });
+    charsBox.querySelectorAll('.sc-upref').forEach((b) => { b.onclick = () => upCharRef(Number(b.dataset.i)); });
+  };
+  const refreshList = async () => {
+    const items = await window.api.sheet.list(dir).catch(() => []);
+    if (fseq !== foundationSeq || !chSel) return;
+    const keep = chSel.value;
+    chSel.innerHTML = (items || []).map((it) =>
+      `<option value="${esc(it.channel)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.characterCount ? ` · 캐릭터 ${it.characterCount}` : ''}${it.has ? '' : ' · (미작성)'}</option>`).join('');
+    if (keep && items.some((it) => it.channel === keep)) chSel.value = keep;
+  };
+  // 채널별(캐릭터 시트 + 가이드 시트 + 락) — 브랜드·로고는 여기서 건드리지 않는다(공용).
+  const loadCh = async (ch) => {
+    const s = await window.api.sheet.get(dir, ch).catch(() => null);
+    if (fseq !== foundationSeq) return;
+    gEl.value = (s && s.guidelines) || '';
+    charState = ((s && s.characters) || []).map((c) => ({ name: c.name || '캐릭터', text: c.text || '', ref: c.ref || '' }));
+    renderChars();
+    curLocked = !!(s && s.locked);
+    badge.textContent = curLocked ? '🔒 락됨 · 이 채널 이미지에 적용 중' : '락 해제 상태';
+    badge.style.color = curLocked ? 'var(--ok)' : '';
+    lockBtn.textContent = curLocked ? '락 해제' : '락 걸기';
+    setStatus('');
+  };
+  const saveAll = (ch) => window.api.sheet.save(dir, ch, { guidelines: gEl.value, characters: charState });
+  // 클라이언트 공용 브랜드 시트 + 로고 — 채널 무관하게 1회 로드/저장.
+  const saveBrandData = () => window.api.sheet.saveBrand(dir, { brand: mEl.value, logoNote: logoNoteEl ? logoNoteEl.value : undefined });
+  const loadBrand = async () => {
+    const b = await window.api.sheet.getBrand(dir).catch(() => null);
+    if (fseq !== foundationSeq) return;
+    mEl.value = (b && b.brand) || '';
+    if (logoNoteEl) logoNoteEl.value = (b && b.logoNote) || '';
+    setLogoBox(b && b.logoRef);
+    setMasterRef(b && b.brandRef);
+  };
+  await loadBrand();
+  await refreshList();
+  if (fseq === foundationSeq && chSel && chSel.value) await loadCh(chSel.value);
+  if (fseq !== foundationSeq) return;
+  if (chSel) chSel.onchange = () => loadCh(chSel.value);
+  $('#sheet-brand-save').onclick = async () => {
+    const r = await saveBrandData();
+    if (r && r.ok) { setStatus('공용 브랜드·로고 저장됨'); toast('공용 브랜드·로고 저장됨 — 전 채널 공유'); }
+    else setStatus((r && r.error) || '저장 실패');
+  };
+  $('#sheet-logo-up').onclick = async () => {
+    await saveBrandData(); // 로고 노트·브랜드 텍스트 등 현재 편집분 보존
+    const r = await window.api.sheet.setLogo(dir);
+    if (r && r.ok && r.rel) { setLogoBox(r.rel); setStatus('로고 업로드됨 (전 채널 공유)'); }
+    else if (r && !r.canceled) setStatus((r && r.error) || '로고 업로드 실패');
+  };
+  $('#sheet-logo-clear').onclick = async () => {
+    const r = await window.api.sheet.clearLogo(dir);
+    if (r && r.ok) { setLogoBox(''); setStatus('로고 제거됨'); }
+  };
+  $('#sheet-char-add').onclick = () => {
+    syncChars();
+    if (charState.length >= 5) { setStatus('캐릭터는 최대 5개까지 (ima2 레퍼런스 상한)'); return; }
+    charState.push({ name: `캐릭터 ${charState.length + 1}`, text: '', ref: '' });
+    renderChars();
+  };
+  $('#sheet-save').onclick = async () => {
+    const ch = chSel.value; if (!ch) return;
+    syncChars();
+    const r = await saveAll(ch);
+    if (r && r.ok) { setStatus('저장됨'); toast('채널 시트 저장됨'); await refreshList(); await loadCh(ch); }
+    else setStatus((r && r.error) || '저장 실패');
+  };
+  lockBtn.onclick = async () => {
+    const ch = chSel.value; if (!ch) return;
+    syncChars();
+    if (!curLocked) {
+      const has = mEl.value.trim() || gEl.value.trim() || (logoNoteEl && logoNoteEl.value.trim()) || charState.some((c) => c.text.trim() || c.ref);
+      if (!has) { setStatus('①에서 시트 내용을 먼저 입력하세요'); return; }
+      await saveBrandData(); // 공용 브랜드·로고(편집분) 보존
+      await saveAll(ch);
+    }
+    const r = await window.api.sheet.lock(dir, ch, !curLocked);
+    if (r && r.ok) { toast(!curLocked ? '락 — 이 채널 이미지에 시트 적용' : '락 해제됨'); await loadCh(ch); await refreshList(); }
+    else setStatus((r && r.error) || '락 실패');
+  };
+  // 이 채널의 이미지(브랜드 레퍼런스 + 캐릭터 턴어라운드 전체)를 병렬 생성 — {total, ok, failed} 반환.
+  // 이미지 1장 = 프롬프트 컴파일(LLM 1회) + 생성으로 몇 분 — 순차로 돌리면 장수만큼 늘어난다.
+  async function genAllImages() {
+    syncChars();
+    const withBrand = !!mEl.value.trim();
+    const charTargets = charState.map((c, i) => ({ c, i })).filter((x) => x.c.text.trim());
+    const totalImgs = (withBrand ? 1 : 0) + charTargets.length;
+    if (!totalImgs) { setStatus('먼저 ① 기획에서 시트를 작성하세요.'); return null; }
+    let doneImgs = 0;
+    const tick = (label) => { doneImgs++; if (doneImgs < totalImgs) setStatus(`이미지 ${doneImgs}/${totalImgs} 완료 (${label}) — 나머지 병렬 생성 중…`); };
+    setStatus(`이미지 ${totalImgs}장(브랜드 ${withBrand ? 1 : 0} + 캐릭터 ${charTargets.length}) 병렬 생성 중… (몇 분)`);
+    const jobs = [];
+    if (withBrand) jobs.push(genBrandRef(true).then((ok) => { tick('브랜드'); return { ok, label: '브랜드 레퍼런스' }; }));
+    for (const t of charTargets) jobs.push(genCharRef(t.i, true).then((ok) => { tick(t.c.name); return { ok, label: `캐릭터 「${t.c.name}」` }; }));
+    const results = await Promise.all(jobs);
+    const failed = results.filter((x) => !x.ok).map((x) => x.label);
+    return { total: results.length, ok: results.length - failed.length, failed };
+  }
+  $('#sheet-imgs-all').onclick = async () => {
+    const btn = $('#sheet-imgs-all'); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '이미지 생성 중…';
+    try {
+      const r = await genAllImages();
+      if (fseq !== foundationSeq) return;
+      if (r) setStatus(`이미지 일괄 생성 완료 — 성공 ${r.ok}/${r.total}` + (r.failed.length ? ` · 실패: ${r.failed.join(', ')} (재시도 가능)` : ''));
+    } finally { btn.disabled = false; btn.textContent = old; }
+  };
+  $('#sheet-ai').onclick = async () => {
+    const ch = chSel.value; if (!ch) return;
+    const btn = $('#sheet-ai'); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (캐릭터 1~3개 · 최대 7분)');
+    try {
+      const r = await window.api.sheet.generate(dir, ch);
+      if (fseq !== foundationSeq) return;
+      if (r && r.ok && r.draft) {
+        if (r.draft.master) mEl.value = r.draft.master;     // 브랜드 시트(공용)
+        if (r.draft.guidelines) gEl.value = r.draft.guidelines;
+        // 캐릭터 시트 — 초안이 채널 전략에 따라 1~3개를 제안(구 단일 character도 수용).
+        // 기존 레퍼런스는 자리(index)별로 보존하고 이름·텍스트만 초안으로 교체하며,
+        // 초안 개수보다 뒤에 있던 기존 캐릭터는 그대로 남긴다(사용자가 만든 것을 지우지 않게).
+        const gen = (r.draft.characters && r.draft.characters.length)
+          ? r.draft.characters
+          : (r.draft.character ? [{ name: '캐릭터 1', text: r.draft.character }] : []);
+        if (gen.length) {
+          syncChars();
+          charState = gen.map((c, i) => ({ name: c.name || `캐릭터 ${i + 1}`, text: c.text || '', ref: (charState[i] && charState[i].ref) || '' }))
+            .concat(charState.slice(gen.length)).slice(0, 5);
+          renderChars();
+        }
+        // 이어서 ② 레퍼런스 이미지(브랜드 + 캐릭터 턴어라운드)를 병렬 생성 — 실패해도 초안은 남는다.
+        const r2 = await genAllImages();
+        if (fseq !== foundationSeq) return;
+        if (!r2) setStatus('텍스트 초안 완료 — 검토·수정 후 [채널 시트 저장]을 누르세요.');
+        else setStatus(`AI 초안 + 이미지 완료 — 성공 ${r2.ok}/${r2.total}`
+          + (r2.failed.length ? ` · 실패: ${r2.failed.join(', ')} (②에서 재시도)` : '')
+          + '. 검토 후 ④ 락인을 진행하세요.');
+      } else setStatus((r && r.error) || '초안 생성 실패');
+    } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; }
+  };
+  // 브랜드 레퍼런스(클라이언트 공용) — 브랜드 시트 텍스트로 스타일 보드 1장 생성해 공용 저장.
+  // 함수 선언(호이스팅) — renderChars가 genCharRef를 참조하므로 TDZ를 피한다.
+  // quiet: 병렬 일괄 실행 시 개별 상태 메시지를 억제(집계 메시지가 대신 표시) — 성공 여부 반환.
+  async function genBrandRef(quiet) {
+    const st = quiet ? () => {} : setStatus;
+    await saveBrandData(); // 브랜드 텍스트(편집분) 공용 저장 후 생성
+    const btn = $('#sheet-ref-master'); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '생성 중…'; st('브랜드 스타일 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)');
+    let okv = false;
+    try {
+      const r = await window.api.sheet.genBrandRef(dir);
+      if (fseq !== foundationSeq) return false;
+      if (r && r.ok && r.rel) { setMasterRef(r.rel); st('브랜드 레퍼런스 생성됨 (전 채널 공유)'); okv = true; }
+      else st((r && r.error) || '레퍼런스 생성 실패');
+    } catch (e) { st('레퍼런스 생성 실패: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; }
+    return okv;
+  }
+  async function genCharRef(i, quiet) {
+    const st = quiet ? () => {} : setStatus;
+    const ch = chSel.value; if (!ch) return false;
+    syncChars();
+    if (!charState[i] || !charState[i].text.trim()) { st('이 캐릭터의 내용을 먼저 입력하세요'); return false; }
+    await saveAll(ch);
+    st(`캐릭터 「${charState[i].name}」 턴어라운드(정면·측면·후면) 모델 시트 생성 중… (이미지 엔진 · 최대 몇 분)`);
+    let okv = false;
+    try {
+      const r = await window.api.sheet.genRef(dir, ch, 'character', i);
+      if (fseq !== foundationSeq) return false;
+      if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); st('턴어라운드 레퍼런스 생성됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); okv = true; }
+      else st((r && r.error) || '레퍼런스 생성 실패');
+    } catch (e) { st('레퍼런스 생성 실패: ' + e.message); }
+    return okv;
+  }
+  // 참고용 레퍼런스 업로드 — AI 생성 대신 갖고 있는 이미지를 이 캐릭터의 앵커로 등록.
+  async function upCharRef(i) {
+    const ch = chSel.value; if (!ch) return;
+    syncChars();
+    if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요 (한 줄이면 충분 — 저장된 캐릭터에만 업로드됩니다)'); return; }
+    await saveAll(ch); // 업로드 핸들러가 저장된 시트를 읽으므로 먼저 저장
+    try {
+      const r = await window.api.sheet.uploadRef(dir, ch, 'character', i);
+      if (fseq !== foundationSeq) return;
+      if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('참고 이미지 업로드됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); }
+      else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
+    } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
+  }
+  // 전체 채널 AI 초안 — 락 안 된 모든 채널의 텍스트 초안(캐릭터+지침)을 동시 3채널씩 병렬
+  // 생성해 바로 저장(순차로 돌리면 채널 수 × 몇 분이라 과도. 3개 제한은 엔진 한도 배려).
+  // 이미지는 만들지 않는다(채널당 몇 분 × 캐릭터 수라 과도) — 각 채널에서 검토 후 생성.
+  // 공용 브랜드 시트는 비어 있을 때만 첫 성공 초안의 master로 채운다(기존 브랜드를 덮지 않게).
+  $('#sheet-ai-all').onclick = async () => {
+    const btnAll = $('#sheet-ai-all'); const btnOne = $('#sheet-ai');
+    const oldAll = btnAll.textContent;
+    const items = (await window.api.sheet.list(dir).catch(() => [])) || [];
+    if (fseq !== foundationSeq || !items.length) return;
+    const targets = items.filter((it) => !it.locked); // 락인 채널은 확정본 — 덮어쓰지 않는다
+    const skipped = items.length - targets.length;
+    if (!targets.length) { setStatus('모든 채널이 락인 상태입니다 — 초안으로 덮어쓰려면 먼저 락을 해제하세요.'); return; }
+    btnAll.disabled = true; btnOne.disabled = true;
+    let okCount = 0; let doneCount = 0; const fails = [];
+    const b0 = await window.api.sheet.getBrand(dir).catch(() => null);
+    let brandFilled = !!(b0 && b0.brand && b0.brand.trim()); // 렌더러 단일 스레드 — 플래그로 1회만 채움
+    try {
+      setStatus(`전체 채널 AI 초안 — ${targets.length}개 채널을 동시 3개씩 생성 중… (채널당 최대 7분)`);
+      let next = 0;
+      const worker = async () => {
+        while (next < targets.length) {
+          if (fseq !== foundationSeq) return;
+          const it = targets[next++];
+          const r = await window.api.sheet.generate(dir, it.channel).catch((e) => ({ ok: false, error: e.message }));
+          if (fseq !== foundationSeq) return;
+          if (r && r.ok && r.draft) {
+            // 채널별 저장 — 기존 캐릭터 레퍼런스는 자리(index)별로 보존
+            const cur = await window.api.sheet.get(dir, it.channel).catch(() => null);
+            const curChars = (cur && cur.characters) || [];
+            const characters = (r.draft.characters || []).map((c, i) => ({ name: c.name, text: c.text, ref: (curChars[i] && curChars[i].ref) || '' }));
+            await window.api.sheet.save(dir, it.channel, { characters, guidelines: r.draft.guidelines || '' });
+            if (r.draft.master && !brandFilled) { brandFilled = true; await window.api.sheet.saveBrand(dir, { brand: r.draft.master }); }
+            okCount++;
+          } else fails.push(`${it.name}: ${String((r && r.error) || '실패').slice(0, 80)}`);
+          doneCount++;
+          btnAll.textContent = `전체 초안 ${doneCount}/${targets.length}…`;
+          setStatus(`전체 채널 AI 초안 — ${doneCount}/${targets.length} 완료(${it.name}) · 나머지 병렬 생성 중…`);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
+      if (fseq !== foundationSeq) return;
+      await refreshList();
+      await loadBrand();
+      if (chSel.value) await loadCh(chSel.value);
+      setStatus(`전체 채널 AI 초안 완료 — 성공 ${okCount}/${targets.length}${skipped ? ` · 락인 ${skipped}개 건너뜀` : ''}`
+        + `${fails.length ? ` · 실패: ${fails.join(' / ')}` : ''}. 채널마다 검토 후 ② 레퍼런스 생성·④ 락인을 진행하세요.`);
+    } catch (e) { setStatus('전체 초안 생성 실패: ' + e.message);
+    } finally { btnAll.disabled = false; btnOne.disabled = false; btnAll.textContent = oldAll; }
+  };
+  $('#sheet-ref-master').onclick = genBrandRef;
+  $('#sheet-ref-master-up').onclick = async () => {
+    await saveBrandData(); // 브랜드 텍스트(편집분) 보존
+    try {
+      const r = await window.api.sheet.uploadRef(dir, '', 'brand');
+      if (fseq !== foundationSeq) return;
+      if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('브랜드 참고 이미지 업로드됨 (전 채널 공유)'); }
+      else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
+    } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
+  };
+  // ③ 디렉터 고도화 — 현재 편집 중인 시트를 컨텍스트로 질의응답/수정. 바뀐 필드는 편집기에
+  // 즉시 적용(레퍼런스는 자리별 보존)하고 저장은 사용자 검토 후.
+  const refineMsgs = [];
+  const renderRefine = () => {
+    const box = $('#sheet-refine-log');
+    if (!box) return;
+    box.style.display = refineMsgs.length ? '' : 'none';
+    box.innerHTML = refineMsgs.map((m) => `
+      <div style="margin-bottom:10px">
+        <b class="small" style="color:${m.role === 'user' ? 'var(--text)' : 'var(--accent-hover)'}">${m.role === 'user' ? '나' : '디렉터'}</b>
+        <div class="small" style="white-space:pre-wrap;line-height:1.55;margin-top:2px">${esc(m.text)}</div>
+      </div>`).join('');
+    box.scrollTop = box.scrollHeight;
+  };
+  const sendRefine = async () => {
+    const inp = $('#sheet-refine-input');
+    const btn = $('#sheet-refine-send');
+    const q = (inp.value || '').trim(); if (!q) return;
+    const ch = chSel.value; if (!ch) { setStatus('채널을 먼저 선택하세요'); return; }
+    syncChars();
+    refineMsgs.push({ role: 'user', text: q }); renderRefine();
+    inp.value = ''; btn.disabled = true; btn.textContent = '고도화 중…';
+    setStatus('디렉터가 현재 시트를 검토하고 있습니다… (최대 7분)');
+    try {
+      const payload = { brand: mEl.value, characters: charState.map((c) => ({ name: c.name, text: c.text })), guidelines: gEl.value, question: q };
+      const r = await window.api.sheet.refine(dir, ch, payload);
+      if (fseq !== foundationSeq) return;
+      if (r && r.ok) {
+        refineMsgs.push({ role: 'dir', text: r.reply || '반영했습니다.' });
+        if (r.draft) {
+          if (r.draft.master) mEl.value = r.draft.master;
+          if (r.draft.guidelines) gEl.value = r.draft.guidelines;
+          if (r.draft.characters && r.draft.characters.length) {
+            charState = r.draft.characters.map((c, i) => ({ name: c.name, text: c.text, ref: (charState[i] && charState[i].ref) || '' })).slice(0, 5);
+            renderChars();
+          }
+          setStatus('디렉터 수정안을 편집기에 적용했습니다 — 검토 후 [공용 브랜드·로고 저장]/[채널 시트 저장]을 누르세요.');
+        } else setStatus('');
+      } else refineMsgs.push({ role: 'dir', text: (r && r.error) || '고도화에 실패했습니다 — 다시 시도하세요.' });
+    } catch (e) { refineMsgs.push({ role: 'dir', text: '고도화 실패: ' + e.message });
+    } finally { renderRefine(); btn.disabled = false; btn.textContent = '보내기'; }
+  };
+  $('#sheet-refine-send').onclick = sendRefine;
+  $('#sheet-refine-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendRefine(); });
+}
+
 let settingsSeq = 0;
 async function openSettings(section) {
   const seq = ++settingsSeq; // 빠른 재클릭 시 낡은 호출의 리스너 중복 바인딩 방지
@@ -2464,7 +3064,8 @@ async function openSettings(section) {
     <div class="sheet-body">
       <div data-body="env">${envRows(s)}${envButtons()}</div>
       <div data-body="channels" class="hidden">
-        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>메인 채널</b>: 인스타그램 · 스레드 · 네이버 블로그 · 네이버 클립 · 카카오채널<br>각 플랫폼 토큰으로 Blotato 없이 직접 발행합니다. Instagram·네이버·클립·카카오는 API 제약으로 수동 체크리스트를 사용합니다.</p>
+        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>메인 채널</b>: 인스타그램 · 스레드 · 네이버 블로그 · 네이버 클립 · 카카오채널<br>인스타·스레드·페북·X·링크드인은 API 토큰으로 직접 발행합니다. <b>네이버·카카오채널은 공개 API가 없어</b> 아래에서 <b>1회 로그인</b>하면 앱 내장 창으로 작성합니다(비밀번호는 저장하지 않음).</p>
+        <div id="sec-browser-ch" style="margin-bottom:16px"></div>
         <div id="sec-forms-ch"></div>
       </div>
       <div data-body="opencrab" class="hidden">
@@ -2476,72 +3077,21 @@ async function openSettings(section) {
           <p class="muted small" style="margin:4px 0 6px;line-height:1.55">일괄·오토파일럿 생성에 적용되는 기본 스타일입니다. 카드별 「비주얼 생성」 패널의 "이미지" 탭에서 개별로 바꿀 수도 있습니다.</p>
           <select id="set-image-style" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px"></select>
         </div>
+        <div style="margin-bottom:14px">
+          <b class="small">이미지 생성 품질 (ima2)</b>
+          <p class="muted small" style="margin:4px 0 6px;line-height:1.55"><b>high</b>는 <b>medium</b> 대비 체감 2~4배 느립니다. 발행용 최종 이미지에 적용됩니다(파운데이션의 시트 레퍼런스는 속도를 위해 항상 medium). 빠르게 뽑아보려면 medium을 권합니다.</p>
+          <select id="set-image-quality" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px">
+            <option value="low">low — 가장 빠름 (러프 확인용)</option>
+            <option value="medium">medium — 균형 (빠름)</option>
+            <option value="high">high — 최고 품질 (느림)</option>
+          </select>
+        </div>
         <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>클로드 디자인</b>(SVG→PNG) 레인은 키 없이 항상 동작합니다. 아래 키를 넣으면 이미지·영상 프로바이더가 추가로 열립니다.</p>
         <div id="sec-forms-rd"></div>
       </div>
       <div data-body="sheet" class="hidden">
-        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>채널 콘텐츠 시트</b> — <b>브랜드 시트·로고</b>는 클라이언트 공용(전 채널 공유), <b>캐릭터 시트·가이드 시트</b>는 채널별입니다. 채널에 락을 걸면 그 채널의 <b>모든 이미지·카피 생성</b>이 공용 브랜드 + 채널 시트를 최우선으로 따릅니다.</p>
-        <div id="sheet-noclient" class="muted small hidden" style="margin:10px 0">먼저 클라이언트를 선택하세요.</div>
-        <div id="sheet-editor">
-
-          <div style="border:1px solid var(--accent);border-radius:10px;padding:14px;margin-bottom:18px">
-            <b class="small" style="color:var(--accent-hover)">클라이언트 공용 — 전 채널 공유</b>
-
-            <div style="margin-top:10px">
-              <b class="small">① 브랜드 시트</b>
-              <p class="muted small" style="margin:3px 0 5px">전체 비주얼 아이덴티티 — 스타일·팔레트 HEX·조명·구도·재질. 모든 채널 이미지에 공통 적용될 "룩의 규칙".</p>
-              <textarea id="sheet-master" rows="6" placeholder="예) 무드: 따뜻한 미니멀. 팔레트: #F5F1E8 크림, #1C1A17 다크브라운, #8C7B6B 톱. 조명: 한쪽 자연광 + 긴 그림자. 구도: 단일 주체, 넉넉한 여백. 재질: 매트 필름그레인. 이미지 안 텍스트/로고 없음." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:0 0 8px"></textarea>
-              <div style="display:flex;gap:12px;align-items:center;margin:0 0 4px">
-                <div id="sheet-ref-master-box" style="width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center"></div>
-                <div style="flex:1;min-width:0">
-                  <div style="display:flex;gap:6px;flex-wrap:wrap">
-                    <button id="sheet-ref-master" type="button" class="small">브랜드 스타일 레퍼런스 생성</button>
-                    <button id="sheet-ref-master-up" type="button" class="small">참고 이미지 업로드</button>
-                  </div>
-                  <p class="muted small" style="margin-top:4px;line-height:1.45">브랜드 시트로 스타일 보드를 생성하거나, 갖고 있는 참고 이미지를 올려 앵커로 씁니다(선택).</p>
-                </div>
-              </div>
-            </div>
-
-            <div style="padding-top:12px;margin-top:12px;border-top:1px solid var(--line)">
-              <b class="small">② 로고</b>
-              <p class="muted small" style="margin:3px 0 8px">브랜드 로고 자산. 색·스타일 근거로만 반영하고 <b>이미지 안엔 렌더하지 않습니다</b>(앱이 따로 얹음).</p>
-              <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
-                <div id="sheet-logo-box" style="width:66px;height:66px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center"></div>
-                <div style="flex:1;min-width:0;display:flex;gap:6px;flex-wrap:wrap">
-                  <button id="sheet-logo-up" type="button" class="small">로고 파일 업로드</button>
-                  <button id="sheet-logo-clear" type="button" class="small">제거</button>
-                </div>
-              </div>
-              <textarea id="sheet-logo-note" rows="2" placeholder="로고 사용 규칙(선택) — 예) 로고 컬러 #8C6B4F 갈색을 팔레트 근거로. 여백 확보. 이미지 내 워드마크 금지." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:var(--text);font-size:12.5px;line-height:1.55;resize:vertical;margin:0"></textarea>
-            </div>
-
-            <button id="sheet-brand-save" type="button" style="margin-top:12px">공용 브랜드·로고 저장</button>
-          </div>
-
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
-            <select id="sheet-ch" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px"></select>
-            <span id="sheet-lock-badge" class="small muted" style="white-space:nowrap"></span>
-          </div>
-
-          <b class="small" style="color:var(--accent-hover)">③ 캐릭터 시트 (채널별 · 여러 개 가능)</b>
-          <p class="muted small" style="margin:3px 0 10px;line-height:1.5">반복 등장 주체 — 인물·마스코트·제품. <b>[AI 초안 + 이미지]</b>가 채널 전략에 맞춰 캐릭터 시트를 1~3개 제안합니다. <b>[레퍼런스 생성]</b>은 정면·측면·후면 <b>턴어라운드 모델 시트</b>를 만들고, <b>[참고 이미지 업로드]</b>로 갖고 있는 사진을 대신 쓸 수도 있습니다. 락인 시 최대 5장까지 <code>--ref</code> 앵커로 쓰여 같은 얼굴·같은 제품을 재현합니다. 텍스트만으로는 픽셀 일관성이 안 됩니다.</p>
-          <div id="sheet-chars"></div>
-          <button id="sheet-char-add" type="button" class="small" style="margin-top:8px">+ 캐릭터 추가</button>
-
-          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
-            <b class="small" style="color:var(--accent-hover)">④ 가이드 시트 (채널별)</b>
-            <p class="muted small" style="margin:3px 0 5px">콘텐츠·편집 규칙 — 카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약, 전략별 세부. 카피·이미지 모두에 적용.</p>
-            <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그 끝에 3~5개. '최고/1위' 과장 금지." style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;line-height:1.6;resize:vertical;margin:0"></textarea>
-          </div>
-
-          <div class="btn-grid" style="margin-top:16px">
-            <button id="sheet-ai" type="button">AI 초안 + 이미지</button>
-            <button id="sheet-save" type="button">채널 시트 저장</button>
-            <button id="sheet-lock" type="button">락 걸기</button>
-          </div>
-          <p id="sheet-status" class="muted small" style="margin-top:8px"></p>
-        </div>
+        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>채널 콘텐츠 시트</b>는 <b>파운데이션</b> 탭으로 이동했습니다 — 기획 → 레퍼런스 이미지 → 디렉터 고도화 → 락인 절차로 관리합니다.</p>
+        <button id="set-open-foundation" type="button">파운데이션 열기</button>
       </div>
       <div data-body="engine" class="hidden">
         <p class="muted" style="margin-bottom:10px">기본 엔진을 선택합니다. 대화·파이프라인 단계·이미지 렌더가 이 엔진으로 동작하며, 아래 <b>단계별 엔진</b>에서 구간마다 따로 지정할 수 있습니다.</p>
@@ -2692,234 +3242,23 @@ async function openSettings(section) {
       };
     }
   }
-  // 채널 시트 락인 (설정 → 시트) — 채널별 마스터/캐릭터 시트 편집 + 락 + AI 초안
+  // 이미지 생성 품질 (설정 → 렌더) — ima2 --quality. 발행 이미지에 적용(시트 레퍼런스는 항상 medium).
   {
-    const dir = S.client && S.client.dir;
-    const editor = $('#sheet-editor');
-    const noclient = $('#sheet-noclient');
-    if (!dir) {
-      if (editor) editor.classList.add('hidden');
-      if (noclient) noclient.classList.remove('hidden');
-    } else if (editor) {
-      const chSel = $('#sheet-ch');
-      const mEl = $('#sheet-master');
-      const gEl = $('#sheet-guidelines');
-      const logoNoteEl = $('#sheet-logo-note');
-      const charsBox = $('#sheet-chars');
-      const badge = $('#sheet-lock-badge');
-      const lockBtn = $('#sheet-lock');
-      const setStatus = (t) => { const el = $('#sheet-status'); if (el) el.textContent = t || ''; };
-      const setMasterRef = (rel) => {
-        const box = $('#sheet-ref-master-box');
-        if (!box) return;
-        box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="레퍼런스">` : '<span class="muted" style="font-size:10px">브랜드<br>레퍼런스</span>';
-      };
-      const setLogoBox = (rel) => {
-        const box = $('#sheet-logo-box');
-        if (!box) return;
-        box.innerHTML = rel ? `<img src="${satUrl(rel)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain" alt="로고">` : '<span class="muted" style="font-size:10px">로고<br>없음</span>';
-      };
-      let curLocked = false;
-      let charState = []; // [{name, text, ref}]
-      const syncChars = () => {
-        if (!charsBox) return;
-        const names = charsBox.querySelectorAll('.sc-name');
-        const texts = charsBox.querySelectorAll('.sc-text');
-        charState = charState.map((c, i) => ({
-          name: (names[i] && names[i].value) || c.name || `캐릭터 ${i + 1}`,
-          text: (texts[i] && texts[i].value) || '',
-          ref: c.ref || '',
-        }));
-      };
-      const renderChars = () => {
-        if (!charsBox) return;
-        charsBox.innerHTML = charState.length ? charState.map((c, i) => `
-          <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-              <input class="sc-name" data-i="${i}" value="${esc(c.name || '')}" placeholder="캐릭터 이름 (예: 바리스타 지은 / 시그니처 라떼)" style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12.5px">
-              <button class="sc-del small" data-i="${i}" type="button">삭제</button>
-            </div>
-            <div style="display:flex;gap:10px">
-              <div style="width:64px;height:64px;flex:none;background:var(--card);border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center">${c.ref ? `<img src="${satUrl(c.ref)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:cover" alt="ref">` : '<span class="muted" style="font-size:10px">레퍼런스<br>없음</span>'}</div>
-              <textarea class="sc-text" data-i="${i}" rows="4" placeholder="예) 20대 후반 여성 바리스타 1인. 자연스러운 피부 질감(visible pores), 오트밀색 니트 + 리넨 앞치마. 항상 같은 인물." style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;line-height:1.55;resize:vertical">${esc(c.text || '')}</textarea>
-            </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-              <button class="sc-genref small" data-i="${i}" type="button">이 캐릭터 레퍼런스 생성</button>
-              <button class="sc-upref small" data-i="${i}" type="button">참고 이미지 업로드</button>
-            </div>
-          </div>`).join('') : '<p class="muted small">캐릭터가 없습니다. "+ 캐릭터 추가"로 시작하세요.</p>';
-        charsBox.querySelectorAll('.sc-del').forEach((b) => { b.onclick = () => { syncChars(); charState.splice(Number(b.dataset.i), 1); renderChars(); }; });
-        charsBox.querySelectorAll('.sc-genref').forEach((b) => { b.onclick = () => genCharRef(Number(b.dataset.i)); });
-        charsBox.querySelectorAll('.sc-upref').forEach((b) => { b.onclick = () => upCharRef(Number(b.dataset.i)); });
-      };
-      const refreshList = async () => {
-        const items = await window.api.sheet.list(dir).catch(() => []);
-        if (seq !== settingsSeq || !chSel) return;
-        const keep = chSel.value;
-        chSel.innerHTML = (items || []).map((it) =>
-          `<option value="${esc(it.channel)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.characterCount ? ` · 캐릭터 ${it.characterCount}` : ''}${it.has ? '' : ' · (미작성)'}</option>`).join('');
-        if (keep && items.some((it) => it.channel === keep)) chSel.value = keep;
-      };
-      // 채널별(캐릭터 시트 + 가이드 시트 + 락) — 브랜드·로고는 여기서 건드리지 않는다(공용).
-      const loadCh = async (ch) => {
-        const s = await window.api.sheet.get(dir, ch).catch(() => null);
-        if (seq !== settingsSeq) return;
-        gEl.value = (s && s.guidelines) || '';
-        charState = ((s && s.characters) || []).map((c) => ({ name: c.name || '캐릭터', text: c.text || '', ref: c.ref || '' }));
-        renderChars();
-        curLocked = !!(s && s.locked);
-        badge.textContent = curLocked ? '🔒 락됨 · 이 채널 이미지에 적용 중' : '락 해제';
-        badge.style.color = curLocked ? 'var(--ok)' : '';
-        lockBtn.textContent = curLocked ? '락 해제' : '락 걸기';
-        setStatus('');
-      };
-      const saveAll = (ch) => window.api.sheet.save(dir, ch, { guidelines: gEl.value, characters: charState });
-      // 클라이언트 공용 브랜드 시트 + 로고 — 채널 무관하게 1회 로드/저장.
-      const saveBrandData = () => window.api.sheet.saveBrand(dir, { brand: mEl.value, logoNote: logoNoteEl ? logoNoteEl.value : undefined });
-      const loadBrand = async () => {
-        const b = await window.api.sheet.getBrand(dir).catch(() => null);
-        if (seq !== settingsSeq) return;
-        mEl.value = (b && b.brand) || '';
-        if (logoNoteEl) logoNoteEl.value = (b && b.logoNote) || '';
-        setLogoBox(b && b.logoRef);
-        setMasterRef(b && b.brandRef);
-      };
-      await loadBrand();
-      await refreshList();
-      if (seq === settingsSeq && chSel && chSel.value) await loadCh(chSel.value);
-      if (chSel) chSel.onchange = () => loadCh(chSel.value);
-      $('#sheet-brand-save').onclick = async () => {
-        const r = await saveBrandData();
-        if (r && r.ok) { setStatus('공용 브랜드·로고 저장됨'); toast('공용 브랜드·로고 저장됨 — 전 채널 공유'); }
-        else setStatus((r && r.error) || '저장 실패');
-      };
-      $('#sheet-logo-up').onclick = async () => {
-        await saveBrandData(); // 로고 노트·브랜드 텍스트 등 현재 편집분 보존
-        const r = await window.api.sheet.setLogo(dir);
-        if (r && r.ok && r.rel) { setLogoBox(r.rel); setStatus('로고 업로드됨 (전 채널 공유)'); }
-        else if (r && !r.canceled) setStatus((r && r.error) || '로고 업로드 실패');
-      };
-      $('#sheet-logo-clear').onclick = async () => {
-        const r = await window.api.sheet.clearLogo(dir);
-        if (r && r.ok) { setLogoBox(''); setStatus('로고 제거됨'); }
-      };
-      $('#sheet-char-add').onclick = () => {
-        syncChars();
-        if (charState.length >= 5) { setStatus('캐릭터는 최대 5개까지 (ima2 레퍼런스 상한)'); return; }
-        charState.push({ name: `캐릭터 ${charState.length + 1}`, text: '', ref: '' });
-        renderChars();
-      };
-      $('#sheet-save').onclick = async () => {
-        const ch = chSel.value; if (!ch) return;
-        syncChars();
-        const r = await saveAll(ch);
-        if (r && r.ok) { setStatus('저장됨'); toast('채널 시트 저장됨'); await refreshList(); await loadCh(ch); }
-        else setStatus((r && r.error) || '저장 실패');
-      };
-      lockBtn.onclick = async () => {
-        const ch = chSel.value; if (!ch) return;
-        syncChars();
-        if (!curLocked) {
-          const has = mEl.value.trim() || gEl.value.trim() || (logoNoteEl && logoNoteEl.value.trim()) || charState.some((c) => c.text.trim() || c.ref);
-          if (!has) { setStatus('시트 내용을 먼저 입력하세요'); return; }
-          await saveBrandData(); // 공용 브랜드·로고(편집분) 보존
-          await saveAll(ch);
-        }
-        const r = await window.api.sheet.lock(dir, ch, !curLocked);
-        if (r && r.ok) { toast(!curLocked ? '락 — 이 채널 이미지에 시트 적용' : '락 해제됨'); await loadCh(ch); await refreshList(); }
-        else setStatus((r && r.error) || '락 실패');
-      };
-      $('#sheet-ai').onclick = async () => {
-        const ch = chSel.value; if (!ch) return;
-        const btn = $('#sheet-ai'); const old = btn.textContent;
-        btn.disabled = true; btn.textContent = 'AI 초안 생성 중…'; setStatus('브랜드 컨텍스트로 초안 생성 중… (캐릭터 1~3개 · 최대 7분)');
-        try {
-          const r = await window.api.sheet.generate(dir, ch);
-          if (seq !== settingsSeq) return;
-          if (r && r.ok && r.draft) {
-            if (r.draft.master) mEl.value = r.draft.master;     // 브랜드 시트(공용)
-            if (r.draft.guidelines) gEl.value = r.draft.guidelines;
-            // 캐릭터 시트 — 초안이 채널 전략에 따라 1~3개를 제안(구 단일 character도 수용).
-            // 기존 레퍼런스는 자리(index)별로 보존하고 이름·텍스트만 초안으로 교체하며,
-            // 초안 개수보다 뒤에 있던 기존 캐릭터는 그대로 남긴다(사용자가 만든 것을 지우지 않게).
-            const gen = (r.draft.characters && r.draft.characters.length)
-              ? r.draft.characters
-              : (r.draft.character ? [{ name: '캐릭터 1', text: r.draft.character }] : []);
-            if (gen.length) {
-              syncChars();
-              charState = gen.map((c, i) => ({ name: c.name || `캐릭터 ${i + 1}`, text: c.text || '', ref: (charState[i] && charState[i].ref) || '' }))
-                .concat(charState.slice(gen.length)).slice(0, 5);
-              renderChars();
-            }
-            // 이어서 브랜드 스타일 레퍼런스 이미지까지 자동 생성(공용 저장 포함). 텍스트 초안은 이미 채워져 있어
-            // 이미지 생성이 실패해도 초안은 남는다.
-            if (mEl.value.trim()) {
-              setStatus('텍스트 초안 완료 — 이어서 공용 브랜드 레퍼런스 이미지를 생성합니다… (이미지 엔진 · 최대 몇 분)');
-              const okRef = await genBrandRef();
-              if (seq !== settingsSeq) return;
-              setStatus(okRef
-                ? '초안 + 공용 브랜드 레퍼런스 이미지 완료 — 검토·수정 후 [공용 저장]/[채널 저장]/[락]. 캐릭터 턴어라운드는 각 카드에서 생성하세요.'
-                : '텍스트 초안은 완료됐습니다 — 브랜드 레퍼런스 이미지 생성만 실패(다시 시도 가능). 초안은 유지됩니다.');
-            } else {
-              setStatus('텍스트 초안 완료 — 검토·수정 후 [공용 저장]/[채널 저장]을 누르세요.');
-            }
-          } else setStatus((r && r.error) || '초안 생성 실패');
-        } catch (e) { setStatus('초안 생성 실패: ' + e.message); }
-        finally { btn.disabled = false; btn.textContent = old; }
-      };
-      // 브랜드 레퍼런스(클라이언트 공용) — 브랜드 시트 텍스트로 스타일 보드 1장 생성해 공용 저장.
-      // 함수 선언(호이스팅) — renderChars가 genCharRef를 참조하므로 TDZ를 피한다.
-      async function genBrandRef() {
-        await saveBrandData(); // 브랜드 텍스트(편집분) 공용 저장 후 생성
-        const btn = $('#sheet-ref-master'); const old = btn.textContent;
-        btn.disabled = true; btn.textContent = '생성 중…'; setStatus('브랜드 스타일 레퍼런스 생성 중… (이미지 엔진 · 최대 몇 분)');
-        let okv = false;
-        try {
-          const r = await window.api.sheet.genBrandRef(dir);
-          if (seq !== settingsSeq) return false;
-          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('브랜드 레퍼런스 생성됨 (전 채널 공유)'); okv = true; }
-          else setStatus((r && r.error) || '레퍼런스 생성 실패');
-        } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
-        finally { btn.disabled = false; btn.textContent = old; }
-        return okv;
-      }
-      async function genCharRef(i) {
-        const ch = chSel.value; if (!ch) return;
-        syncChars();
-        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요'); return; }
-        await saveAll(ch);
-        setStatus(`캐릭터 「${charState[i].name}」 턴어라운드(정면·측면·후면) 모델 시트 생성 중… (이미지 엔진 · 최대 몇 분)`);
-        try {
-          const r = await window.api.sheet.genRef(dir, ch, 'character', i);
-          if (seq !== settingsSeq) return;
-          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('턴어라운드 레퍼런스 생성됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); }
-          else setStatus((r && r.error) || '레퍼런스 생성 실패');
-        } catch (e) { setStatus('레퍼런스 생성 실패: ' + e.message); }
-      }
-      // 참고용 레퍼런스 업로드 — AI 생성 대신 갖고 있는 이미지를 이 캐릭터의 앵커로 등록.
-      async function upCharRef(i) {
-        const ch = chSel.value; if (!ch) return;
-        syncChars();
-        if (!charState[i] || !charState[i].text.trim()) { setStatus('이 캐릭터의 내용을 먼저 입력하세요 (한 줄이면 충분 — 저장된 캐릭터에만 업로드됩니다)'); return; }
-        await saveAll(ch); // 업로드 핸들러가 저장된 시트를 읽으므로 먼저 저장
-        try {
-          const r = await window.api.sheet.uploadRef(dir, ch, 'character', i);
-          if (seq !== settingsSeq) return;
-          if (r && r.ok && r.rel) { charState[i] = { ...charState[i], ref: r.rel }; renderChars(); setStatus('참고 이미지 업로드됨 — 락을 걸면 --ref 앵커로 적용됩니다'); await refreshList(); }
-          else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
-        } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
-      }
-      $('#sheet-ref-master').onclick = genBrandRef;
-      $('#sheet-ref-master-up').onclick = async () => {
-        await saveBrandData(); // 브랜드 텍스트(편집분) 보존
-        try {
-          const r = await window.api.sheet.uploadRef(dir, '', 'brand');
-          if (seq !== settingsSeq) return;
-          if (r && r.ok && r.rel) { setMasterRef(r.rel); setStatus('브랜드 참고 이미지 업로드됨 (전 채널 공유)'); }
-          else if (r && !r.canceled) setStatus((r && r.error) || '레퍼런스 업로드 실패');
-        } catch (e) { setStatus('레퍼런스 업로드 실패: ' + e.message); }
+    const sel = $('#set-image-quality');
+    if (sel) {
+      const cur = await window.api.engine.getImageQuality().catch(() => 'high');
+      if (seq !== settingsSeq) return;
+      sel.value = cur || 'high';
+      sel.onchange = async () => {
+        await window.api.engine.setImageQuality(sel.value);
+        toast(`이미지 생성 품질: ${sel.value}`);
       };
     }
+  }
+  // 채널 시트 → 파운데이션 뷰로 이동(설정에서는 안내만)
+  {
+    const b = $('#set-open-foundation');
+    if (b) b.onclick = () => { closeOverlay(); S.view = 'foundation'; applyViewSeg(); renderFoundation(); renderHero(); };
   }
   // 백업 — 목록 렌더 + 생성/복원/삭제
   {
@@ -3011,6 +3350,8 @@ async function openSettings(section) {
       catch (e) { setUpdStatus('확인 실패: ' + e.message); }
     }
   };
+  // 세션 브라우저 채널(네이버·카카오) — 1회 로그인/로그아웃 + 상태
+  renderBrowserChannels($('#sec-browser-ch', sheet));
   // 채널 토큰 폼 (직접 발행) + 렌더 프로바이더 키 폼
   buildSecretForms($('#sec-forms-ch', sheet), CH_SECRET_FORMS, true);
   buildSecretForms($('#sec-forms-rd', sheet), RD_SECRET_FORMS, false);
@@ -3220,6 +3561,58 @@ async function renderPackSection(root) {
       b.disabled = false; b.textContent = '가져오기';
     };
   };
+}
+// 세션 브라우저 발행 채널(네이버·카카오) — 1회 로그인 후 세션 저장. 비밀번호는 앱에 저장하지 않는다.
+const BROWSER_CHANNELS = [
+  { ch: 'naver', label: '네이버 블로그', hint: '네이버 계정으로 로그인하면 세션이 저장됩니다. 발행은 카드의 「발행 검토」에서 [로그인 창에서 자동 작성]으로 — 본문이 클립보드에 복사되고 이미지 폴더가 열립니다.' },
+  { ch: 'kakao_channel', label: '카카오톡 채널', hint: '카카오 계정으로 관리자센터에 로그인합니다. 채널 소식 게시는 공개 API가 없어 관리자센터 창에서 작성합니다.' },
+];
+async function renderBrowserChannels(root) {
+  if (!root) return;
+  root.innerHTML = BROWSER_CHANNELS.map((c) => `
+    <div class="sec-form" data-bch="${c.ch}" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <b class="small">${esc(c.label)}</b>
+        <span class="chip tiny bch-status" style="color:var(--muted)">확인 중…</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button type="button" class="small bch-login">로그인</button>
+          <button type="button" class="small bch-logout hidden">로그아웃</button>
+        </span>
+      </div>
+      <p class="muted small" style="margin:6px 0 0;line-height:1.5">${esc(c.hint)}</p>
+    </div>`).join('');
+  const paint = async (el, ch) => {
+    const st = await window.api.pub2.sessionStatus(ch).catch(() => ({ connected: false }));
+    const badge = $('.bch-status', el); const inBtn = $('.bch-login', el); const outBtn = $('.bch-logout', el);
+    if (st && st.connected) {
+      badge.textContent = '로그인됨'; badge.style.color = 'var(--ok)';
+      inBtn.textContent = '다시 로그인'; outBtn.classList.remove('hidden');
+    } else {
+      badge.textContent = '로그인 필요'; badge.style.color = 'var(--warn)';
+      inBtn.textContent = '로그인'; outBtn.classList.add('hidden');
+    }
+  };
+  for (const el of $$('[data-bch]', root)) {
+    const ch = el.dataset.bch;
+    paint(el, ch);
+    $('.bch-login', el).onclick = async () => {
+      const b = $('.bch-login', el); const old = b.textContent;
+      b.disabled = true; b.textContent = '로그인 창 열림…';
+      try {
+        const r = await window.api.pub2.login(ch);
+        if (r && r.connected) toast('로그인됨 — 세션이 저장됐습니다');
+        else if (r && r.ok) toast('로그인이 확인되지 않았습니다 — 로그인 후 창을 닫으세요');
+        else toast('로그인 실패: ' + ((r && r.error) || '알 수 없음'));
+      } catch (e) { toast('로그인 실패: ' + e.message); }
+      finally { b.disabled = false; b.textContent = old; await paint(el, ch); if (S.client) { S.channels = await window.api.channels.check(); renderChannels(); } }
+    };
+    $('.bch-logout', el).onclick = async () => {
+      if (!confirm(`${el.querySelector('b').textContent} 세션을 지울까요? 다음 발행 때 다시 로그인해야 합니다.`)) return;
+      await window.api.pub2.logout(ch).catch(() => {});
+      toast('세션 로그아웃됨'); await paint(el, ch);
+      if (S.client) { S.channels = await window.api.channels.check(); renderChannels(); }
+    };
+  }
 }
 function buildSecretForms(root, forms, isChannel) {
   if (!root) return;

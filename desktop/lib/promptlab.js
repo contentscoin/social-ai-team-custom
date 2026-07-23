@@ -143,6 +143,14 @@ function packContext(kind, budget = 12000, opts = {}) {
     const extra = all.filter((p) => /cardnews|카드뉴스/i.test(p.name + p.file));
     for (const e of extra) if (!picked.find((x) => x.path === e.path)) picked.push(e);
   }
+  // 광고·프로모션 의도(목표/포맷/명시 플래그)면 광고 캠페인 팩도 함께 — 오퍼·후킹·카피 자리 문법 주입.
+  const adSignal = opts.ad
+    || /ad\b|advert|campaign|promo|sale|offer|광고|캠페인|프로모|홍보|할인|세일|출시|론칭|런칭|이벤트|증정|구매\s*유도|전환/i
+      .test(`${opts.objective || ''} ${opts.format || ''} ${opts.topic || ''}`);
+  if (kind !== 'video' && kind !== 'svg' && adSignal) {
+    const extra = all.filter((p) => /ad[-_]?campaign|광고|캠페인/i.test(p.name + p.file));
+    for (const e of extra) if (!picked.find((x) => x.path === e.path)) picked.push(e);
+  }
   // 매칭이 없으면 이름과 무관하게 전부 (사용자가 팩 이름을 자유롭게 지었을 수 있다)
   const use = picked.length ? picked : all;
   let out = '';
@@ -286,6 +294,8 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
   const kitOn = job.kind !== 'video' && kitInstalled();
   const packs = packContext(job.kind === 'video' ? 'video' : 'image', 12000, {
     format: job.format,
+    objective: job.objective,
+    topic: job.topic,
     carousel: /carousel|카드뉴스|cardnews|슬라이드/i.test(String(job.format || '')) || Number(job.count) > 1,
   });
   const target = job.kind === 'video'
@@ -313,7 +323,8 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
     varietyBlock +
     detailBlock +
     `[규칙]\n` +
-    `- 기획 언어(목표/필러/앵글/engagement)를 그대로 옮기지 말고 카메라가 찍을 수 있는 시각 언어로 번역하라.\n` +
+    `- 먼저 아래 [기획 의도]를 읽고 이 포스트가 "무엇을 위해, 어떤 컨셉으로" 존재하는지 한 문장으로 파악한 뒤, 그 의도를 살리는 장면을 골라라. 목표(objective)가 전환·판매면 제품/행동/결과가 주인공, 인지·브랜딩이면 동경·무드가 주인공이다.\n` +
+    `- 기획 언어(목표/필러/앵글/engagement)를 그대로 옮기지 말고 카메라가 찍을 수 있는 시각 언어로 번역하라 — 단, 그 의도는 장면 선택·구도·소품에 반드시 반영돼야 한다.\n` +
     `- 채널 스타일 시트·플랫폼 아트 디렉션은 스타일의 하드 제약이다 — 팔레트·조명·무드·주체를 그대로 따르고, 운영자 브리프·VD와 스타일이 충돌하면 시트가 우선한다.\n` +
     `- 프롬프트는 영어 (브랜드·제품 고유명사는 원문 유지).\n` +
     `- 이미지 프롬프트는 반드시 이 6요소를 한 문단(또는 콤마 연결)으로 포함:\n` +
@@ -330,7 +341,11 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
     `- 영상이면 카메라 1개 + 피사체 모션 1-2개 + 분위기 1개, 3문장 이내. negative는 "".\n` +
     `- 셀프체크: 기획 언어 잔존 제거, 추상→구체, TEXT RULE 확인, 재질 어휘 1개 이상.\n` +
     `- 출력은 JSON 하나만: {"prompt":"...","negative":"..."} (코드펜스 금지)\n\n` +
-    `[포스트 재료]\n주제: ${job.topic || '-'}\n채널/포맷: ${job.channel || '-'} / ${job.format || '-'}\n운영자 브리프: ${job.prompt || '-'}\n` +
+    `[기획 의도 — 컨셉으로 번역할 재료 (그대로 베끼지 말 것)]\n` +
+    `목표(objective): ${job.objective || '-'}\n필러(pillar): ${job.pillar || '-'}\n앵글(angle): ${job.angle || '-'}\n` +
+    (job.notes ? `노트/유의: ${job.notes}\n` : '') +
+    (job.visual ? `기획 비주얼 방향: ${job.visual}\n` : '') +
+    `\n[포스트 재료]\n주제: ${job.topic || '-'}\n채널/포맷: ${job.channel || '-'} / ${job.format || '-'}\n운영자 브리프: ${job.prompt || '-'}\n` +
     (vd ? `카피라이터의 VISUAL DIRECTION (가장 중요한 재료): ${vd}\n` : '') +
     (brand.summary ? `\n[브랜드 무드]\n${brand.summary}\n` : '') +
     (brand.photography ? `\n[브랜드 포토 스타일]\n${brand.photography}\n` : '') +

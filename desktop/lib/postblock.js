@@ -44,20 +44,36 @@ function findVisualDirection(dir, lane, topic) {
 const PEER_SECTION = /^(?:CAPTION|POST COPY|BODY|TITLE(?:\s*\([^)]*\))?|HASHTAGS?|HASH\s*TAGS?|CTA|TAGS?|본문|제목|해시태그)\s*[:：]/i;
 const META_LINE = /^(?:PLATFORM|OBJECTIVE|FRAMEWORK|TYPE|WORD COUNT|CHAR COUNT|글자수|문자수|MAIN KEYWORD|SUB KEYWORDS?|SPONSORED|HOOK|ANGLE|PILLAR|FORMAT|NOTES?|BLOTATO FLAG|INFOGRAPHIC|SCHEDULED\s*(?:DATE|TIME)|STYLE|MOOD|무드|스타일)\s*[:：]/i;
 // 계약/프롬프트 블록 시작 — 여기부터 게시 본문이 아니다. 렌더용 프롬프트가 발행 본문에
-// 딸려 나가는 유출을 막기 위해 영문·한글 라벨과 PROMPT 계열을 전부 잡는다.
-// 주의: 한글 라벨 뒤에는 \b를 쓰지 않는다 — JS \b는 ASCII 단어 경계라 한글 다음에서 매칭 실패
-const CONTRACT_START = /^(?:\[?\s*(?:IMAGE\s+SLOT\b|이미지\s*슬롯)|(?:\*\*)?(?:VISUAL\s+DIRECTION\b|비주얼\s*디렉션)|(?:\*\*)?(?:IMAGE\s+|FINAL\s+|NEGATIVE\s+)?PROMPT\s*[:：]|(?:\*\*)?(?:이미지\s*|네거티브\s*)?프롬프트\s*[:：])/i;
+// 딸려 나가는 유출을 막기 위해 영문·한글 라벨과 PROMPT 계열을 잡는다.
+// 주의: 한글 라벨 뒤에는 \b를 쓰지 않는다 — JS \b는 ASCII 단어 경계라 한글 다음에서 매칭 실패.
+// 프롬프트 라벨 앞 수식어는 '아무 단어'가 아니라 프롬프트 도메인 어휘만 허용한다 —
+// '오늘의 프롬프트:'(글쓰기 계정의 정상 본문) 같은 문장이 통째로 지워지는 오버스트립 방지.
+const PROMPT_MOD = '(?:이미지|생성|최종|네거티브|렌더|렌더링|비주얼)';
+const CONTRACT_START = new RegExp(
+  '^(?:\\[?\\s*(?:IMAGE\\s+SLOT\\b|이미지\\s*슬롯)'
+  + '|(?:\\*\\*)?(?:VISUAL\\s+DIRECTION\\b|비주얼\\s*디렉션)'
+  + '|(?:\\*\\*)?(?:IMAGE\\s+|FINAL\\s+|NEGATIVE\\s+|RENDER\\s+)?PROMPT\\s*[:：]'
+  + `|(?:\\*\\*)?(?:${PROMPT_MOD}\\s+){0,3}프롬프트\\s*[:：])`, 'i');
+// 프롬프트/디렉션이 마크다운 헤딩(## 이미지 프롬프트, ## VISUAL DIRECTION)으로 들어온 경우 —
+// isResumeAnchor의 '## 는 본문 재개' 규칙이 스킵을 풀어버려 프롬프트가 본문으로 샜다. 이 헤딩은
+// 재개가 아니라 '계약 블록 시작'으로 취급한다. 단 '## 프롬프트 예시 3가지'(프롬프트를 '다루는'
+// 소제목)는 본문이므로, 라벨 뒤에 내용이 이어지지 않고 헤딩이 라벨로 끝날 때만(끝 앵커) 잡는다.
+const PROMPT_HEADING = new RegExp(
+  '^#{1,4}\\s*(?:\\*\\*)?\\s*(?:VISUAL\\s+DIRECTION|IMAGE\\s+SLOT|비주얼\\s*디렉션|이미지\\s*슬롯'
+  + '|(?:[A-Za-z]+\\s+){0,3}PROMPT'
+  + `|(?:${PROMPT_MOD}\\s+){0,3}프롬프트)\\s*[:：]?\\s*(?:\\*\\*)?\\s*$`, 'i');
 // 프롬프트 문법 필드 라벨 — gpt-image-2 킷(Format A)·sop 6요소·SUBJECT→…→NEGATIVE 팩이
 // 공유하는 영문 라벨. 한국어 게시 본문엔 이 영문 라벨이 줄머리로 등장하지 않으므로 안전하게 잡는다.
 const PROMPT_FIELD = /^(?:#\s*\d+\.\s*)?(?:\*\*)?(?:Scene|Camera(?:\s*\+\s*Lighting)?|Lighting|Colou?r\s*grading|Texture(?:\s*\/\s*Medium)?|Medium|Text[-\s]?in[-\s]?image|Text\s*overlay|Subject|Composition|Location|Setting|Negative(?:\s*prompt)?|Aspect\s*ratio)\s*[:：]/i;
 // 끝에 붙는 AR 토큰 줄 (`AR 16:9`, `AR 4:5 SIZE 1024x1536`) — 프롬프트 잔재
 const AR_TOKEN = /^(?:\*\*)?AR\s+\d{1,2}\s*:\s*\d{1,2}\b/i;
-// 계약/프롬프트 라인인가 — 스킵 진입 신호
-const isContractLine = (t) => CONTRACT_START.test(t) || PROMPT_FIELD.test(t) || AR_TOKEN.test(t);
+// 계약/프롬프트 라인인가 — 스킵 진입 신호 (프롬프트 헤딩 포함)
+const isContractLine = (t) => CONTRACT_START.test(t) || PROMPT_FIELD.test(t) || AR_TOKEN.test(t) || PROMPT_HEADING.test(t);
 // 실제 게시 섹션 재개 앵커 — 스킵은 빈 줄이 아니라 여기서만 풀린다(프롬프트 블록 중간 빈 줄에
 // 속아 뒷부분을 다시 게시하지 않게). PEER 게시 섹션 / 네이버 ## 소제목 / 구분선 / 새 포스트.
-const isResumeAnchor = (t) => PEER_SECTION.test(t) || /^##\s+/.test(t) || /^---+\s*$/.test(t)
-  || /^(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(t) || /^[A-Z]{1,2}-\d+\b/.test(t);
+// 단, 프롬프트 헤딩(## 이미지 프롬프트 등)은 재개가 아니다 — 그 뒤 프롬프트 줄이 본문으로 새지 않게.
+const isResumeAnchor = (t) => !PROMPT_HEADING.test(t) && (PEER_SECTION.test(t) || /^##\s+/.test(t) || /^---+\s*$/.test(t)
+  || /^(?:\*\*)?(?:POST|THREAD)\s+\d+\b/i.test(t) || /^[A-Z]{1,2}-\d+\b/.test(t));
 
 function sectionBody(text, nameRe) {
   const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');

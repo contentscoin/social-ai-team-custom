@@ -21,6 +21,7 @@ const proc = require('./lib/proc');
 const secrets = require('./lib/secrets');
 const render = require('./lib/render');
 const pubdirect = require('./lib/pubdirect');
+const sessionpub = require('./lib/sessionpub');
 const opencrabBindings = require('./lib/opencrab-bindings');
 const visualAssets = require('./lib/visual-assets');
 const orchestrator = require('./lib/orchestrator');
@@ -495,9 +496,28 @@ ipcMain.handle('cmt:reply', safe((_e, dir, payload) => comments.postReply(dir, p
 ipcMain.handle('pub2:draft', safe((_e, dir, lane, topic) => draftForPublish(dir, lane, topic)));
 ipcMain.handle('pub2:status', safe(() => pubdirect.status()));
 ipcMain.handle('pub2:publishNow', safe(async (_e, dir, payload) => {
+  // 네이버·카카오채널은 공개 API가 없어 세션 브라우저 창으로 작성한다(자동 발행 아님 — 창에서 마무리).
+  if (sessionpub.isBrowserChannel(payload.channel)) {
+    const r = await sessionpub.publish(dir, payload, (line) => send('log', { source: 'publish', line, dir }));
+    if (r.ok) send('log', { source: 'publish', line: `↗ ${payload.channel} 작성 창 열림 — 창에서 발행을 마무리하세요`, dir });
+    else send('log', { source: 'publish', line: `✖ ${payload.channel} — ${r.error}`, dir });
+    return r; // 발행 완료가 아니므로 발행 기록을 남기지 않는다(사용자가 창에서 올린 뒤 '발행됨' 표시)
+  }
   const r = await pubdirect.publishNow(dir, payload);
   if (r.ok) { send('log', { source: 'publish', line: `✔ ${payload.channel} 발행 — ${r.url || r.id || 'ok'}`, dir }); setTimeout(pushBoard, 300); }
   else send('log', { source: 'publish', line: `✖ ${payload.channel} 발행 실패 — ${r.error}`, dir });
+  return r;
+}));
+// 세션 브라우저 채널(네이버·카카오) — 1회 수동 로그인 / 로그인 상태 / 로그아웃.
+ipcMain.handle('pub2:login', safe(async (_e, channel) => {
+  const r = await sessionpub.login(channel);
+  channelCache = { at: 0, data: null }; // 로그인 후 배지 즉시 갱신
+  return r;
+}));
+ipcMain.handle('pub2:sessionStatus', safe((_e, channel) => sessionpub.sessionStatus(channel)));
+ipcMain.handle('pub2:logout', safe(async (_e, channel) => {
+  const r = await sessionpub.logout(channel);
+  channelCache = { at: 0, data: null };
   return r;
 }));
 ipcMain.handle('pub2:schedule', safe((_e, dir, payload) => pubdirect.schedule(dir, payload)));
@@ -507,14 +527,22 @@ ipcMain.handle('pub2:test', safe((_e, channel) => pubdirect.test(channel)));
 
 // ---- Channel connection check (직접 발행 토큰 + 레거시 Blotato MCP) -----------------
 let channelCache = { at: 0, data: null };
-ipcMain.handle('channels:check', () => {
+ipcMain.handle('channels:check', async () => {
   if (channelCache.data && Date.now() - channelCache.at < 10 * 60 * 1000) return channelCache.data;
   let blotato = false;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8'));
     blotato = Object.keys(cfg.mcpServers || {}).some((k) => /blotato/i.test(k));
   } catch { /* no config */ }
-  channelCache = { at: Date.now(), data: { blotato, direct: pubdirect.status() } };
+  const direct = pubdirect.status();
+  // 세션 브라우저 채널(네이버·카카오)의 로그인 상태를 실시간으로 얹는다.
+  for (const ch of Object.keys(sessionpub.CHANNELS)) {
+    try {
+      const st = await sessionpub.sessionStatus(ch);
+      direct[ch] = { ...(direct[ch] || {}), browser: true, connected: !!st.connected, label: st.label };
+    } catch { direct[ch] = { ...(direct[ch] || {}), browser: true, connected: false }; }
+  }
+  channelCache = { at: Date.now(), data: { blotato, direct } };
   return channelCache.data;
 });
 // 토큰 저장 시 채널 캐시 무효화 — 배지가 바로 갱신되게
@@ -1033,10 +1061,18 @@ ipcMain.handle('cfg:setAutoApprove', safe((_e, on) => config.setAutopilotAutoApp
 ipcMain.handle('render:styles', safe(() => imagestyles.list()));
 ipcMain.handle('cfg:getImageStyle', safe(() => config.getImageStyle()));
 ipcMain.handle('cfg:setImageStyle', safe((_e, key) => config.setImageStyle(key)));
+ipcMain.handle('cfg:getImageQuality', safe(() => config.getImageQuality()));
+ipcMain.handle('cfg:setImageQuality', safe((_e, q) => config.setImageQuality(q)));
 // 포스트별 이미지/본문 삭제 → 삭제한 부분을 기획 단계로 되돌린다(보드가 파일 증거로 재추론).
 ipcMain.handle('post:deleteAssets', safe((_e, dir, uid, opts) => {
   const r = postassets.deleteAssets(dir, uid, opts || {});
   if (r.ok) setTimeout(pushBoard, 200); // 카드가 planned/copy로 즉시 되돌아가게
+  return r;
+}));
+// 개별 이미지 1장 삭제 — 카드 전체가 아니라 지정한 파일 하나만(다른 이미지·본문은 보존).
+ipcMain.handle('post:deleteImage', safe((_e, dir, rel) => {
+  const r = postassets.deleteOneImage(dir, rel);
+  if (r.ok) setTimeout(pushBoard, 200); // 보드 썸네일 갱신
   return r;
 }));
 
@@ -1067,6 +1103,36 @@ ipcMain.handle('sheet:generate', async (_e, dir, channel) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+// 디렉터 고도화 — 편집 중인 시트(payload) + 사용자 요청으로 질의응답/개선.
+// 저장본이 아니라 렌더러가 보내는 "화면의 현재 내용"을 컨텍스트로 쓴다(미저장 편집분 반영).
+ipcMain.handle('sheet:refine', async (_e, dir, channel, payload) => {
+  try {
+    if (!channelRegistry.REGISTRY[channel] || channel === 'etc') return { ok: false, error: '알 수 없는 채널입니다' };
+    const p = payload || {};
+    const q = String(p.question || '').trim().slice(0, 2000);
+    if (!q) return { ok: false, error: '요청 내용을 입력하세요' };
+    const brand = promptlab.brandContext(dir);
+    const name = (channelRegistry.REGISTRY[channel] || {}).name || channel;
+    const sheets = {
+      brand: String(p.brand || '').slice(0, 4000),
+      characters: (Array.isArray(p.characters) ? p.characters : []).slice(0, 5)
+        .map((c) => ({ name: String((c && c.name) || '').slice(0, 60), text: String((c && c.text) || '').slice(0, 4000) })),
+      guidelines: String(p.guidelines || '').slice(0, 4000),
+    };
+    const instr = channelsheets.refinePrompt(brand, channel, name, sheets, q);
+    const REFINE_TIMEOUT_MS = 420_000; // 시트 전문 재작성까지 포함될 수 있어 초안과 동일 여유
+    const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: REFINE_TIMEOUT_MS });
+    if (!r.ok) {
+      return { ok: false, error: '고도화에 실패했습니다' + (r.timedOut ? ` (시간 초과 ${Math.round(REFINE_TIMEOUT_MS / 60000)}분)` : '') + (r.tail ? ` — ${String(r.tail).trim().slice(-200)}` : ' (엔진 응답 없음)') };
+    }
+    const res = channelsheets.parseRefine(r.out);
+    if (!res) return { ok: false, error: '응답 파싱에 실패했습니다 — 다시 시도하세요' + (r.tail ? ` (${String(r.tail).trim().slice(-150)})` : '') };
+    const changed = !!(res.master || res.characters.length || res.guidelines);
+    return { ok: true, channel, reply: res.reply, draft: changed ? { master: res.master, characters: res.characters, guidelines: res.guidelines } : null };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
 // ---- 클라이언트 공용 브랜드 시트 + 로고 (전 채널 공유) ----------------------------
 ipcMain.handle('sheet:getBrand', safe((_e, dir) => channelsheets.getBrand(dir)));
 ipcMain.handle('sheet:saveBrand', safe((_e, dir, data) => channelsheets.saveBrand(dir, data || {})));
@@ -1089,13 +1155,12 @@ async function genBrandRefImpl(dir) {
   if (!text || !text.trim()) return { ok: false, error: '브랜드 시트 내용을 먼저 저장하세요' };
   const log = (line) => send('log', { source: 'sheet', line, dir });
   const provider = render.defaultImageProvider({ ima2: true });
+  // 브리프는 이미 완성된 자기완결 영어 프롬프트라 compile(대형 LLM 1회, 30초~2분)을 생략한다 —
+  // finalizeImagePrompt가 TEXT RULE·품질 꼬리를 붙이므로 그대로 넣어도 안전하고 더 빠르다.
+  // 시트 레퍼런스는 스타일 앵커일 뿐이라 medium 품질로도 충분(high 대비 체감 2~4배 빠름).
   const brief = `Style and mood reference board — a single representative hero frame capturing the palette, lighting character, composition and material finish. No logo, wordmark or text rendered anywhere in the image. ${text}`;
-  let prompt = brief, negative = null;
-  try {
-    const c = await promptlab.compile(dir, { kind: 'image', provider, topic: 'brand style board', channel: '', prompt: brief, size: 'square', count: 1 }, log);
-    if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
-  } catch { /* 브리프 원문으로 */ }
-  const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base: 'brand-master', size: 'square', count: 1, env: { ima2: true } }, log);
+  try { await render.warmupImageProvider(provider, { ima2: true }, log); } catch { /* best effort */ }
+  const r = await render.generate(dir, { kind: 'image', provider, prompt: brief, negative: null, quality: 'medium', base: 'brand-master', size: 'square', count: 1, env: { ima2: true } }, log);
   if (!r.ok || !r.rel) return { ok: false, error: r.error || '레퍼런스 생성에 실패했습니다' };
   let relFromDir;
   try { relFromDir = moveRefToSheets(dir, r.rel, 'brand-master'); }
@@ -1123,15 +1188,13 @@ ipcMain.handle('sheet:genRef', async (_e, dir, channel, which, index) => {
     const log = (line) => send('log', { source: 'sheet', line, dir });
     const provider = render.defaultImageProvider({ ima2: true });
     // 캐릭터 모델 시트 = 정면·3/4측면·후면 턴어라운드 + 표정 세트(레퍼런스 art). 넓은 캔버스(landscape).
+    // 브리프가 이미 완결된 영어 프롬프트라 compile(대형 LLM 1회)을 생략 — 더 빠르고, 채널 플랫폼
+    // 지시가 끼어들지 않아 깔끔한 모델 시트가 나온다. 시트 레퍼런스는 medium 품질로 속도 확보.
     const brief = `Character model sheet / turnaround reference of ONE single character — the canonical recurring subject drawn as a multi-view model sheet on a plain neutral seamless studio background: full-body FRONT view, 3/4 SIDE view and BACK view of the SAME character standing side by side, with identical proportions, face, hairstyle, wardrobe and colors across every view; plus a small row of head close-ups showing neutral, smiling and talking expressions. Even flat model-sheet lighting, no dramatic shadows, clean character-reference layout, natural skin texture with visible pores if human. Keep the identity perfectly consistent across all views. ${text}`;
-    let prompt = brief, negative = null;
-    try {
-      const c = await promptlab.compile(dir, { kind: 'image', provider, topic: `${channel} character turnaround`, channel, prompt: brief, size: 'landscape', count: 1 }, log);
-      if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
-    } catch { /* 브리프 원문으로 */ }
     const base = `chref-${channel}-character-${idx}`;
+    try { await render.warmupImageProvider(provider, { ima2: true }, log); } catch { /* best effort */ }
     // 레퍼런스 생성 자체는 앵커 없이(fresh) — 기존 ref를 먹이지 않는다. 턴어라운드는 가로형(landscape).
-    const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base, size: 'landscape', count: 1, env: { ima2: true } }, log);
+    const r = await render.generate(dir, { kind: 'image', provider, prompt: brief, negative: null, quality: 'medium', base, size: 'landscape', count: 1, env: { ima2: true } }, log);
     if (!r.ok || !r.rel) return { ok: false, error: r.error || '레퍼런스 생성에 실패했습니다' };
     let relFromDir;
     try { relFromDir = moveRefToSheets(dir, r.rel, base); }

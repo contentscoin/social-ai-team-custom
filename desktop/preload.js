@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('api', {
     setBudget: (usd) => ipcRenderer.invoke('cfg:setBudget', usd),
     getImageStyle: () => ipcRenderer.invoke('cfg:getImageStyle'),
     setImageStyle: (key) => ipcRenderer.invoke('cfg:setImageStyle', key),
+    getImageQuality: () => ipcRenderer.invoke('cfg:getImageQuality'),
+    setImageQuality: (q) => ipcRenderer.invoke('cfg:setImageQuality', q),
   },
   chat: {
     send: (dir, msg) => ipcRenderer.invoke('chat:send', dir, msg),
@@ -99,6 +101,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   post: {
     deleteAssets: (dir, uid, opts) => ipcRenderer.invoke('post:deleteAssets', dir, uid, opts),
+    deleteImage: (dir, rel) => ipcRenderer.invoke('post:deleteImage', dir, rel),
   },
   sheet: {
     list: (dir) => ipcRenderer.invoke('sheet:list', dir),
@@ -106,6 +109,7 @@ contextBridge.exposeInMainWorld('api', {
     save: (dir, channel, data) => ipcRenderer.invoke('sheet:save', dir, channel, data),
     lock: (dir, channel, locked) => ipcRenderer.invoke('sheet:lock', dir, channel, locked),
     generate: (dir, channel) => ipcRenderer.invoke('sheet:generate', dir, channel),
+    refine: (dir, channel, payload) => ipcRenderer.invoke('sheet:refine', dir, channel, payload),
     genRef: (dir, channel, which, index) => ipcRenderer.invoke('sheet:genRef', dir, channel, which, index),
     uploadRef: (dir, channel, which, index) => ipcRenderer.invoke('sheet:uploadRef', dir, channel, which, index),
     // 클라이언트 공용 브랜드 시트 + 로고 (전 채널 공유)
@@ -168,6 +172,10 @@ contextBridge.exposeInMainWorld('api', {
     queue: (dir) => ipcRenderer.invoke('pub2:queue', dir),
     cancel: (dir, qid) => ipcRenderer.invoke('pub2:cancel', dir, qid),
     test: (channel) => ipcRenderer.invoke('pub2:test', channel),
+    // 세션 브라우저 채널(네이버·카카오) — 로그인/상태/로그아웃
+    login: (channel) => ipcRenderer.invoke('pub2:login', channel),
+    sessionStatus: (channel) => ipcRenderer.invoke('pub2:sessionStatus', channel),
+    logout: (channel) => ipcRenderer.invoke('pub2:logout', channel),
   },
   update: {
     version: () => ipcRenderer.invoke('update:version'),

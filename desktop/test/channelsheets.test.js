@@ -233,6 +233,43 @@ test('parseDraft — characters[] 배열: 이름 보정·빈 항목 제거·상�
   assert.equal(channelsheets.get(dir, 'instagram').characters.length, 2);
 });
 
+test('refinePrompt — 현재 시트 전문 + 요청을 넣고 바뀐 필드만 완성본으로 요구', () => {
+  const p = channelsheets.refinePrompt(
+    { identity: '회사명: 콩볶는집', summary: '따뜻한 미니멀' },
+    'instagram', '인스타그램',
+    { brand: '팔레트 #F5F1E8', characters: [{ name: '바리스타 지은', text: '20대 바리스타' }], guidelines: '존댓말만' },
+    '캐릭터를 30대 남성으로 바꿔줘');
+  assert.match(p, /인스타그램/);
+  assert.match(p, /콩볶는집/);
+  assert.match(p, /팔레트 #F5F1E8/);      // 현재 브랜드 시트 주입
+  assert.match(p, /바리스타 지은/);        // 현재 캐릭터 주입
+  assert.match(p, /존댓말만/);             // 현재 지침 주입
+  assert.match(p, /30대 남성으로 바꿔줘/); // 사용자 요청
+  assert.match(p, /"reply"/);
+  assert.match(p, /바뀐 것만 포함/);
+  assert.match(p, /characters 배열 전체/); // 부분 조각 금지 규칙
+});
+
+test('parseRefine — reply만(질문 답변) / 일부 필드만 수정 / {result} 래핑, 실패 시 null', () => {
+  // 질문에 대한 답만 — 시트 필드 없음
+  let r = channelsheets.parseRefine('{"reply":"현재 팔레트는 따뜻한 크림 톤 중심입니다."}');
+  assert.match(r.reply, /크림 톤/);
+  assert.equal(r.master, '');
+  assert.deepEqual(r.characters, []);
+  // 캐릭터만 수정 — 나머지 필드는 빈 값
+  r = channelsheets.parseRefine(JSON.stringify({ reply: '캐릭터를 교체했습니다', characters: [{ name: '로스터 준호', text: '30대 남성 로스터' }] }));
+  assert.equal(r.characters.length, 1);
+  assert.equal(r.characters[0].name, '로스터 준호');
+  assert.equal(r.guidelines, '');
+  // claude {result} 래핑
+  r = channelsheets.parseRefine(JSON.stringify({ result: '{"reply":"지침을 보강했습니다","guidelines":"## 해시태그\\n- 3~5개"}' }));
+  assert.match(r.reply, /보강/);
+  assert.match(r.guidelines, /해시태그/);
+  // 파싱 불가 / 빈 응답
+  assert.equal(channelsheets.parseRefine('nope'), null);
+  assert.equal(channelsheets.parseRefine('{"reply":""}'), null);
+});
+
 test('guidelines(지침) — 저장·되읽기, compileDirective·draftPrompt·parseDraft에 반영', () => {
   const dir = tmp();
   channelsheets.save(dir, 'instagram', { master: 'M', guidelines: '반말 금지, 해시태그 3~5개' });
