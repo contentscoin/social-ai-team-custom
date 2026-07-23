@@ -21,6 +21,7 @@ const proc = require('./lib/proc');
 const secrets = require('./lib/secrets');
 const render = require('./lib/render');
 const pubdirect = require('./lib/pubdirect');
+const sessionpub = require('./lib/sessionpub');
 const opencrabBindings = require('./lib/opencrab-bindings');
 const visualAssets = require('./lib/visual-assets');
 const orchestrator = require('./lib/orchestrator');
@@ -495,9 +496,28 @@ ipcMain.handle('cmt:reply', safe((_e, dir, payload) => comments.postReply(dir, p
 ipcMain.handle('pub2:draft', safe((_e, dir, lane, topic) => draftForPublish(dir, lane, topic)));
 ipcMain.handle('pub2:status', safe(() => pubdirect.status()));
 ipcMain.handle('pub2:publishNow', safe(async (_e, dir, payload) => {
+  // 네이버·카카오채널은 공개 API가 없어 세션 브라우저 창으로 작성한다(자동 발행 아님 — 창에서 마무리).
+  if (sessionpub.isBrowserChannel(payload.channel)) {
+    const r = await sessionpub.publish(dir, payload, (line) => send('log', { source: 'publish', line, dir }));
+    if (r.ok) send('log', { source: 'publish', line: `↗ ${payload.channel} 작성 창 열림 — 창에서 발행을 마무리하세요`, dir });
+    else send('log', { source: 'publish', line: `✖ ${payload.channel} — ${r.error}`, dir });
+    return r; // 발행 완료가 아니므로 발행 기록을 남기지 않는다(사용자가 창에서 올린 뒤 '발행됨' 표시)
+  }
   const r = await pubdirect.publishNow(dir, payload);
   if (r.ok) { send('log', { source: 'publish', line: `✔ ${payload.channel} 발행 — ${r.url || r.id || 'ok'}`, dir }); setTimeout(pushBoard, 300); }
   else send('log', { source: 'publish', line: `✖ ${payload.channel} 발행 실패 — ${r.error}`, dir });
+  return r;
+}));
+// 세션 브라우저 채널(네이버·카카오) — 1회 수동 로그인 / 로그인 상태 / 로그아웃.
+ipcMain.handle('pub2:login', safe(async (_e, channel) => {
+  const r = await sessionpub.login(channel);
+  channelCache = { at: 0, data: null }; // 로그인 후 배지 즉시 갱신
+  return r;
+}));
+ipcMain.handle('pub2:sessionStatus', safe((_e, channel) => sessionpub.sessionStatus(channel)));
+ipcMain.handle('pub2:logout', safe(async (_e, channel) => {
+  const r = await sessionpub.logout(channel);
+  channelCache = { at: 0, data: null };
   return r;
 }));
 ipcMain.handle('pub2:schedule', safe((_e, dir, payload) => pubdirect.schedule(dir, payload)));
@@ -507,14 +527,22 @@ ipcMain.handle('pub2:test', safe((_e, channel) => pubdirect.test(channel)));
 
 // ---- Channel connection check (직접 발행 토큰 + 레거시 Blotato MCP) -----------------
 let channelCache = { at: 0, data: null };
-ipcMain.handle('channels:check', () => {
+ipcMain.handle('channels:check', async () => {
   if (channelCache.data && Date.now() - channelCache.at < 10 * 60 * 1000) return channelCache.data;
   let blotato = false;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8'));
     blotato = Object.keys(cfg.mcpServers || {}).some((k) => /blotato/i.test(k));
   } catch { /* no config */ }
-  channelCache = { at: Date.now(), data: { blotato, direct: pubdirect.status() } };
+  const direct = pubdirect.status();
+  // 세션 브라우저 채널(네이버·카카오)의 로그인 상태를 실시간으로 얹는다.
+  for (const ch of Object.keys(sessionpub.CHANNELS)) {
+    try {
+      const st = await sessionpub.sessionStatus(ch);
+      direct[ch] = { ...(direct[ch] || {}), browser: true, connected: !!st.connected, label: st.label };
+    } catch { direct[ch] = { ...(direct[ch] || {}), browser: true, connected: false }; }
+  }
+  channelCache = { at: Date.now(), data: { blotato, direct } };
   return channelCache.data;
 });
 // 토큰 저장 시 채널 캐시 무효화 — 배지가 바로 갱신되게

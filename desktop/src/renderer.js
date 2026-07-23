@@ -381,8 +381,15 @@ function renderChannels() {
     const badge = $('.cc-badge', el);
     const direct = (S.channels && S.channels.direct && S.channels.direct[ch.key]) || {};
     if (ch.publishRoute === 'manual') {
-      badge.textContent = '수동 발행'; badge.style.cursor = 'pointer'; badge.style.color = 'var(--warn)';
-      badge.title = '수동 발행 체크리스트 열기';
+      if (direct.browser) { // 네이버·카카오 — 세션 브라우저 발행
+        badge.textContent = direct.connected ? '브라우저 연결됨' : '로그인 필요';
+        badge.style.color = direct.connected ? 'var(--ok)' : 'var(--warn)';
+        badge.title = direct.connected ? '앱에서 작성 창 열기' : '브라우저 로그인';
+      } else {
+        badge.textContent = '수동 발행'; badge.style.color = 'var(--warn)';
+        badge.title = '수동 발행 체크리스트 열기';
+      }
+      badge.style.cursor = 'pointer';
       badge.onclick = (e) => { e.stopPropagation(); openPublishPanel(ch.key); };
       pressable(badge);
     } else if (direct.connected) {
@@ -1227,7 +1234,7 @@ function renderCTA() {
       const connected = Object.entries(direct).filter(([, v]) => v.connected).map(([k]) => CH_NAME[k] || k);
       if (popover(e.currentTarget, `<b>발행 단계</b><p class="muted" style="margin:6px 0">${connected.length
         ? `API 연결: ${connected.join(', ')} — 채널 카드의 배지에서 발행 패널을 여세요.`
-        : '설정 → 채널에서 API 토큰을 연결하면 앱에서 바로 발행·예약할 수 있습니다.'}<br>Instagram·네이버는 수동 체크리스트로 발행합니다.</p>
+        : '설정 → 채널에서 API 토큰을 연결하면 앱에서 바로 발행·예약할 수 있습니다.'}<br>네이버·카카오채널은 설정 → 채널에서 1회 로그인하면 앱 내장 창으로 작성합니다.</p>
         <div style="display:flex;flex-direction:column;gap:6px">
         ${connected.length ? '' : '<button id="pop-connect">채널 API 연결하기</button>'}
         <button id="pop-review">월말 성과 리뷰 실행</button></div>`)) {
@@ -2281,7 +2288,8 @@ async function openCompose(chKey, p, direct) {
   const draft = await window.api.pub2.draft(S.client.dir, p.lane, p.topic);
   const limits = { x: 280, threads: 500 };
   const limit = limits[chKey];
-  const isApi = !!direct.connected;
+  const isBrowser = !!direct.browser; // 네이버·카카오 — 세션 브라우저 발행
+  const isApi = !!direct.connected && !isBrowser; // 토큰 API 직접 발행
   const renders = postRenderRels(p);
   const copies = postCopyRels(p);
   const canImage = !!direct.image && renders.length > 0;
@@ -2343,8 +2351,15 @@ async function openCompose(chKey, p, direct) {
       <button id="cmp-now" class="accent" style="flex:1">지금 발행</button>
       <input type="datetime-local" id="cmp-when" class="rp-input" style="flex:1">
       <button id="cmp-later">예약</button>
+    </div>` : (isBrowser ? `<div style="margin-top:8px">
+      ${direct.connected
+        ? `<button type="button" id="cmp-browser" class="accent" style="width:100%">🌐 ${esc(direct.label || CH_NAME[chKey] || chKey)} 로그인 창에서 자동 작성</button>
+           <p class="muted small" style="margin:6px 0 0">로그인된 작성 창이 열립니다 — 본문은 클립보드에 복사(붙여넣기 Ctrl/⌘+V)되고 이미지 폴더가 열립니다. 이미지 첨부 후 창에서 발행하세요.</p>`
+        : `<button type="button" id="cmp-login" class="accent" style="width:100%">🔑 ${esc(direct.label || CH_NAME[chKey] || chKey)} 로그인 (최초 1회)</button>
+           <p class="muted small" style="margin:6px 0 0">처음 한 번만 로그인하면 세션이 저장돼, 다음부터는 바로 작성 창이 열립니다. 아이디·비밀번호는 앱에 저장하지 않습니다.</p>`}
+      <button type="button" id="cmp-mark" style="width:100%;margin-top:8px">${p.published ? '발행 기록 유지됨' : '창에서 올린 뒤 — 발행됨으로 표시'}</button>
     </div>` : `<p class="muted small" style="margin-top:8px">수동 채널입니다. 위 버튼으로 복사·이미지 확인 후 플랫폼에서 발행하고, 목록 체크박스를 켜세요.</p>
-      <button type="button" id="cmp-mark" class="accent" style="width:100%;margin-top:6px">${p.published ? '발행 기록 유지됨' : '플랫폼에 올렸음 — 발행됨으로 표시'}</button>`}`;
+      <button type="button" id="cmp-mark" class="accent" style="width:100%;margin-top:6px">${p.published ? '발행 기록 유지됨' : '플랫폼에 올렸음 — 발행됨으로 표시'}</button>`)}`;
   const ta = $('#cmp-text');
   let imageRel = selectedRel;
   const refreshMock = () => {
@@ -2425,6 +2440,39 @@ async function openCompose(chKey, p, direct) {
       refreshBoard(false);
     } catch (e) { toast('기록 실패: ' + e.message); }
   };
+  // 세션 브라우저 채널(네이버·카카오) — 최초 1회 로그인 / 로그인된 작성 창 열기.
+  if (isBrowser) {
+    const reopen = async () => {
+      S.channels = await window.api.channels.check();
+      const d2 = (S.channels && S.channels.direct && S.channels.direct[chKey]) || {};
+      openCompose(chKey, p, d2);
+    };
+    const loginBtn = $('#cmp-login');
+    if (loginBtn) loginBtn.onclick = async () => {
+      loginBtn.disabled = true; loginBtn.textContent = '로그인 창 열림 — 로그인 후 창을 닫으세요…';
+      try {
+        const r = await window.api.pub2.login(chKey);
+        if (r && r.connected) { toast(`${direct.label || chKey} 로그인됨 — 이제 자동 작성이 가능합니다`); await reopen(); }
+        else { toast('로그인이 확인되지 않았습니다 — 다시 시도하세요'); loginBtn.disabled = false; loginBtn.textContent = `🔑 ${direct.label || chKey} 로그인 (최초 1회)`; }
+      } catch (e) { toast('로그인 실패: ' + e.message); loginBtn.disabled = false; }
+    };
+    const browserBtn = $('#cmp-browser');
+    if (browserBtn) browserBtn.onclick = async () => {
+      if (!ta.value.trim()) { toast('본문이 비어 있습니다'); return; }
+      const old = browserBtn.textContent;
+      browserBtn.disabled = true; browserBtn.textContent = '작성 창 여는 중…';
+      try {
+        const r = await window.api.pub2.publishNow(S.client.dir, {
+          uid: p.uid, channel: chKey, title: (draft.ok && draft.title) || p.topic, text: ta.value, imageRels: renders,
+        });
+        if (r && r.ok) toast(r.message || '작성 창을 열었습니다 — 창에서 발행을 마무리하세요');
+        else if (r && r.needsLogin) { toast(r.error || '로그인이 필요합니다'); await reopen(); }
+        else toast('실패: ' + ((r && r.error) || '알 수 없음'));
+      } catch (e) { toast('실패: ' + e.message); }
+      finally { browserBtn.disabled = false; browserBtn.textContent = old; }
+    };
+    return; // 브라우저 채널은 API payload/발행 경로를 타지 않는다
+  }
   if (!isApi) return;
   const payload = () => {
     const useImg = $('#cmp-img') && $('#cmp-img').checked;
@@ -3016,7 +3064,8 @@ async function openSettings(section) {
     <div class="sheet-body">
       <div data-body="env">${envRows(s)}${envButtons()}</div>
       <div data-body="channels" class="hidden">
-        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>메인 채널</b>: 인스타그램 · 스레드 · 네이버 블로그 · 네이버 클립 · 카카오채널<br>각 플랫폼 토큰으로 Blotato 없이 직접 발행합니다. Instagram·네이버·클립·카카오는 API 제약으로 수동 체크리스트를 사용합니다.</p>
+        <p class="muted small" style="margin-bottom:12px;line-height:1.6"><b>메인 채널</b>: 인스타그램 · 스레드 · 네이버 블로그 · 네이버 클립 · 카카오채널<br>인스타·스레드·페북·X·링크드인은 API 토큰으로 직접 발행합니다. <b>네이버·카카오채널은 공개 API가 없어</b> 아래에서 <b>1회 로그인</b>하면 앱 내장 창으로 작성합니다(비밀번호는 저장하지 않음).</p>
+        <div id="sec-browser-ch" style="margin-bottom:16px"></div>
         <div id="sec-forms-ch"></div>
       </div>
       <div data-body="opencrab" class="hidden">
@@ -3301,6 +3350,8 @@ async function openSettings(section) {
       catch (e) { setUpdStatus('확인 실패: ' + e.message); }
     }
   };
+  // 세션 브라우저 채널(네이버·카카오) — 1회 로그인/로그아웃 + 상태
+  renderBrowserChannels($('#sec-browser-ch', sheet));
   // 채널 토큰 폼 (직접 발행) + 렌더 프로바이더 키 폼
   buildSecretForms($('#sec-forms-ch', sheet), CH_SECRET_FORMS, true);
   buildSecretForms($('#sec-forms-rd', sheet), RD_SECRET_FORMS, false);
@@ -3510,6 +3561,58 @@ async function renderPackSection(root) {
       b.disabled = false; b.textContent = '가져오기';
     };
   };
+}
+// 세션 브라우저 발행 채널(네이버·카카오) — 1회 로그인 후 세션 저장. 비밀번호는 앱에 저장하지 않는다.
+const BROWSER_CHANNELS = [
+  { ch: 'naver', label: '네이버 블로그', hint: '네이버 계정으로 로그인하면 세션이 저장됩니다. 발행은 카드의 「발행 검토」에서 [로그인 창에서 자동 작성]으로 — 본문이 클립보드에 복사되고 이미지 폴더가 열립니다.' },
+  { ch: 'kakao_channel', label: '카카오톡 채널', hint: '카카오 계정으로 관리자센터에 로그인합니다. 채널 소식 게시는 공개 API가 없어 관리자센터 창에서 작성합니다.' },
+];
+async function renderBrowserChannels(root) {
+  if (!root) return;
+  root.innerHTML = BROWSER_CHANNELS.map((c) => `
+    <div class="sec-form" data-bch="${c.ch}" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <b class="small">${esc(c.label)}</b>
+        <span class="chip tiny bch-status" style="color:var(--muted)">확인 중…</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button type="button" class="small bch-login">로그인</button>
+          <button type="button" class="small bch-logout hidden">로그아웃</button>
+        </span>
+      </div>
+      <p class="muted small" style="margin:6px 0 0;line-height:1.5">${esc(c.hint)}</p>
+    </div>`).join('');
+  const paint = async (el, ch) => {
+    const st = await window.api.pub2.sessionStatus(ch).catch(() => ({ connected: false }));
+    const badge = $('.bch-status', el); const inBtn = $('.bch-login', el); const outBtn = $('.bch-logout', el);
+    if (st && st.connected) {
+      badge.textContent = '로그인됨'; badge.style.color = 'var(--ok)';
+      inBtn.textContent = '다시 로그인'; outBtn.classList.remove('hidden');
+    } else {
+      badge.textContent = '로그인 필요'; badge.style.color = 'var(--warn)';
+      inBtn.textContent = '로그인'; outBtn.classList.add('hidden');
+    }
+  };
+  for (const el of $$('[data-bch]', root)) {
+    const ch = el.dataset.bch;
+    paint(el, ch);
+    $('.bch-login', el).onclick = async () => {
+      const b = $('.bch-login', el); const old = b.textContent;
+      b.disabled = true; b.textContent = '로그인 창 열림…';
+      try {
+        const r = await window.api.pub2.login(ch);
+        if (r && r.connected) toast('로그인됨 — 세션이 저장됐습니다');
+        else if (r && r.ok) toast('로그인이 확인되지 않았습니다 — 로그인 후 창을 닫으세요');
+        else toast('로그인 실패: ' + ((r && r.error) || '알 수 없음'));
+      } catch (e) { toast('로그인 실패: ' + e.message); }
+      finally { b.disabled = false; b.textContent = old; await paint(el, ch); if (S.client) { S.channels = await window.api.channels.check(); renderChannels(); } }
+    };
+    $('.bch-logout', el).onclick = async () => {
+      if (!confirm(`${el.querySelector('b').textContent} 세션을 지울까요? 다음 발행 때 다시 로그인해야 합니다.`)) return;
+      await window.api.pub2.logout(ch).catch(() => {});
+      toast('세션 로그아웃됨'); await paint(el, ch);
+      if (S.client) { S.channels = await window.api.channels.check(); renderChannels(); }
+    };
+  }
 }
 function buildSecretForms(root, forms, isChannel) {
   if (!root) return;

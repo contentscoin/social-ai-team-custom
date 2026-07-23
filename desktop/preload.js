@@ -172,6 +172,10 @@ contextBridge.exposeInMainWorld('api', {
     queue: (dir) => ipcRenderer.invoke('pub2:queue', dir),
     cancel: (dir, qid) => ipcRenderer.invoke('pub2:cancel', dir, qid),
     test: (channel) => ipcRenderer.invoke('pub2:test', channel),
+    // 세션 브라우저 채널(네이버·카카오) — 로그인/상태/로그아웃
+    login: (channel) => ipcRenderer.invoke('pub2:login', channel),
+    sessionStatus: (channel) => ipcRenderer.invoke('pub2:sessionStatus', channel),
+    logout: (channel) => ipcRenderer.invoke('pub2:logout', channel),
   },
   update: {
     version: () => ipcRenderer.invoke('update:version'),

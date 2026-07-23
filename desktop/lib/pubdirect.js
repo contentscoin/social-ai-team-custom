@@ -307,7 +307,10 @@ function status() {
       image: true, imageRequired: true,
       imageNote: '이미지 필수 — 공개 URL은 qrcoding 업로드로 자동 처리됩니다 (렌더 탭의 QR Agent Studio API 키 필요). 여러 장 선택 시 캐러셀로 발행',
     },
-    naver: { connected: false, manualOnly: true, note: '네이버 블로그는 공개 API 미제공 — 수동 발행 체크리스트 사용' },
+    // 네이버·카카오채널은 공개 API가 없어 세션 브라우저 발행(browser)을 쓴다. 로그인 상태(connected)는
+    // main.js의 channels:check가 sessionpub.sessionStatus로 실시간 덮어쓴다.
+    naver: { connected: false, browser: true, image: true, note: '네이버 블로그는 공개 API 미제공 — 1회 로그인 후 앱 창에서 자동 작성' },
+    kakao_channel: { connected: false, browser: true, image: true, note: '카카오톡 채널은 소식 게시 API 미제공 — 1회 로그인 후 관리자센터 창에서 작성' },
   };
   // 장수 토큰(60일 수명) 만료 상태를 배지·발행 패널에 얹는다
   for (const t of tokenhealth.check()) {
