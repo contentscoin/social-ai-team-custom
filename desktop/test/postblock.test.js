@@ -199,6 +199,30 @@ test('extractPublishBody — 마크다운 헤딩으로 온 프롬프트(## 이�
   assert.doesNotMatch(text, /이미지 프롬프트|hero shot|softbox|85mm|no text/i);
 });
 
+test('extractPublishBody — 오버스트립 방지: "프롬프트"가 들어간 정상 본문/소제목은 유지', () => {
+  // 글쓰기 계정: 캡션 안의 '오늘의 프롬프트:'는 렌더 계약이 아니라 정상 본문 — 지우면 안 됨
+  const cap = extractPublishBody([
+    'POST 1 — 글쓰기 챌린지',
+    'CAPTION: 오늘의 프롬프트: 좋아하는 계절을 묘사해보세요.',
+    'HASHTAGS: #글쓰기',
+  ].join('\n'));
+  assert.match(cap.text, /오늘의 프롬프트: 좋아하는 계절/);
+  assert.match(cap.text, /#글쓰기/);
+  // 네이버 본문의 '## 프롬프트 예시 3가지'는 프롬프트를 다루는 소제목 — 유지(라벨 헤딩만 제거해야 함)
+  const nb = extractPublishBody([
+    'POST 2 — AI 글쓰기',
+    'BODY:',
+    'AI로 글쓰기를 시작해봅니다.',
+    '',
+    '## 프롬프트 예시 3가지',
+    '첫째, 구체적으로. 둘째, 맥락을. 셋째, 예시를.',
+    '',
+    'TAGS: AI글쓰기',
+  ].join('\n'));
+  assert.match(nb.text, /프롬프트 예시 3가지/);
+  assert.match(nb.text, /첫째, 구체적으로/);
+});
+
 test('extractPublishBody — 프롬프트 필드 오탐 방지: 한국어 본문은 그대로 유지', () => {
   // "장소:"·"액션" 같은 한국어는 프롬프트 필드가 아니므로 보존
   const { text } = extractPublishBody([

@@ -36,7 +36,11 @@
       cur.push(L);
     }
     flush();
-    if (sawMarker && segs.length > 1) return segs.slice(0, 15);
+    if (sawMarker) {
+      if (segs.length > 1) return segs.slice(0, 15);
+      if (segs.length === 1) return segs; // 마커가 있었으나 세그먼트 1개 — 마커 제거된 본문을 반환(원문 아님)
+      // segs 비었으면(마커만 있던 경우) 아래 일반 처리로
+    }
     // 마커 없음 — 짧으면 단일
     if (raw.length <= CHAIN_MAX) return [raw];
     var paras = raw.split(/\n{2,}/).map(function (p) { return p.trim(); }).filter(Boolean);

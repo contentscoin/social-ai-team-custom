@@ -193,7 +193,9 @@ function deleteAssets(dir, uid, opts = {}) {
 function deleteOneImage(dir, rel) {
   const abs = safeInside(dir, rel);
   if (!abs) return { ok: false, error: '워크스페이스 밖 경로입니다', rel };
-  const norm = String(rel || '').replace(/\\/g, '/');
+  // 정규화된(../ 해소된) 실제 경로로 판정 — 'outputs/creatives/../../context/x.png' 같은
+  // 문자열 우회를 막는다(안전 가드는 원문 문자열이 아니라 resolve 결과로 검사해야 한다).
+  const norm = path.relative(path.resolve(dir), abs).replace(/\\/g, '/');
   const inCreatives = /^outputs\/creatives\//.test(norm);
   const inVideos = /^outputs\/videos\//.test(norm);
   if (!inCreatives && !inVideos) return { ok: false, error: 'outputs/creatives 또는 outputs/videos 안의 파일만 삭제할 수 있습니다', rel };

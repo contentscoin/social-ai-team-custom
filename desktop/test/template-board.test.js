@@ -41,6 +41,11 @@ test('splitThreadChain — 한 문단이 한도를 넘으면 단어 단위로 �
   for (const s of segs) assert.ok(s.length <= 480);
 });
 
+test('splitThreadChain — 마커가 있으나 세그먼트 1개면 마커 제거된 본문 반환(원문 아님)', () => {
+  assert.deepEqual(splitThreadChain('Post 1/1: 안녕하세요'), ['안녕하세요']);
+  assert.deepEqual(splitThreadChain('본문입니다\n---'), ['본문입니다']);
+});
+
 test('channelMockHTML — threads: 장문이면 메인글 + 답글 체인 렌더', () => {
   const long = '메인 후킹 문장입니다.\n---\n답글 하나.\n---\n답글 둘.';
   const html = channelMockHTML('threads', { text: long, handle: 'brand', esc, satUrl: (r) => r });

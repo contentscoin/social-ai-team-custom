@@ -244,5 +244,8 @@ test('deleteOneImage — 안전 가드: 경로 이탈·비이미지·본문·바
   assert.equal(postassets.deleteOneImage(dir, 'outputs/creatives/note.md').ok, false); // 비이미지(.md)
   assert.equal(postassets.deleteOneImage(dir, 'context/brand.png').ok, false);       // creatives/videos 밖
   assert.equal(postassets.deleteOneImage(dir, 'outputs/creatives/nope.png').ok, false); // 없는 파일
-  assert.equal(fs.existsSync(path.join(cr, 'note.md')), true); // 보존
+  // 문자열 우회('outputs/creatives/'로 시작하지만 ..로 밖의 파일을 노림) — resolve 후 판정으로 차단
+  assert.equal(postassets.deleteOneImage(dir, 'outputs/creatives/../../context/brand.png').ok, false);
+  assert.equal(fs.existsSync(path.join(cr, 'note.md')), true);        // 보존
+  assert.equal(fs.existsSync(path.join(dir, 'context', 'brand.png')), true); // 우회 대상 보존
 });
