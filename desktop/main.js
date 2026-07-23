@@ -1033,6 +1033,8 @@ ipcMain.handle('cfg:setAutoApprove', safe((_e, on) => config.setAutopilotAutoApp
 ipcMain.handle('render:styles', safe(() => imagestyles.list()));
 ipcMain.handle('cfg:getImageStyle', safe(() => config.getImageStyle()));
 ipcMain.handle('cfg:setImageStyle', safe((_e, key) => config.setImageStyle(key)));
+ipcMain.handle('cfg:getImageQuality', safe(() => config.getImageQuality()));
+ipcMain.handle('cfg:setImageQuality', safe((_e, q) => config.setImageQuality(q)));
 // 포스트별 이미지/본문 삭제 → 삭제한 부분을 기획 단계로 되돌린다(보드가 파일 증거로 재추론).
 ipcMain.handle('post:deleteAssets', safe((_e, dir, uid, opts) => {
   const r = postassets.deleteAssets(dir, uid, opts || {});
@@ -1119,13 +1121,12 @@ async function genBrandRefImpl(dir) {
   if (!text || !text.trim()) return { ok: false, error: '브랜드 시트 내용을 먼저 저장하세요' };
   const log = (line) => send('log', { source: 'sheet', line, dir });
   const provider = render.defaultImageProvider({ ima2: true });
+  // 브리프는 이미 완성된 자기완결 영어 프롬프트라 compile(대형 LLM 1회, 30초~2분)을 생략한다 —
+  // finalizeImagePrompt가 TEXT RULE·품질 꼬리를 붙이므로 그대로 넣어도 안전하고 더 빠르다.
+  // 시트 레퍼런스는 스타일 앵커일 뿐이라 medium 품질로도 충분(high 대비 체감 2~4배 빠름).
   const brief = `Style and mood reference board — a single representative hero frame capturing the palette, lighting character, composition and material finish. No logo, wordmark or text rendered anywhere in the image. ${text}`;
-  let prompt = brief, negative = null;
-  try {
-    const c = await promptlab.compile(dir, { kind: 'image', provider, topic: 'brand style board', channel: '', prompt: brief, size: 'square', count: 1 }, log);
-    if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
-  } catch { /* 브리프 원문으로 */ }
-  const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base: 'brand-master', size: 'square', count: 1, env: { ima2: true } }, log);
+  try { await render.warmupImageProvider(provider, { ima2: true }, log); } catch { /* best effort */ }
+  const r = await render.generate(dir, { kind: 'image', provider, prompt: brief, negative: null, quality: 'medium', base: 'brand-master', size: 'square', count: 1, env: { ima2: true } }, log);
   if (!r.ok || !r.rel) return { ok: false, error: r.error || '레퍼런스 생성에 실패했습니다' };
   let relFromDir;
   try { relFromDir = moveRefToSheets(dir, r.rel, 'brand-master'); }
@@ -1153,15 +1154,13 @@ ipcMain.handle('sheet:genRef', async (_e, dir, channel, which, index) => {
     const log = (line) => send('log', { source: 'sheet', line, dir });
     const provider = render.defaultImageProvider({ ima2: true });
     // 캐릭터 모델 시트 = 정면·3/4측면·후면 턴어라운드 + 표정 세트(레퍼런스 art). 넓은 캔버스(landscape).
+    // 브리프가 이미 완결된 영어 프롬프트라 compile(대형 LLM 1회)을 생략 — 더 빠르고, 채널 플랫폼
+    // 지시가 끼어들지 않아 깔끔한 모델 시트가 나온다. 시트 레퍼런스는 medium 품질로 속도 확보.
     const brief = `Character model sheet / turnaround reference of ONE single character — the canonical recurring subject drawn as a multi-view model sheet on a plain neutral seamless studio background: full-body FRONT view, 3/4 SIDE view and BACK view of the SAME character standing side by side, with identical proportions, face, hairstyle, wardrobe and colors across every view; plus a small row of head close-ups showing neutral, smiling and talking expressions. Even flat model-sheet lighting, no dramatic shadows, clean character-reference layout, natural skin texture with visible pores if human. Keep the identity perfectly consistent across all views. ${text}`;
-    let prompt = brief, negative = null;
-    try {
-      const c = await promptlab.compile(dir, { kind: 'image', provider, topic: `${channel} character turnaround`, channel, prompt: brief, size: 'landscape', count: 1 }, log);
-      if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
-    } catch { /* 브리프 원문으로 */ }
     const base = `chref-${channel}-character-${idx}`;
+    try { await render.warmupImageProvider(provider, { ima2: true }, log); } catch { /* best effort */ }
     // 레퍼런스 생성 자체는 앵커 없이(fresh) — 기존 ref를 먹이지 않는다. 턴어라운드는 가로형(landscape).
-    const r = await render.generate(dir, { kind: 'image', provider, prompt, negative, base, size: 'landscape', count: 1, env: { ima2: true } }, log);
+    const r = await render.generate(dir, { kind: 'image', provider, prompt: brief, negative: null, quality: 'medium', base, size: 'landscape', count: 1, env: { ima2: true } }, log);
     if (!r.ok || !r.rel) return { ok: false, error: r.error || '레퍼런스 생성에 실패했습니다' };
     let relFromDir;
     try { relFromDir = moveRefToSheets(dir, r.rel, base); }

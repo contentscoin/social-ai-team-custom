@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('api', {
     setBudget: (usd) => ipcRenderer.invoke('cfg:setBudget', usd),
     getImageStyle: () => ipcRenderer.invoke('cfg:getImageStyle'),
     setImageStyle: (key) => ipcRenderer.invoke('cfg:setImageStyle', key),
+    getImageQuality: () => ipcRenderer.invoke('cfg:getImageQuality'),
+    setImageQuality: (q) => ipcRenderer.invoke('cfg:setImageQuality', q),
   },
   chat: {
     send: (dir, msg) => ipcRenderer.invoke('chat:send', dir, msg),

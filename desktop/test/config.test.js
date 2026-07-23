@@ -62,6 +62,17 @@ test('imageStyle — 유효 프리셋만 저장, 무효는 미지정으로', () 
   assert.equal(config.getImageStyle(), '');
 });
 
+test('imageQuality — 기본 high, low|medium|high만 저장, 무효는 high로', () => {
+  const config = fresh();
+  assert.equal(config.getImageQuality(), 'high'); // 기본
+  config.setImageQuality('medium');
+  assert.equal(config.getImageQuality(), 'medium');
+  config.setImageQuality('LOW'); // 대소문자 무관
+  assert.equal(config.getImageQuality(), 'low');
+  config.setImageQuality('ultra'); // 무효 → high
+  assert.equal(config.getImageQuality(), 'high');
+});
+
 test('autopilotAutoApprove — 기본 false, 토글 저장·재로드 유지', () => {
   const config = fresh();
   assert.equal(config.getAutopilotAutoApprove(), false); // 기본 꺼짐

@@ -148,6 +148,14 @@ async function genOpenAI(dir, job, onLine) {
 // (3) ima2 — ChatGPT OAuth 이미지 (설치 마법사의 ima2 레인 재사용)
 // ima2 gen은 로컬 `ima2 serve` 데몬이 필요하다 — 죽어 있으면 자동 기동 후 1회 재시도.
 let ima2ServeLastStart = 0;
+// 서버가 응답하는지 확인 — `ima2 ping`은 서버가 뜨면 빠르게 성공한다(콜드스타트 폴링용).
+async function ima2Ping(serverUrl) {
+  try {
+    const args = ['ping', ...(serverUrl ? ['--server', serverUrl] : [])];
+    const r = await runCmd('ima2', args, null, { timeoutMs: 8000 });
+    return !!r.ok;
+  } catch { return false; }
+}
 async function ensureIma2Serve(onLine) {
   if (Date.now() - ima2ServeLastStart < 2 * 60_000) return false; // 2분 내 재기동 반복 금지(스폰 폭주 방지)
   ima2ServeLastStart = Date.now();
@@ -159,14 +167,20 @@ async function ensureIma2Serve(onLine) {
     const p = spawn(cmd, ['serve'], { detached: true, stdio: 'ignore', env: envWithPath(), shell: isWin, windowsHide: true });
     p.unref();
   } catch { return false; }
-  await new Promise((r) => setTimeout(r, 8000)); // 서버 기동 대기
+  // 고정 8초 대기 대신 ping 폴링(최대 ~12초) — 서버가 일찍 뜨면 바로 진행해 콜드스타트 지연을 줄인다.
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    if (await ima2Ping('')) { onLine && onLine(`[render] ima2 serve 준비됨 (${i + 1}s)`); return true; }
+  }
   return true;
 }
 // 설정된 ima2 서버 URL(사용자가 watchdog 등으로 직접 유지하는 서버). 있으면 앱은 자기 serve를
 // 띄우지 않고 이 주소로 붙는다(--server). 비었으면 기존처럼 자동 기동.
 function ima2ServerUrl() { try { return String((secrets.get('ima2') || {}).server || '').trim(); } catch { return ''; } }
-function ima2GenArgs(prompt, tmp, serverUrl, refs) {
-  const a = ['gen', prompt, '-d', tmp, '--quality', 'high'];
+// quality: low|medium|high (기본 high — 기존 동작·테스트 호환). 시트 레퍼런스 등은 medium을 넘겨 속도를 낸다.
+function ima2GenArgs(prompt, tmp, serverUrl, refs, quality) {
+  const q = ['low', 'medium', 'high'].includes(quality) ? quality : 'high';
+  const a = ['gen', prompt, '-d', tmp, '--quality', q];
   if (serverUrl) a.push('--server', serverUrl);
   // 레퍼런스 이미지(--ref, 최대 5장) — 채널 캐릭터/마스터 앵커로 인물·제품 픽셀 일관성 확보
   for (const r of (Array.isArray(refs) ? refs : []).slice(0, 5)) a.push('--ref', r);
@@ -174,8 +188,11 @@ function ima2GenArgs(prompt, tmp, serverUrl, refs) {
 }
 // 배치 시작 전 프로바이더 예열 — ima2면 serve를 미리 띄워 첫 렌더 전에 뜰 시간을 준다.
 // 단, 사용자가 서버 URL을 지정했으면(직접 유지 중) 앱이 자동 기동하지 않는다.
+// 이미 응답 중이면 재기동하지 않아 예열 비용이 0에 수렴한다.
 async function warmupImageProvider(provider, env, onLine) {
-  if (provider === 'ima2' && !ima2ServerUrl()) { try { await ensureIma2Serve(onLine); } catch { /* best effort */ } }
+  if (provider === 'ima2' && !ima2ServerUrl()) {
+    try { if (!(await ima2Ping(''))) await ensureIma2Serve(onLine); } catch { /* best effort */ }
+  }
   return { ok: true };
 }
 const IMA2_DOWN = /server unreachable|ima2 serve/i;
@@ -191,8 +208,11 @@ async function genIma2(dir, job, onLine) {
   if (job.refAbs) refCand.push(job.refAbs);
   if (Array.isArray(job.refs)) for (const r of job.refs) if (r) refCand.push(r);
   let refs = [...new Set(refCand)].filter((p) => { try { return fs.existsSync(p); } catch { return false; } }).slice(0, 5);
-  onLine && onLine(`[render] ima2 생성 중… (quality=high + negative fused${refs.length ? ` · 레퍼런스 ${refs.length}장` : ''}${serverUrl ? ' · ' + serverUrl : ''})`);
-  const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl, refs), onLine, { cwd: dir, timeoutMs: 10 * 60_000 });
+  // 품질 — job.quality 우선, 없으면 설정 기본(발행 이미지는 high, 시트 레퍼런스는 호출부에서 medium).
+  const quality = ['low', 'medium', 'high'].includes(job.quality) ? job.quality : config.getImageQuality();
+  onLine && onLine(`[render] ima2 생성 중… (quality=${quality} + negative fused${refs.length ? ` · 레퍼런스 ${refs.length}장` : ''}${serverUrl ? ' · ' + serverUrl : ''})`);
+  // 시도당 타임아웃 10분 → 5분: 서버가 느린 날 "조용한 30분(10분×재시도)"을 차단. 정상 생성은 수십초~수분.
+  const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl, refs, quality), onLine, { cwd: dir, timeoutMs: 5 * 60_000 });
   const hasImg = () => (fs.existsSync(tmp) ? fs.readdirSync(tmp) : []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
   let r = await run();
   // 서버가 죽어 있으면: URL 미지정 시 자동 기동, 지정 시 사용자 서버가 뜰 때까지만 몇 번 재시도.
@@ -204,14 +224,14 @@ async function genIma2(dir, job, onLine) {
       r = await run();
     }
   }
-  // 생성 대기 초과 → 고아 잡(requestId) 취소 + 레퍼런스 축소 후 최대 2회 재시도.
+  // 생성 대기 초과 → 고아 잡(requestId) 취소 + 레퍼런스 축소 후 1회 재시도.
+  // (재시도 2→1: 시도당 5분이라 5분×3=15분 대신 최대 10분으로 상한을 낮춘다. 대부분 첫 재시도에서 붙거나 실패로 확정.)
   if (!r.ok && !hasImg().length && IMA2_TIMEOUT.test(r.out)) {
-    for (let i = 0; i < 2 && !r.ok && !hasImg().length; i++) {
-      if (job.stopped && job.stopped()) break;
+    if (!(job.stopped && job.stopped())) {
       const id = (String(r.out).match(/req[_a-z0-9]+/i) || [])[0];
       if (id) { try { await runCmd('ima2', ['cancel', id, ...(serverUrl ? ['--server', serverUrl] : [])], null, { cwd: dir, timeoutMs: 20_000 }); } catch { /* best effort */ } }
       if (refs.length > 1) { refs = refs.slice(0, 1); onLine && onLine('[render] 대기 초과 — 레퍼런스를 1장으로 줄여 재시도'); }
-      onLine && onLine(`[render] ima2 생성 대기 초과 — 재시도 ${i + 1}/2`);
+      onLine && onLine('[render] ima2 생성 대기 초과 — 재시도 1/1');
       await new Promise((res) => setTimeout(res, 3000));
       r = await run();
     }

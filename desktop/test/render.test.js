@@ -46,6 +46,19 @@ test('ima2GenArgs — 레퍼런스 이미지는 --ref로 각각 추가(최대 5�
   assert.doesNotMatch(render._ima2GenArgs('p', '/tmp/x', '').join(' '), /--ref/);
 });
 
+test('ima2GenArgs — quality 인자: 유효값만 반영, 무효·미지정은 high', () => {
+  assert.deepEqual(render._ima2GenArgs('p', '/tmp/x', '', [], 'medium'),
+    ['gen', 'p', '-d', '/tmp/x', '--quality', 'medium']);
+  assert.deepEqual(render._ima2GenArgs('p', '/tmp/x', '', [], 'low'),
+    ['gen', 'p', '-d', '/tmp/x', '--quality', 'low']);
+  // 무효값은 high로 방어
+  assert.deepEqual(render._ima2GenArgs('p', '/tmp/x', '', [], 'ultra'),
+    ['gen', 'p', '-d', '/tmp/x', '--quality', 'high']);
+  // refs와 quality 동시 — quality가 --ref보다 앞
+  assert.deepEqual(render._ima2GenArgs('p', '/tmp/x', '', ['/w/a.png'], 'medium'),
+    ['gen', 'p', '-d', '/tmp/x', '--quality', 'medium', '--ref', '/w/a.png']);
+});
+
 test('폴백 순위 — 가용 프로바이더만, 시도한 것과 claude-svg는 제외', () => {
   // 키가 하나도 없으면 이미지 폴백 후보 없음 (claude-svg는 항상 가용하지만 타이포 레인이라 제외)
   assert.deepEqual(render._fallbackRank('image', {}, ['openai-image']), []);
