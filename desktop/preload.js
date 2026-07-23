@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   post: {
     deleteAssets: (dir, uid, opts) => ipcRenderer.invoke('post:deleteAssets', dir, uid, opts),
+    deleteImage: (dir, rel) => ipcRenderer.invoke('post:deleteImage', dir, rel),
   },
   sheet: {
     list: (dir) => ipcRenderer.invoke('sheet:list', dir),

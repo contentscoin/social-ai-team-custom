@@ -1888,7 +1888,8 @@ async function openRenderPanel(p) {
       <p class="small muted" style="margin:4px 0">시안을 선택하면 대표컷(1번)으로 확정하고, 설정한 장수만큼 나머지를 이어서 생성합니다.</p>
       <div id="rp-vlist" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
     </div>
-    <p class="muted small" style="margin-top:4px">컴파일러는 브랜드 팔레트·카피의 VISUAL DIRECTION·프롬프트 팩을 재료로 씁니다. 결과는 수정 가능합니다.</p>`;
+    <div id="rp-images" style="margin-top:10px"></div>
+    <p class="muted small" style="margin-top:4px">컴파일러는 기획 의도(목표·앵글)·브랜드 팔레트·카피의 VISUAL DIRECTION·프롬프트 팩을 재료로 씁니다. 결과는 수정 가능합니다.</p>`;
   const syncKind = (kind) => {
     if (kind === 'cardnews') {
       // 카드뉴스는 한글 타이포가 핵심 — claude-svg 레인 전용 (사진 모델은 한글이 깨진다)
@@ -1930,6 +1931,8 @@ async function openRenderPanel(p) {
       const r = await window.api.prompt.compile(S.client.dir, {
         kind, provider: $('#rp-provider').value,
         topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
+        // 기획 의도·컨셉을 컴파일러에 전달 — 텍스트→이미지 맥락 이해(F)
+        objective: p.objective || '', pillar: p.pillar || '', angle: p.angle || '', notes: p.notes || '', visual: p.visual || '',
         prompt: $('#rp-prompt').value.trim(),
         size: $('#rp-size').value, duration: Number($('#rp-dur').value) || 5,
         count: Number(($('#rp-count') && $('#rp-count').value) || 1) || 1,
@@ -1982,9 +1985,104 @@ async function openRenderPanel(p) {
       }
       $('#rp-varea').classList.add('hidden');
       if (S.client && S.client.dir === dir) refreshBoard(false);
+      refreshImageManager();
     };
   }
   showVariants(); // 이전 라운드의 시안이 남아 있으면 패널을 열 때 바로 보여준다
+
+  // ---- 이미지 관리 — 목록·개별 삭제·다중선택 재생성(가이드)·추가 생성 ----------------
+  const IMG_RE = /\.(png|jpe?g|webp|gif)$/i;
+  const shortId = () => Date.now().toString(36).slice(-4) + Math.floor(Math.random() * 46656).toString(36);
+  // 최신 보드의 이 카드(생성/삭제 후 p는 stale이라 uid로 다시 찾는다)로 이미지 목록을 구한다.
+  function currentImageRels() {
+    const fresh = (S.board && S.board.posts && S.board.posts.find((x) => x.uid === p.uid)) || p;
+    return postRenderRels(fresh).filter((r) => IMG_RE.test(r));
+  }
+  // 생성/삭제 후: 보드를 새로 읽어(파일 증거 반영) 이미지 목록을 갱신.
+  async function afterImageChange(dir) {
+    try { if (S.client && S.client.dir === dir) await refreshBoard(false); } catch { /* best effort */ }
+    await refreshImageManager();
+  }
+  async function refreshImageManager() {
+    const box = $('#rp-images'); if (!box) return;
+    const rels = currentImageRels();
+    if (!rels.length) { box.innerHTML = '<p class="small muted" style="margin:8px 0">이 카드에 연결된 생성 이미지가 없습니다 — 위에서 생성하세요.</p>'; return; }
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 6px">
+        <b class="small">생성된 이미지 ${rels.length}장</b>
+        <label class="small muted" style="margin-left:auto;display:flex;gap:4px;align-items:center"><input type="checkbox" id="rp-img-all"> 전체 선택</label>
+      </div>
+      <div id="rp-img-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${rels.map((rel) => `
+        <div style="position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+          <img src="${esc(satUrl(rel))}" style="width:100%;height:96px;object-fit:cover;display:block" loading="lazy" alt="">
+          <label style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,.5);border-radius:4px;padding:0 3px"><input type="checkbox" class="rp-img-sel" data-rel="${esc(rel)}"></label>
+          <button class="rp-img-del" data-rel="${esc(rel)}" title="이 이미지 삭제" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:4px;width:20px;height:20px;line-height:1;cursor:pointer">×</button>
+          <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);color:#fff;font-size:10px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(rel.split(/[\\/]/).pop())}</span>
+        </div>`).join('')}</div>
+      <textarea id="rp-guide" class="rp-input" rows="2" placeholder="재생성 가이드 (선택) — 예: 더 밝게, 제품을 더 크게, 배경은 단순하게, 손이 보이게" style="margin-top:8px"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+        <button id="rp-regen" style="flex:1">선택 이미지 재생성 (가이드 반영)</button>
+        <select id="rp-addn" class="rp-input" style="width:82px" title="추가로 더 만들 장수"><option value="1">+1장</option><option value="2" selected>+2장</option><option value="3">+3장</option><option value="4">+4장</option></select>
+        <button id="rp-addmore">추가 생성</button>
+      </div>
+      <p class="small muted" style="margin:5px 0 0">재생성: 선택한 이미지를 지우고 같은 수만큼 가이드를 반영해 새로 만듭니다. 추가 생성: 기존은 그대로 두고 N장을 더 만듭니다.</p>`;
+    const allBox = $('#rp-img-all', box);
+    if (allBox) allBox.onchange = (e) => $$('.rp-img-sel', box).forEach((c) => { c.checked = e.target.checked; });
+    for (const d of $$('.rp-img-del', box)) d.onclick = async () => {
+      if (!confirm('이 이미지 1장을 삭제할까요?\n(다른 이미지·본문은 그대로 유지됩니다.)')) return;
+      const r = await window.api.post.deleteImage(S.client.dir, d.dataset.rel);
+      if (r && r.ok) { toast('이미지 삭제됨'); await afterImageChange(S.client && S.client.dir); }
+      else toast('삭제 실패: ' + ((r && r.error) || '알 수 없음'));
+    };
+    const regen = $('#rp-regen', box); if (regen) regen.onclick = () => regenerateSelected(box);
+    const addm = $('#rp-addmore', box); if (addm) addm.onclick = () => addMoreImages(box);
+  }
+  // 재생성 = 선택 이미지 삭제 + 같은 수만큼 가이드 반영 새 이미지 생성(고유 base라 슬롯 충돌 없음).
+  async function regenerateSelected(box) {
+    const sel = $$('.rp-img-sel', box).filter((c) => c.checked).map((c) => c.dataset.rel);
+    if (!sel.length) { toast('재생성할 이미지를 선택하세요'); return; }
+    const prompt = $('#rp-prompt').value.trim();
+    if (!prompt) { toast('먼저 프롬프트를 입력/컴파일하세요'); return; }
+    const guide = (($('#rp-guide', box) || {}).value || '').trim();
+    const provider = $('#rp-provider').value;
+    const dir = S.client.dir;
+    const btn = $('#rp-regen', box); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '재생성 중… (로그 탭에서 진행 확인)';
+    try {
+      for (const rel of sel) { try { await window.api.post.deleteImage(dir, rel); } catch { /* 계속 */ } }
+      const gprompt = prompt + (guide ? `\n\n(Revision guidance — apply to the regenerated image: ${guide})` : '');
+      const r = await window.api.render.generate(dir, {
+        kind: 'image', provider, prompt: gprompt,
+        negative: $('#rp-negative').value.trim() || null,
+        base: `${rpUid}-r${shortId()}`, size: $('#rp-size').value, count: sel.length,
+      });
+      toast(r && r.ok ? `재생성 완료 — ${(r.files || []).length || 1}장` : '재생성 실패: ' + ((r && r.error) || '알 수 없음'));
+    } catch (e) { toast('재생성 실패: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; await afterImageChange(dir); }
+  }
+  // 추가 생성 = 기존 이미지는 두고 N장을 고유 base로 더 생성(가이드 있으면 반영).
+  async function addMoreImages(box) {
+    const prompt = $('#rp-prompt').value.trim();
+    if (!prompt) { toast('먼저 프롬프트를 입력/컴파일하세요'); return; }
+    const n = Number(($('#rp-addn', box) || {}).value) || 2;
+    const guide = (($('#rp-guide', box) || {}).value || '').trim();
+    const provider = $('#rp-provider').value;
+    const dir = S.client.dir;
+    const btn = $('#rp-addmore', box); const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '추가 생성 중…';
+    try {
+      const gprompt = prompt + (guide ? `\n\n(Variation guidance: ${guide})` : '');
+      const r = await window.api.render.generate(dir, {
+        kind: 'image', provider, prompt: gprompt,
+        negative: $('#rp-negative').value.trim() || null,
+        base: `${rpUid}-x${shortId()}`, size: $('#rp-size').value, count: n,
+      });
+      toast(r && r.ok ? `${(r.files || []).length || n}장 추가 완료` : '추가 생성 실패: ' + ((r && r.error) || '알 수 없음'));
+    } catch (e) { toast('추가 생성 실패: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; await afterImageChange(dir); }
+  }
+  refreshImageManager();
+
   $('#rp-go').onclick = async () => {
     const kind = $('#rp-kind button.active').dataset.k;
     const provider = $('#rp-provider').value;
@@ -2027,7 +2125,7 @@ async function openRenderPanel(p) {
     } catch (e) { toast('생성 실패: ' + e.message); }
     finally {
       go.disabled = false; go.textContent = '▶ 생성';
-      if (S.client && S.client.dir === dir) refreshBoard(false);
+      await afterImageChange(dir); // 보드 갱신 후 새 이미지를 목록에 반영
     }
   };
 }

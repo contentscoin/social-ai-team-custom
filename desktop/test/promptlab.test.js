@@ -17,6 +17,20 @@ test('compile — 스타일 프리셋이 프롬프트 앞에 명시된다(svg �
   assert.equal(r.style, 'infographic');
 });
 
+test('packContext — 광고 팩은 광고 신호(목표/포맷)일 때만 포함, 일반 이미지엔 미포함', () => {
+  // 내장 광고 팩(packs/ad-campaign-pack.md)이 광고 신호에서 로드되는지 — 이름 매칭으로 확인
+  const plain = promptlab.packContext('image', 12000, { objective: '일상 브이로그 소개', format: 'single-image' });
+  assert.doesNotMatch(plain, /광고·캠페인 프롬프트 팩/);
+  const ad = promptlab.packContext('image', 12000, { objective: '전환 · 구매 유도', format: 'promotion' });
+  assert.match(ad, /광고·캠페인 프롬프트 팩/);
+  // 명시 플래그로도 켜진다
+  const ad2 = promptlab.packContext('image', 12000, { ad: true });
+  assert.match(ad2, /광고·캠페인 프롬프트 팩/);
+  // 영상 kind엔 광고 팩을 강제로 넣지 않는다(영상 팩 레인)
+  const vid = promptlab.packContext('video', 12000, { objective: '광고 캠페인' });
+  assert.doesNotMatch(vid, /광고·캠페인 프롬프트 팩/);
+});
+
 test('platformDirective — 채널별 방향 주입, 영상/미지정은 빈 문자열', () => {
   const ig = promptlab._platformDirective('instagram', 'image');
   assert.match(ig, /aspirational editorial/i);

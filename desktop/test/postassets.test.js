@@ -221,3 +221,28 @@ test('deleteAssets — 없는 uid는 실패', () => {
   fs.writeFileSync(path.join(dir, 'context', 'content-calendar.md'), 'POST 1 — t\nTopic: t\n');
   assert.equal(postassets.deleteAssets(dir, 'nope-9', { image: true }).ok, false);
 });
+
+test('deleteOneImage — creatives의 이미지 1장만 삭제(다른 파일 보존)', () => {
+  const dir = tmp();
+  const cr = path.join(dir, 'outputs', 'creatives');
+  fs.mkdirSync(cr, { recursive: true });
+  fs.writeFileSync(path.join(cr, 'ig-1_1.png'), 'x');
+  fs.writeFileSync(path.join(cr, 'ig-1_2.png'), 'x');
+  const r = postassets.deleteOneImage(dir, 'outputs/creatives/ig-1_1.png');
+  assert.equal(r.ok, true);
+  assert.equal(fs.existsSync(path.join(cr, 'ig-1_1.png')), false);
+  assert.equal(fs.existsSync(path.join(cr, 'ig-1_2.png')), true); // 나머지 보존
+});
+
+test('deleteOneImage — 안전 가드: 경로 이탈·비이미지·본문·바깥 폴더 거부', () => {
+  const dir = tmp();
+  const cr = path.join(dir, 'outputs', 'creatives');
+  fs.mkdirSync(cr, { recursive: true });
+  fs.writeFileSync(path.join(cr, 'note.md'), 'copy');           // 본문
+  fs.writeFileSync(path.join(dir, 'context', 'brand.png'), 'x'); // outputs 밖
+  assert.equal(postassets.deleteOneImage(dir, '../../etc/passwd').ok, false);        // 경로 이탈
+  assert.equal(postassets.deleteOneImage(dir, 'outputs/creatives/note.md').ok, false); // 비이미지(.md)
+  assert.equal(postassets.deleteOneImage(dir, 'context/brand.png').ok, false);       // creatives/videos 밖
+  assert.equal(postassets.deleteOneImage(dir, 'outputs/creatives/nope.png').ok, false); // 없는 파일
+  assert.equal(fs.existsSync(path.join(cr, 'note.md')), true); // 보존
+});

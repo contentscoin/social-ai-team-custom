@@ -1041,6 +1041,12 @@ ipcMain.handle('post:deleteAssets', safe((_e, dir, uid, opts) => {
   if (r.ok) setTimeout(pushBoard, 200); // 카드가 planned/copy로 즉시 되돌아가게
   return r;
 }));
+// 개별 이미지 1장 삭제 — 카드 전체가 아니라 지정한 파일 하나만(다른 이미지·본문은 보존).
+ipcMain.handle('post:deleteImage', safe((_e, dir, rel) => {
+  const r = postassets.deleteOneImage(dir, rel);
+  if (r.ok) setTimeout(pushBoard, 200); // 보드 썸네일 갱신
+  return r;
+}));
 
 // ---- 채널별 캐릭터/마스터 시트 락인 ------------------------------------------------
 // 채널마다 고정 비주얼 아이덴티티를 정의하고 락을 걸면, 그 채널의 모든 이미지 컴파일에 최우선 주입.

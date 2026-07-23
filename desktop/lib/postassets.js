@@ -186,4 +186,23 @@ function deleteAssets(dir, uid, opts = {}) {
   return { ok: true, uid, deleted, failed, reset };
 }
 
-module.exports = { deleteAssets, exciseBlockFromFile, renderPrefixRes };
+// 개별 이미지 1장만 삭제 — 카드 전체가 아니라 지정한 파일 하나. 안전 가드:
+//  - 워크스페이스(dir) 안이어야 하고, outputs/creatives 또는 outputs/videos(및 그 하위 variants) 소속이어야 한다.
+//  - 이미지/영상 확장자만. 본문(.md/.txt)·브리프는 이 경로로 지울 수 없다.
+// 카드 전체 리셋을 하지 않으므로, 남은 이미지가 있으면 카드 stage는 그대로 유지된다.
+function deleteOneImage(dir, rel) {
+  const abs = safeInside(dir, rel);
+  if (!abs) return { ok: false, error: '워크스페이스 밖 경로입니다', rel };
+  const norm = String(rel || '').replace(/\\/g, '/');
+  const inCreatives = /^outputs\/creatives\//.test(norm);
+  const inVideos = /^outputs\/videos\//.test(norm);
+  if (!inCreatives && !inVideos) return { ok: false, error: 'outputs/creatives 또는 outputs/videos 안의 파일만 삭제할 수 있습니다', rel };
+  if (!(IMG_EXT.test(norm) || VID_EXT.test(norm))) return { ok: false, error: '이미지·영상 파일만 삭제할 수 있습니다', rel };
+  try {
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return { ok: false, error: '파일이 없습니다', rel };
+    fs.unlinkSync(abs);
+    return { ok: true, deleted: norm };
+  } catch (e) { return { ok: false, error: e.message, rel }; }
+}
+
+module.exports = { deleteAssets, deleteOneImage, exciseBlockFromFile, renderPrefixRes };

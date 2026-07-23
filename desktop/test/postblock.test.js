@@ -161,6 +161,44 @@ test('extractPublishBody — 네이버 BODY 뒤 IMAGE SLOT + 6요소 프롬프�
   assert.doesNotMatch(text, /SUBJECT|COMPOSITION|LIGHTING|IMAGE SLOT|AR 3:4|VISUAL DIRECTION/i);
 });
 
+test('extractPublishBody — 한국어 프롬프트 라벨에 단어가 끼어도 제거 (이미지 생성 프롬프트:)', () => {
+  const { text } = extractPublishBody([
+    'POST 4 — 원두 소개',
+    'CAPTION: 갓 볶은 원두, 지금 만나보세요.',
+    '',
+    '이미지 생성 프롬프트: a hero shot of coffee beans, 85mm, warm key light',
+    '최종 이미지 프롬프트: macro, glossy beans, no text or logos',
+    '',
+    'HASHTAGS: #원두',
+  ].join('\n'));
+  assert.match(text, /갓 볶은 원두/);
+  assert.match(text, /#원두/);
+  assert.doesNotMatch(text, /프롬프트|hero shot|85mm|macro|no text/i);
+});
+
+test('extractPublishBody — 마크다운 헤딩으로 온 프롬프트(## 이미지 프롬프트)도 본문에 새지 않는다', () => {
+  // 네이버 본문의 ## 소제목은 유지되지만, ## 이미지 프롬프트 헤딩과 그 아래 프롬프트는 제거
+  const { text } = extractPublishBody([
+    'POST 1 — 신상 소개',
+    'BODY:',
+    '이번 주 신상이 입고됐습니다.',
+    '',
+    '## 상세 스펙',
+    '가볍고 튼튼한 소재를 썼어요.',
+    '',
+    '## 이미지 프롬프트',
+    'A premium product hero shot, softbox lighting, 85mm, muted tones,',
+    'absolutely no text, letters, logos, or watermarks.',
+    '',
+    'TAGS: 신상',
+  ].join('\n'));
+  assert.match(text, /이번 주 신상이 입고/);
+  assert.match(text, /상세 스펙/);            // 진짜 소제목은 유지
+  assert.match(text, /가볍고 튼튼한 소재/);
+  assert.match(text, /#신상/);
+  assert.doesNotMatch(text, /이미지 프롬프트|hero shot|softbox|85mm|no text/i);
+});
+
 test('extractPublishBody — 프롬프트 필드 오탐 방지: 한국어 본문은 그대로 유지', () => {
   // "장소:"·"액션" 같은 한국어는 프롬프트 필드가 아니므로 보존
   const { text } = extractPublishBody([
