@@ -119,6 +119,10 @@ contextBridge.exposeInMainWorld('api', {
     setLogo: (dir) => ipcRenderer.invoke('sheet:setLogo', dir),
     clearLogo: (dir) => ipcRenderer.invoke('sheet:clearLogo', dir),
   },
+  psheet: {
+    get: (dir) => ipcRenderer.invoke('psheet:get', dir),
+    approve: (dir, payload) => ipcRenderer.invoke('psheet:approve', dir, payload),
+  },
   soul: {
     list: (dir) => ipcRenderer.invoke('soul:list', dir),
     get: (dir, channel) => ipcRenderer.invoke('soul:get', dir, channel),

@@ -4,11 +4,12 @@
 // 들므로 visuals 노드 도장 없이는 진입하지 않는다.
 const gates = require('./gates');
 
-const ORDER = ['calendar', 'copy', 'shortform', 'verify', 'visuals', 'visuals-generate', 'compliance'];
+// 릴스/보드(shortform)는 독립 스테이지에서 비주얼 생성의 하위 단계로 통합(0.19.34) —
+// main.js execStage가 visuals-generate 안에서 편성된 릴이 있을 때만 실행한다.
+const ORDER = ['calendar', 'copy', 'verify', 'visuals', 'visuals-generate', 'compliance'];
 // 단계 실행 전에 도장이 찍혀 있어야 하는 게이트 노드
 const REQUIRES = {
   copy: 'calendar',
-  shortform: 'copy',
   verify: 'copy',
   visuals: 'verify', // 사실 검증 통과(도장) 후에만 비주얼로 — 교체될 콘텐츠에 비주얼 낭비 방지
   'visuals-generate': 'visuals',
@@ -52,7 +53,7 @@ async function run(dir, deps) {
       if (isStopped()) return finish({ state: 'stopped' });
       // 매 반복마다 보드/게이트를 새로 읽는다 — 직전 단계가 파일을 썼다
       const b = deps.buildBoard(dir);
-      const g = gates.computeGates(b, gates.load(dir));
+      const g = gates.computeGates(b, gates.load(dir), dir);
       const node = g.nodes.find((n) => n.stage === stage);
       if (node && node.done) { emit({ state: 'skip', stage }); continue; } // 증거 있음 — 건너뜀
       const req = REQUIRES[stage];

@@ -1381,6 +1381,7 @@ function openApproveSheet(node, restoreRel) {
   const sheet = $('#sheet-approve');
   const isCompliance = node.key === 'compliance';
   const isVerify = node.key === 'verify';
+  const isVisuals = node.key === 'visuals';
   S.approveNode = node.key;
   let files = [];
   if (node.key === 'calendar') {
@@ -1407,7 +1408,7 @@ function openApproveSheet(node, restoreRel) {
         ${blockPosts.map((p) => `<div class="verdict-row BLOCK"><span class="dot BLOCK"></span><b>${cardId(p)}</b> ${esc(p.topic.slice(0, 30))}<button class="chip" data-rework="${esc(p.uid)}" style="margin-left:auto">재작업 지시</button></div>`).join('')}
         ${warnPosts.map((p) => `<div class="verdict-row WARN"><input type="checkbox" class="warn-sign" data-n="${esc(p.uid)}"><span class="dot WARN"></span><b>${cardId(p)}</b> ${esc(p.topic.slice(0, 30))}</div>`).join('')}
         ${warnPosts.length ? '<p class="muted small" style="margin:8px 0">WARN 사유를 확인했다면 각 항목에 서명(체크)하세요.</p>' : ''}
-        <div style="margin-top:10px" id="appr-list"></div>` : '<div id="appr-list"></div>'}
+        <div style="margin-top:10px" id="appr-list"></div>` : isVisuals ? '<div id="ps-box"><p class="muted small">프롬프트 시트 로딩…</p></div><div id="appr-list" style="margin-top:10px"></div>' : '<div id="appr-list"></div>'}
       </div>
       <div class="appr-preview" id="appr-preview"><p class="muted">파일을 선택하면 미리보기가 열립니다</p></div>
     </div>
@@ -1442,6 +1443,30 @@ function openApproveSheet(node, restoreRel) {
   const keep = restoreRel && $(`.file-row[data-rel="${CSS.escape(restoreRel)}"]`, list);
   if (keep) keep.click();
   else if (showFiles[0] && list.firstElementChild) list.firstElementChild.click();
+  // 비주얼 노드 — 프롬프트 시트 검토·수정 UI. 승인 도장이 이 문장들을 확정하고,
+  // 생성 단계는 확정된 문장을 그대로 쓴다(재컴파일 없음).
+  if (isVisuals) {
+    S._psTotal = 0;
+    (async () => {
+      const ps = await window.api.psheet.get(S.client.dir).catch(() => null);
+      const box = $('#ps-box', sheet);
+      if (!box) return;
+      const entries = (ps && ps.entries) || [];
+      S._psTotal = entries.length;
+      if (!entries.length) {
+        box.innerHTML = '<p class="muted small">프롬프트 시트가 없습니다 — [비주얼 브리프] 단계를 실행하면 포스트별 렌더 프롬프트가 여기 올라옵니다.</p>';
+        return;
+      }
+      box.innerHTML = `
+        <p class="muted small" style="margin-bottom:6px"><b>프롬프트 시트 ${entries.length}건</b> — 승인 도장을 찍으면 아래 문장이 그대로 이미지 생성에 들어갑니다. 보통은 공통 지시 한 줄이면 충분하고, 개별 수정은 카드를 펼쳐서.</p>
+        <textarea id="ps-common" rows="2" placeholder="전체 공통 지시 (선택) — 예) 이번 달은 전체적으로 밝게, 손 나오는 컷 위주로" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px;resize:vertical;margin-bottom:8px"></textarea>
+        ${entries.map((e) => `
+          <details style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:6px">
+            <summary style="cursor:pointer;font-size:12.5px"><b>${esc(e.cid)}</b> · ${esc(e.channel)} · ${e.count}장 · ${esc(e.provider)}${e.approvedAt ? ' <span style="color:var(--ok)">✓ 승인됨</span>' : ''} — <span class="muted">${esc(String(e.topic || '').slice(0, 40))}</span></summary>
+            <textarea class="ps-edit" data-cid="${esc(e.cid)}" rows="5" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--text);font-size:11.5px;line-height:1.5;resize:vertical;margin-top:6px;font-family:ui-monospace,Consolas,monospace">${esc(e.prompt || '')}</textarea>
+          </details>`).join('')}`;
+    })();
+  }
   $('#appr-close').onclick = closeOverlay;
   $('#appr-reject').onclick = () => { closeOverlay(); prefillChat(`${node.label} 산출물에 수정이 필요해: `); };
   for (const b of $$('[data-rework]', sheet)) b.onclick = () => {
@@ -1457,6 +1482,7 @@ function bindStamp(btn, node, isCompliance) {
     const blocks = S.board.posts.filter((p) => p.verdict === 'BLOCK').length;
     if (isCompliance && blocks > 0) return 'BLOCK 카드가 있어 승인할 수 없습니다 — 재작업이 먼저입니다';
     if (isCompliance && $$('.warn-sign').some((c) => !c.checked)) return 'WARN 항목에 모두 서명해야 승인할 수 있습니다';
+    if (node.key === 'visuals' && !S._psTotal) return '프롬프트 시트가 비어 있습니다 — [비주얼 브리프] 실행이 먼저입니다';
     return null;
   };
   let timer = null, p = 0;
@@ -1474,6 +1500,14 @@ function bindStamp(btn, node, isCompliance) {
       if (p >= 100) {
         reset();
         btn.classList.add('stamped');
+        // 비주얼 노드 — 도장과 함께 프롬프트 시트를 확정한다(공통 지시 + 개별 수정 반영).
+        // 이후 생성은 이 문장을 그대로 쓴다 — 도장이 곧 "이 문장으로 과금해도 좋다"는 서명이다.
+        if (node.key === 'visuals') {
+          const common = ($('#ps-common') || { value: '' }).value || '';
+          const edits = $$('.ps-edit').map((t) => ({ cid: t.dataset.cid, prompt: t.value }));
+          const pr = await window.api.psheet.approve(S.client.dir, { common, edits });
+          if (!pr || !pr.ok) { toast('프롬프트 확정 실패: ' + ((pr && pr.error) || '')); btn.classList.remove('stamped'); return; }
+        }
         const warnSigned = $$('.warn-sign').filter((c) => c.checked).map((c) => c.dataset.n);
         const g = await window.api.gates.approve(S.client.dir, { node: node.key, signer: S.client.name, warnSigned });
         if (g && g.error) { toast('승인 저장 실패: ' + g.error); btn.classList.remove('stamped'); return; }

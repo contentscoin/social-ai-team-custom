@@ -43,8 +43,14 @@ test('done은 노드별 증거와 정확히 일치한다 (특성화 — gates.js
   assert.equal(nodeOf(g, 'foundation').done, true);
   assert.equal(nodeOf(g, 'calendar').done, true);
   assert.equal(nodeOf(g, 'copy').done, true);
-  // 릴스가 없으면 shortform은 자동 충족
-  assert.equal(nodeOf(g, 'shortform').done, true);
+  // 릴스/보드는 독립 노드에서 비주얼 생성의 하위 단계로 통합(0.19.34) — 노드가 없어야 한다.
+  assert.equal(nodeOf(g, 'shortform'), undefined);
+  // 릴이 편성돼 대본이 없으면 visuals-generate는 done이 아니다(릴 하위 단계 미완).
+  const gReel = gates.computeGates(board({
+    foundation: { brand: true }, hasCalendar: true,
+    posts: [{ stage: 'copy', isReel: false, visual: '' }, { stage: 'planned', isReel: true }],
+  }), empty);
+  assert.equal(nodeOf(gReel, 'visuals-generate').done, false);
   assert.equal(nodeOf(g, 'publish').done, false);
 });
 
