@@ -45,5 +45,5 @@ cp "$SCRIPT_DIR"/.claude/agents/*.md "$AGENTS_DIR/"
 echo "  ✓ team agents (copywriter, creative-designer, video-producer, compliance-reviewer)"
 
 echo ""
-echo "Done. All 19 skills installed to $SKILLS_DIR, team agents to $AGENTS_DIR"
+echo "Done. All ${#SKILLS[@]} skills installed to $SKILLS_DIR, team agents to $AGENTS_DIR"
 echo "Open Claude Code and run /content-director (or /social-media-manager) to get started."

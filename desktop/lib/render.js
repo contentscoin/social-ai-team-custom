@@ -1,5 +1,6 @@
 // 인앱 렌더 엔진 — 프롬프트 md에서 멈추지 않고 실제 PNG/MP4를 만든다.
-// 이미지: claude-svg(클로드 디자인, 추가 키 불필요) / openai-image(gpt-image-1) / ima2(ChatGPT OAuth)
+// 이미지: claude-svg(클로드 SVG 디자인) / gn-html(공냥 카드 — HTML 조판, 과금 0) / openai-image(gpt-image-1)
+//         / ima2(ChatGPT OAuth · --ref 앵커) / codex(codex exec $imagegen 병렬) / comfyui / custom
 // 영상:   runway / higgsfield / google-veo(Gemini API) / replicate(오픈모델 게이트웨이)
 //         / ffmpeg(로컬 무료 슬라이드쇼·켄번즈) / comfyui(오픈소스 로컬) / custom-http / ima2-video(Grok)
 // 산출 파일명은 `${chId}-${n}` 프리픽스 — board.js가 카드에 자동 매칭해 썸네일로 표시한다.
