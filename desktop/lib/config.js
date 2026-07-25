@@ -75,6 +75,20 @@ function setBudget(usd) {
   return cfg.budgetUsd;
 }
 
+// codex 이미지 레인 병렬도 — 동시에 띄울 codex exec 워커 수(1~8, 기본 3).
+// 주의: 한도는 ChatGPT 계정 단위라 병렬을 늘려도 계정 rate limit이 복제되진 않는다(처리량 평활화).
+function getCodexParallel() {
+  const n = Number(load().codexParallel);
+  return Number.isFinite(n) && n >= 1 ? Math.min(8, Math.floor(n)) : 3;
+}
+function setCodexParallel(n) {
+  const cfg = load();
+  const v = Number(n);
+  cfg.codexParallel = Number.isFinite(v) && v >= 1 ? Math.min(8, Math.floor(v)) : 3;
+  save(cfg);
+  return cfg.codexParallel;
+}
+
 // 프로바이더별 이미지 장당 단가(USD) — 사용자가 기입해야 예산 게이지에 이미지 비용이 잡힌다.
 // 예: { "openai-image": 0.17, "ima2": 0 }  (ima2는 ChatGPT 구독 소모라 0 또는 미기입이 정직하다)
 // 미기입 프로바이더는 undefined → 비용 미집계로 기록된다($0으로 보이는 것보다 '모른다'가 낫다).
@@ -153,4 +167,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getImageQuality, setImageQuality, getImageUnitCosts, setImageUnitCost, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getImageQuality, setImageQuality, getImageUnitCosts, setImageUnitCost, getCodexParallel, setCodexParallel, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };

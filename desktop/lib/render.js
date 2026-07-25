@@ -136,6 +136,87 @@ async function genGnHtml(dir, job, onLine) {
   return { ok: true, provider: 'gn-html', rel: files[0], files };
 }
 
+// ---- codex 이미지 레인 (gongnyang/codex-fleet 패턴 이식, MIT) --------------------------
+// codex exec 1회 = 이미지 1장. codex가 ~/.codex/generated_images/ 에 떨군 PNG를 원자적
+// rename(claim)으로 회수한다 — 병렬 워커가 같은 파일을 두 번 가져가는 레이스를 rename의
+// 원자성이 중재한다. 샌드박스는 read-only 최소 권한($imagegen은 셸이 아니라 내장 도구라 충분).
+const CODEX_IMG_BASE = () => path.join(os.homedir(), '.codex', 'generated_images');
+function codexSizeSpec(size) {
+  if (size === 'portrait' || size === 'story') return { ar: '2:3', px: '1024x1536' };
+  if (size === 'landscape') return { ar: '3:2', px: '1536x1024' };
+  return { ar: '1:1', px: '1024x1024' };
+}
+function codexImgPrompt(prompt, size) {
+  const s = codexSizeSpec(size);
+  return `Use $imagegen to generate ONE image.\nAspect ratio: ${s.ar}\nSize: ${s.px}\nPrompt: ${prompt}\n` +
+    `After the image is generated, do NOT run any shell commands and do NOT write any files. Just generate and end your turn.`;
+}
+// baseDir 아래 ig_*.png 중 sinceMs 이후 것들 — 오래된 순(먼저 나온 파일부터 공정하게 claim).
+function collectGenerated(baseDir, sinceMs) {
+  const out = [];
+  const walk = (d, depth) => {
+    if (depth > 3) return;
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) { walk(abs, depth + 1); continue; }
+      if (!/^ig_.*\.png$/i.test(e.name)) continue;
+      try { const st = fs.statSync(abs); if (st.mtimeMs >= sinceMs) out.push({ abs, mtimeMs: st.mtimeMs }); } catch { /* 사라짐 */ }
+    }
+  };
+  walk(baseDir, 0);
+  return out.sort((a, b) => a.mtimeMs - b.mtimeMs);
+}
+// 원자적 claim 이동 — rename 성공 = 내 것. 실패(ENOENT)는 다른 워커가 이미 가져간 것.
+// EXDEV(홈과 워크스페이스가 다른 볼륨)면 같은 볼륨 안 rename으로 먼저 claim한 뒤 복사한다.
+function claimTo(srcAbs, destAbs) {
+  fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+  try { fs.renameSync(srcAbs, destAbs); return true; }
+  catch (e) {
+    if (e && e.code === 'EXDEV') {
+      const tag = srcAbs + `.claim-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+      try { fs.renameSync(srcAbs, tag); } catch { return false; } // 여기서 지면 남의 것
+      try { fs.copyFileSync(tag, destAbs); fs.rmSync(tag, { force: true }); return true; }
+      catch { try { fs.renameSync(tag, srcAbs); } catch { /* 복구 실패 */ } return false; }
+    }
+    return false;
+  }
+}
+async function genCodexImg(dir, job, onLine) {
+  if (job.refs && job.refs.length) onLine && onLine('[render] codex 레인은 --ref 앵커 미지원 — 캐릭터·제품 고정이 필요한 채널은 ima2를 쓰세요');
+  const started = Date.now() - 2000; // mtime 시계 오차 여유
+  const instr = codexImgPrompt(job.prompt + (job.negative ? `\nAvoid: ${job.negative}` : ''), job.size);
+  const r = await runCmd('codex', ['exec', '--skip-git-repo-check', '-s', 'read-only', instr], onLine, { cwd: dir, timeoutMs: 8 * 60_000 });
+  if (/rate.?limit|429|too many requests/i.test(String(r.out || ''))) {
+    return err('codex', '계정 rate limit — 잠시 후 재시도하거나 설정에서 병렬도를 낮추세요');
+  }
+  // 파일 회수 — exec 종료 직후 파일 쓰기가 늦을 수 있어 최대 15초 폴링.
+  const dest = outName(dir, 'creatives', job.base, 'png');
+  for (let i = 0; i < 15; i++) {
+    for (const cand of collectGenerated(CODEX_IMG_BASE(), started)) {
+      if (claimTo(cand.abs, dest.abs)) return { ok: true, provider: 'codex', rel: dest.rel, files: [dest.rel] };
+    }
+    if (i === 0 && !r.ok) break; // exec 자체가 실패했고 파일도 없다 — 즉시 실패 보고
+    await new Promise((res) => setTimeout(res, 1000));
+  }
+  return err('codex', (String(r.tail || r.out || '').slice(-200)) || '이미지 파일을 회수하지 못했습니다 (모더레이션 거부였을 수 있음 — 프롬프트를 완화해 보세요)');
+}
+
+// 제한 병렬 풀 — limit개 워커가 items를 나눠 처리. 결과는 입력 순서 유지, 개별 실패는 {ok:false}.
+async function asyncPool(limit, items, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await Promise.resolve(worker(items[i], i)).catch((e) => ({ ok: false, error: String(e && e.message || e) }));
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 // (2) OpenAI 이미지 (gpt-image-1) — "코덱스 이미지" 직결 레인. OPENAI_API_KEY 필요.
 async function genOpenAI(dir, job, onLine) {
   const key = secrets.get('openai').apiKey || process.env.OPENAI_API_KEY;
@@ -614,7 +695,9 @@ async function genIma2Video(dir, job, onLine) {
 }
 
 // ---- 디스패치 ----------------------------------------------------------------------
-const IMAGE_PROVIDERS = { 'claude-svg': genClaudeSvg, 'gn-html': genGnHtml, 'openai-image': genOpenAI, ima2: genIma2, comfyui: genComfy, custom: genCustom };
+const IMAGE_PROVIDERS = { 'claude-svg': genClaudeSvg, 'gn-html': genGnHtml, 'openai-image': genOpenAI, ima2: genIma2, codex: genCodexImg, comfyui: genComfy, custom: genCustom };
+// 병렬 안전 프로바이더 — 슬라이드를 워커 풀로 동시 생성해도 회수가 섞이지 않는 레인(claim 회수).
+const PARALLEL_SAFE = { codex: true };
 const VIDEO_PROVIDERS = {
   ffmpeg: genFfmpeg, runway: genRunway, higgsfield: genHiggsfield, 'google-veo': genVeo,
   replicate: genReplicate, comfyui: genComfy, custom: genCustom, 'ima2-video': genIma2Video,
@@ -627,7 +710,8 @@ function availability(env) {
     // 운영자 지정: 이미지는 Codex 계열 imagegen이 기본
     image: {
       'openai-image': { ok: secrets.has('openai', ['apiKey']) || !!process.env.OPENAI_API_KEY, label: 'Codex 이미지 · gpt-image-1 (기본)' },
-      ima2: { ok: !!(env && env.ima2), label: 'Codex 이미지 · ima2 (ChatGPT OAuth)' },
+      ima2: { ok: !!(env && env.ima2), label: 'Codex 이미지 · ima2 (ChatGPT OAuth · --ref 앵커 지원)' },
+      codex: { ok: !!(env && env.codex), label: 'Codex 이미지 · codex exec 병렬 ($imagegen — 캐러셀 동시 생성)' },
       'claude-svg': { ok: true, label: '클로드 디자인 — 한글 타이포 카드 전용 (SVG→PNG)' },
       'gn-html': { ok: true, label: '공냥 카드 — 카드뉴스·인포·데이터 (HTML 조판 · 과금 0)' },
       comfyui: { ok: secrets.has('comfyui', ['url', 'workflowPath']), label: 'ComfyUI (오픈소스 로컬)' },
@@ -672,17 +756,41 @@ async function generateOnce(dir, job, onLine) {
     const existRel = (i) => { try { const f = fs.readdirSync(cdir).find((x) => new RegExp(`^${job.base}_${i}\\.(png|jpe?g|webp)$`, 'i').test(x)); return f ? path.join('outputs', 'creatives', f) : null; } catch { return null; } };
     const files = [];
     let firstErr = null, made = 0;
+    const missing = [];
     for (let i = 1; i <= count; i++) {
-      if (job.stopped && job.stopped()) break;
       if (hasSlide(i)) { const r = existRel(i); if (r) files.push(r); continue; } // 이미 있음 — top-up 스킵
-      onLine && onLine(`[render] ${i}/${count}장 생성 중…`);
-      const slideJob = { ...job, count: 1, base: `${job.base}_${i}`, prompt: job.prompt + slideDirective(i, count, job.base) };
-      try {
-        const r = await fn(dir, slideJob, onLine);
+      missing.push(i);
+    }
+    const slideJob = (i) => ({ ...job, count: 1, base: `${job.base}_${i}`, prompt: job.prompt + slideDirective(i, count, job.base) });
+    const runOne = async (i) => { try { return await fn(dir, slideJob(i), onLine); } catch (e) { return err(job.provider, e && e.message || e); } };
+    // 병렬 안전 레인(codex — claim 회수라 워커가 섞여도 안전)은 첫 장을 프로브로 먼저 굽고(설정
+    // 문제 즉시 감지), 나머지를 워커 풀로 동시 생성한다. 그 외 레인은 기존 순차 유지.
+    const par = PARALLEL_SAFE[job.provider] ? Math.max(1, Math.min(8, Number(job.parallel) || config.getCodexParallel())) : 1;
+    if (par > 1 && missing.length > 1) {
+      const probe = missing.shift();
+      onLine && onLine(`[render] ${probe}/${count}장 생성 중… (프로브 — 이후 ${Math.min(par, missing.length)}병렬)`);
+      const pr = await runOne(probe);
+      if (!pr.ok && made === 0 && files.length === 0) return pr; // 첫 장부터 실패 — 설정 문제, 즉시 중단
+      if (pr.ok) { files.push(...(pr.files || [pr.rel])); made++; } else firstErr = pr.error;
+      const rest = (job.stopped && job.stopped()) ? [] : missing;
+      const results = await asyncPool(par, rest, async (i) => {
+        if (job.stopped && job.stopped()) return { ok: false, error: '중지됨' };
+        onLine && onLine(`[render] ${i}/${count}장 생성 중… (병렬)`);
+        return runOne(i);
+      });
+      for (const r of results) {
+        if (r && r.ok) { files.push(...(r.files || [r.rel])); made++; }
+        else if (r) { firstErr = firstErr || r.error; onLine && onLine(`[render] 일부 실패 — 계속: ${r.error}`); }
+      }
+    } else {
+      for (const i of missing) {
+        if (job.stopped && job.stopped()) break;
+        onLine && onLine(`[render] ${i}/${count}장 생성 중…`);
+        const r = await runOne(i);
         if (r.ok) { files.push(...(r.files || [r.rel])); made++; }
-        else if (made === 0 && i === 1) return r; // 첫 장부터 실패하면 설정 문제 — 즉시 중단
+        else if (made === 0 && files.length === 0 && i === missing[0]) return r; // 첫 장부터 실패하면 설정 문제 — 즉시 중단
         else { firstErr = firstErr || r.error; onLine && onLine(`[render] ${i}장째 실패 — 계속: ${r.error}`); }
-      } catch (e) { if (made === 0 && i === 1) return err(job.provider, e && e.message || e); firstErr = firstErr || String(e); }
+      }
     }
     if (!files.length) return err(job.provider, firstErr || '이미지를 만들지 못했습니다');
     // 파일명 순 정렬 — _1,_2,… 순서 보장
@@ -744,4 +852,5 @@ module.exports = {
   generate, availability, SIZES, defaultImageProvider, warmupImageProvider,
   // 테스트 전용 내부 노출
   _isInfraFailure: isInfraFailure, _fallbackRank: fallbackRank, _ima2GenArgs: ima2GenArgs,
+  _codexImgPrompt: codexImgPrompt, _codexSizeSpec: codexSizeSpec, _collectGenerated: collectGenerated, _claimTo: claimTo, _asyncPool: asyncPool,
 };
