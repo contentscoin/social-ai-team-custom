@@ -72,8 +72,12 @@ async function genClaudeSvg(dir, job, onLine) {
       `- 전 카드 동일 그리드·팔레트·타이포 스케일 (시리즈 일관성 규칙 준수)\n` +
       `- 정확히 ${cards}개의 <svg> 블록을 순서대로 출력하고, 각 블록 사이에 <!--CARD--> 주석 한 줄을 넣어라\n`
     : `- 디자인 팩의 아키타입 중 포스트 성격에 맞는 것 하나를 고르고, 한글 타이포·색·여백 규칙을 그대로 지켜라\n`;
+  // 채널 SOUL §9(무엇을 찍는가/보여주나) — SVG 카드도 채널의 피사체·구성 원칙을 따른다.
+  let soulBlock = '';
+  try { const s = require('./souls').visualBlock(dir, job.channel); if (s) soulBlock = `\n[채널 원칙 — 무엇을 보여주나]\n${s}\n`; } catch { /* 없음 */ }
   const prompt =
     `${dir}/context/brand-style.md 를 읽고(없으면 모던·미니멀 기본), 아래 소셜 포스트의 ${cards > 1 ? `카드뉴스 ${cards}장` : '피드 이미지'}를 SVG로 디자인하라.\n` +
+    soulBlock +
     `규칙:\n- 캔버스 정확히 ${w}x${h} (viewBox="0 0 ${w} ${h}", width/height 명시)\n` +
     cardRule +
     `- 브랜드 팔레트와 무드 반영, 사진 대신 도형·그라디언트·패턴 일러스트 구성\n` +

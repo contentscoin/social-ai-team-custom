@@ -21,6 +21,7 @@ const proc = require('./lib/proc');
 const secrets = require('./lib/secrets');
 const render = require('./lib/render');
 const qgates = require('./lib/qgates');
+const souls = require('./lib/souls');
 const pubdirect = require('./lib/pubdirect');
 const sessionpub = require('./lib/sessionpub');
 const opencrabBindings = require('./lib/opencrab-bindings');
@@ -1167,6 +1168,22 @@ ipcMain.handle('sheet:refine', async (_e, dir, channel, payload) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+// ---- 채널 SOUL — 말·기획 축의 정본(클라이언트 오버라이드 + 스타터 폴백) -------------
+ipcMain.handle('soul:list', safe((_e, dir) => souls.list(dir)));
+ipcMain.handle('soul:get', safe((_e, dir, channel) => souls.read(dir, channel)));
+ipcMain.handle('soul:save', safe((_e, dir, channel, text) => souls.save(dir, channel, text)));
+ipcMain.handle('soul:reset', safe((_e, dir, channel) => souls.reset(dir, channel)));
+// 이번 달 확정 이벤트 — 기획(캘린더)의 최우선 편성 축. context/upcoming-events.md
+ipcMain.handle('events:get', safe((_e, dir) => {
+  try { return fs.readFileSync(path.join(dir, 'context', 'upcoming-events.md'), 'utf8'); } catch { return ''; }
+}));
+ipcMain.handle('events:save', safe((_e, dir, text) => {
+  const p = path.join(dir, 'context', 'upcoming-events.md');
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, String(text || '').slice(0, 4000));
+  return { ok: true };
+}));
+
 // ---- 클라이언트 공용 브랜드 시트 + 로고 (전 채널 공유) ----------------------------
 ipcMain.handle('sheet:getBrand', safe((_e, dir) => channelsheets.getBrand(dir)));
 ipcMain.handle('sheet:saveBrand', safe((_e, dir, data) => channelsheets.saveBrand(dir, data || {})));

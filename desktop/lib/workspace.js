@@ -23,7 +23,7 @@ function listClients() {
 }
 
 function seedClientFolder(dir) {
-  for (const sub of ['context', 'assets/products', 'assets/lifestyle', 'outputs']) {
+  for (const sub of ['context', 'context/souls', 'assets/products', 'assets/lifestyle', 'outputs']) {
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
   }
   // Arm the SOP hook (image-qa + codex render lane) — social-creative-designer Phase 0 reads sop/creative-designer/

@@ -78,4 +78,25 @@ async function extract(dir, onLine) {
   };
 }
 
-module.exports = { extract, listStrategies, sources };
+// 채널 전략 요약 — extract가 만든 context/strategy/channel-*.md를 기획(캘린더) 프롬프트에 잇는다.
+// 파일은 이미 생성되고 있었지만 저장소 전체에서 읽는 코드가 0건이었다 — 생성비 0의 연결.
+// 파일당 capPer자, 전체 capTotal자 상한(기획은 사이클당 1회라 두껍게 실어도 되지만 무한은 아니다).
+function digest(dir, capPer = 450, capTotal = 2400) {
+  const sdir = path.join(dir, 'context', 'strategy');
+  let files = [];
+  try { files = fs.readdirSync(sdir).filter((f) => /^channel-.*\.md$/i.test(f)).sort(); } catch { return ''; }
+  if (!files.length) return '';
+  const rows = [];
+  let total = 0;
+  for (const f of files) {
+    if (total >= capTotal) break;
+    const body = read(path.join(sdir, f)).replace(/\s+/g, ' ').trim().slice(0, Math.min(capPer, capTotal - total));
+    if (!body) continue;
+    total += body.length;
+    rows.push(`· ${f.replace(/^channel-|\.md$/gi, '')}: ${body}`);
+  }
+  if (!rows.length) return '';
+  return `[채널 전략 요약 — 전략가 산출(context/strategy/), 기획 참고]\n${rows.join('\n')}\n\n`;
+}
+
+module.exports = { extract, listStrategies, sources, digest };

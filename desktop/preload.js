@@ -119,6 +119,16 @@ contextBridge.exposeInMainWorld('api', {
     setLogo: (dir) => ipcRenderer.invoke('sheet:setLogo', dir),
     clearLogo: (dir) => ipcRenderer.invoke('sheet:clearLogo', dir),
   },
+  soul: {
+    list: (dir) => ipcRenderer.invoke('soul:list', dir),
+    get: (dir, channel) => ipcRenderer.invoke('soul:get', dir, channel),
+    save: (dir, channel, text) => ipcRenderer.invoke('soul:save', dir, channel, text),
+    reset: (dir, channel) => ipcRenderer.invoke('soul:reset', dir, channel),
+  },
+  events: {
+    get: (dir) => ipcRenderer.invoke('events:get', dir),
+    save: (dir, text) => ipcRenderer.invoke('events:save', dir, text),
+  },
   prompt: {
     compile: (dir, job) => ipcRenderer.invoke('prompt:compile', dir, job),
   },

@@ -1258,14 +1258,24 @@ async function confirmRun(anchor, stage, name) {
     styleRow = `<label class="small muted" style="display:block;margin:8px 0 3px">이미지 스타일 (전체 생성에 적용)</label>
       <select id="pop-style" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px">${opts}</select>`;
   }
+  // 캘린더 실행 — 이번 달 확정 이벤트(런칭·프로모션·시즌·재고)를 먼저 묻는다. 기획의 최우선 편성 축.
+  let eventsRow = '';
+  if (stage === 'calendar') {
+    let cur = '';
+    try { cur = await window.api.events.get(S.client.dir) || ''; } catch { /* 없음 */ }
+    eventsRow = `<label class="small muted" style="display:block;margin:8px 0 3px">이번 달 확정 이벤트 (런칭·프로모션·시즌·재고 등 — 편성에 최우선 반영)</label>
+      <textarea id="pop-events" rows="3" placeholder="예) 15일 가을 신메뉴 출시 / 마지막 주 재고 소진 프로모션" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px;resize:vertical">${esc(cur)}</textarea>`;
+  }
   popover(anchor, `<b>${name} 실행</b><p class="muted" style="margin:6px 0">팀이 클라이언트 폴더에서 작업을 시작합니다.</p>
-    ${styleRow}
-    <input id="pop-extra" placeholder="추가 지시 (선택)" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px">
+    ${eventsRow}${styleRow}
+    <input id="pop-extra" placeholder="추가 지시 (선택)" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px;margin-top:6px">
     <button id="pop-go" style="margin-top:8px;width:100%">▶ 실행</button>`);
   const styleSel = $('#pop-style');
   if (styleSel) styleSel.onchange = () => window.api.engine.setImageStyle(styleSel.value).catch(() => {});
-  $('#pop-go').onclick = () => {
+  $('#pop-go').onclick = async () => {
     if (styleSel) window.api.engine.setImageStyle(styleSel.value).catch(() => {}); // 실행 직전 저장 보장
+    const evEl = $('#pop-events');
+    if (evEl) { try { await window.api.events.save(S.client.dir, evEl.value); } catch { /* 저장 실패해도 실행은 진행 */ } }
     const extra = $('#pop-extra').value.trim(); hidePopover(); runStage(stage, extra);
   };
 }
@@ -2662,6 +2672,16 @@ async function renderFoundation() {
           <p class="muted small" style="margin:3px 0 5px">콘텐츠·편집 규칙 — 카피 톤·어미, 해시태그·이모지, 금지 표현, 포맷 규약, 전략별 세부. 카피·이미지 모두에 적용.</p>
           <textarea id="sheet-guidelines" rows="4" placeholder="예) 반말 금지·정중한 존댓말. 문장 짧게. 이모지 최대 2개. 해시태그 끝에 3~5개. '최고/1위' 과장 금지." style="${ta};margin:0"></textarea>
         </div>
+
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+          <b class="small">채널 SOUL (채널별)</b> <span id="soul-origin" class="small muted"></span>
+          <p class="muted small" style="margin:3px 0 5px;line-height:1.5">이 채널에서 <b>누가·누구에게·무엇을 말하고, 무엇을 절대 안 하는가</b> — 기획·카피·이미지 전 단계에 주입되는 말의 정본. 팔레트·조명·인물 외형은 여기 쓰지 마세요(위 시트가 정본). 기본 스타터가 제공되며, 수정하면 이 클라이언트 전용이 됩니다.</p>
+          <textarea id="sheet-soul" rows="10" style="${ta};margin:0 0 6px;font-family:ui-monospace,Consolas,monospace;font-size:12px"></textarea>
+          <div style="display:flex;gap:6px">
+            <button id="soul-save" type="button" class="small">SOUL 저장 (이 클라이언트 전용)</button>
+            <button id="soul-reset" type="button" class="small">스타터로 되돌리기</button>
+          </div>
+        </div>
       </div>
 
       <div class="btn-grid" style="margin-top:14px">
@@ -2767,7 +2787,16 @@ async function renderFoundation() {
       `<option value="${esc(it.channel)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.characterCount ? ` · 캐릭터 ${it.characterCount}` : ''}${it.has ? '' : ' · (미작성)'}</option>`).join('');
     if (keep && items.some((it) => it.channel === keep)) chSel.value = keep;
   };
-  // 채널별(캐릭터 시트 + 가이드 시트 + 락) — 브랜드·로고는 여기서 건드리지 않는다(공용).
+  // 채널별(캐릭터 시트 + 가이드 시트 + SOUL + 락) — 브랜드·로고는 여기서 건드리지 않는다(공용).
+  const soulEl = $('#sheet-soul');
+  const soulOriginEl = $('#soul-origin');
+  const loadSoul = async (ch) => {
+    if (!soulEl) return;
+    const r = await window.api.soul.get(dir, ch).catch(() => null);
+    if (fseq !== foundationSeq) return;
+    soulEl.value = (r && r.text) || '';
+    if (soulOriginEl) soulOriginEl.textContent = r && r.origin === 'client' ? '· 클라이언트 정의' : '· 기본 스타터 (수정하면 전용이 됩니다)';
+  };
   const loadCh = async (ch) => {
     const s = await window.api.sheet.get(dir, ch).catch(() => null);
     if (fseq !== foundationSeq) return;
@@ -2779,6 +2808,18 @@ async function renderFoundation() {
     badge.style.color = curLocked ? 'var(--ok)' : '';
     lockBtn.textContent = curLocked ? '락 해제' : '락 걸기';
     setStatus('');
+    await loadSoul(ch);
+  };
+  if ($('#soul-save')) $('#soul-save').onclick = async () => {
+    const ch = chSel.value; if (!ch || !soulEl) return;
+    const r = await window.api.soul.save(dir, ch, soulEl.value);
+    if (r && r.ok) { setStatus('SOUL 저장됨 — 이 클라이언트 전용'); toast('채널 SOUL 저장됨'); await loadSoul(ch); }
+    else setStatus((r && r.error) || 'SOUL 저장 실패');
+  };
+  if ($('#soul-reset')) $('#soul-reset').onclick = async () => {
+    const ch = chSel.value; if (!ch) return;
+    const r = await window.api.soul.reset(dir, ch);
+    if (r && r.ok) { setStatus('기본 스타터로 되돌림'); await loadSoul(ch); }
   };
   const saveAll = (ch) => window.api.sheet.save(dir, ch, { guidelines: gEl.value, characters: charState });
   // 클라이언트 공용 브랜드 시트 + 로고 — 채널 무관하게 1회 로드/저장.

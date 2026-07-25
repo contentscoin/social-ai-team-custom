@@ -31,14 +31,15 @@ test('packContext — 광고 팩은 광고 신호(목표/포맷)일 때만 포�
   assert.doesNotMatch(vid, /광고·캠페인 프롬프트 팩/);
 });
 
-test('platformDirective — 채널별 방향 주입, 영상/미지정은 빈 문자열', () => {
-  const ig = promptlab._platformDirective('instagram', 'image');
+test('platformDirective — 채널별 방향 + 채널 SOUL §9 주입, 영상/미지정은 빈 문자열', () => {
+  const ig = promptlab._platformDirective('', 'instagram', 'image');
   assert.match(ig, /aspirational editorial/i);
   assert.match(ig, /최우선 축/);
-  const nb = promptlab._platformDirective('naver', 'image');
+  assert.match(ig, /무엇을 찍는가/); // 채널 SOUL §9(스타터 폴백) 결합
+  const nb = promptlab._platformDirective('', 'naver', 'image');
   assert.match(nb, /informative supporting/i);
-  assert.equal(promptlab._platformDirective('instagram', 'video'), ''); // 영상 제외
-  assert.equal(promptlab._platformDirective('unknown', 'image'), '');    // 미지정 채널
+  assert.equal(promptlab._platformDirective('', 'instagram', 'video'), ''); // 영상 제외
+  assert.equal(promptlab._platformDirective('', 'unknown', 'image'), '');    // 미지정 채널
 });
 
 test('PLATFORM_DIRECTION — 공냥 철칙(SD어휘·무대지정 배제, 인물 피부질감)', () => {
