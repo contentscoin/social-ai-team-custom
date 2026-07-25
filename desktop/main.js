@@ -22,6 +22,7 @@ const secrets = require('./lib/secrets');
 const render = require('./lib/render');
 const qgates = require('./lib/qgates');
 const souls = require('./lib/souls');
+const promptsheet = require('./lib/promptsheet');
 const pubdirect = require('./lib/pubdirect');
 const sessionpub = require('./lib/sessionpub');
 const opencrabBindings = require('./lib/opencrab-bindings');
@@ -459,14 +460,14 @@ ipcMain.handle('ws:watch', (_e, dir) => {
 
 // ---- Gates (approval stamps) ---------------------------------------------------
 ipcMain.handle('gates:get', (_e, dir) => {
-  try { return gates.computeGates(board.buildBoard(dir), gates.load(dir)); }
+  try { return gates.computeGates(board.buildBoard(dir), gates.load(dir), dir); }
   catch (e) { return { nodes: [], current: 0, approvals: [], error: String(e && e.message || e) }; }
 });
 ipcMain.handle('gates:approve', (_e, dir, entry) => {
   try {
     const b = board.buildBoard(dir);
     gates.approve(dir, { ...entry, calendarHash: b.calendarHash });
-    return gates.computeGates(b, gates.load(dir));
+    return gates.computeGates(b, gates.load(dir), dir);
   } catch (e) { return { nodes: [], current: 0, approvals: [], error: String(e && e.message || e) }; }
 });
 
@@ -722,10 +723,35 @@ async function execStage(dir, stage, opts) {
   };
   const changeNote = (changes) => `+${changes.created.length}/~${changes.modified.length} 파일`;
   try {
+    // visuals(비주얼 브리프) — 프롬프트 시트를 앱이 직접 생성한다(진단서 2단계).
+    // 포스트별 렌더 프롬프트를 여기서 미리 컴파일해 두면 사람이 승인 게이트에서 그 문장을
+    // 검토·수정하고, 생성 단계는 승인된 문장을 그대로 쓴다("승인한 문장 = 과금되는 문장").
+    if (stage === 'visuals') {
+      armRender(dir);
+      const r = await promptsheet.build(dir, {
+        ...envHint(), style: (opts && opts.style) || config.getImageStyle(),
+        extraContext: opts && opts.extraContext, stopped: () => isRenderStopped(dir),
+      }, (line) => send('log', { source: stage, line, dir }));
+      const fin = finish({ ok: !!r.ok, tail: `프롬프트 시트 ${r.total}건 (신규 컴파일 ${r.compiled} · 유지 ${r.kept}) — 승인 게이트에서 검토·수정하세요`, startedAt });
+      history.append({
+        dir, kind: 'stage', stage, engine: config.getEngineFor('visuals-generate'), model: '',
+        ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: `프롬프트 시트 ${r.total}건 (컴파일 ${r.compiled})`,
+      });
+      return fin;
+    }
     // visuals-generate 는 앱 렌더 엔진으로 라우팅 — 파이프라인 에이전트는 앱 설정의 키를
     // 못 보기 때문. 앱 엔진은 설정 키를 쓰고 포스트당 여러 장(캐러셀)을 만든다.
     if (stage === 'visuals-generate') {
       armRender(dir);
+      // 릴스/보드 — 독립 스테이지에서 비주얼 생성의 하위 단계로 통합(0.19.34).
+      // 릴스가 편성돼 있고 대본이 아직 없을 때만 실행 — 릴스 없는 달은 이 구간이 존재하지 않는다.
+      try {
+        const b0 = board.buildBoard(dir);
+        if ((b0.posts || []).some((p) => p.isReel && p.stage === 'planned')) {
+          send('log', { source: stage, line: '[릴스] 편성된 릴 대본·보드 생성 (비주얼 생성의 하위 단계)', dir });
+          await pipeline.runStage(dir, 'shortform', {}, (line) => send('log', { source: 'shortform', line, dir }));
+        }
+      } catch { /* 릴스 하위 단계 실패가 이미지 생성을 막지 않는다 */ }
       const r = await autovisual.renderAll(dir, {
         ...envHint(), count: (opts && opts.count) || 0, style: (opts && opts.style) || config.getImageStyle(),
         stopped: () => isRenderStopped(dir),
@@ -1169,6 +1195,10 @@ ipcMain.handle('sheet:refine', async (_e, dir, channel, payload) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+// ---- 프롬프트 시트 — 승인 게이트가 검토·수정·확정하는 렌더 프롬프트 계약 -------------
+ipcMain.handle('psheet:get', safe((_e, dir) => promptsheet.get(dir)));
+ipcMain.handle('psheet:approve', safe((_e, dir, payload) => promptsheet.approve(dir, payload || {})));
+
 // ---- 채널 SOUL — 말·기획 축의 정본(클라이언트 오버라이드 + 스타터 폴백) -------------
 ipcMain.handle('soul:list', safe((_e, dir) => souls.list(dir)));
 ipcMain.handle('soul:get', safe((_e, dir, channel) => souls.read(dir, channel)));

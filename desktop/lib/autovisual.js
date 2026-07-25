@@ -8,28 +8,14 @@ const board = require('./board');
 const promptlab = require('./promptlab');
 const render = require('./render');
 const channelsheets = require('./channelsheets');
-const gates = require('./gates');
 const gncards = require('./gncards');
 
 // 재사용 키 정규화 — 같은 주제를 여러 채널에 쓰면 같은 이미지로 취급
 const normTopic = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-// 포맷 문자열로 캐러셀 여부·기본 장수 추정 — 대부분의 SNS는 여러 장을 쓴다
-function inferCount(post, fallback) {
-  const f = String(post.format || '').toLowerCase() + ' ' + String(post.headerRaw || '');
-  if (/carousel|캐러셀|슬라이드|slide|album/i.test(f)) return 5;
-  if (/multi|여러\s*장|다중|묶음/i.test(f)) return 4;
-  if (/single|단일|1\s*장|피드|feed/i.test(f)) return 1;
-  // 기본값은 멀티이미지 — 1장 1텍스트가 아니라 여러 장 배치가 콘텐츠 기획의 기본
-  return fallback || 3;
-}
-// 세로 4:5가 인스타 피드 점유에 유리 — 스토리/릴스형은 9:16
-function inferSize(post) {
-  const f = String(post.format || '').toLowerCase();
-  if (/story|스토리|9:16|세로영상/i.test(f)) return 'story';
-  if (/1:1|정방|square/i.test(f)) return 'square';
-  return 'portrait';
-}
+// 장수·사이즈·대상 판정·브리프 조립은 promptsheet가 단일 정본 — 시트(승인)와 생성이 같은 규칙을 쓴다.
+const psheet = require('./promptsheet');
+const { inferCount, inferSize } = psheet;
 
 // opts: { provider?, count?(고정 장수 강제), ima2?, stopped?(), onlyMissing?(기본 true), style?(이미지 스타일 프리셋) }
 // opts._render/_promptlab/_board: 테스트 주입 훅(미지정 시 실제 모듈).
@@ -48,9 +34,7 @@ async function renderAll(dir, opts, onLine) {
   const renderCount = (p) => (p.files || []).filter((f) => f.kind === 'render').length;
   const wantCount = (p) => Number(opts.count) > 0 ? Number(opts.count) : inferCount(p, 3);
   const targets = (b.posts || []).filter((p) =>
-    !p.isReel &&
-    !gates.isTextOnlyFormat(p.format) && // text/poll 포맷은 이미지 불필요 — 게이트 증거와 같은 판정(예전엔 렌더돼 3장씩 과금됐다)
-    ['copy', 'visual', 'review', 'ready'].includes(p.stage) &&
+    psheet.isImageTarget(p) && // 릴·텍스트 전용 제외, 카피 이후 — 프롬프트 시트와 동일 판정
     (!onlyMissing || renderCount(p) < wantCount(p)));
   if (!targets.length) {
     return { ok: true, provider, rendered: 0, results: [], note: '렌더할 포스트가 없습니다 (카피가 있고 아직 이미지가 없는 사진형 포스트 대상)' };
@@ -94,18 +78,18 @@ async function renderAll(dir, opts, onLine) {
         continue;
       }
     }
-    const brief = [
-      p.topic,
-      p.visual && `비주얼 디렉션: ${p.visual}`,
-      p.angle && `앵글: ${p.angle}`,
-      p.pillar && `필러: ${p.pillar}`,
-      // 사용자가 실행 시 적어준 공통 지시 — 예전엔 opts로 들어와도 조립에서 통째로 버려졌다.
-      opts.extraContext && `공통 지시(사용자): ${String(opts.extraContext).slice(0, 500)}`,
-    ].filter(Boolean).join('\n');
+    const brief = psheet.briefFor(p, opts.extraContext);
     onLine && onLine(`[비주얼] ${cid} — ${count}장 (${size}) 준비${pvProvider !== provider ? ` · 카드형 → ${pvProvider}` : ''}`);
     let prompt = brief, negative = null;
-    // gn-html은 컴파일 불필요 — 슬라이드 카피를 직접 설계하므로 브리프 원문이 곧 입력이다(컴파일 호출 1회 절약).
-    if (pvProvider !== 'gn-html') {
+    // 승인된 프롬프트 시트가 있으면 그 문장을 그대로 쓴다 — "승인한 문장 = 과금되는 문장".
+    // 컴파일이 재발생하지 않아 재작업 라운드의 가장 큰 토큰 낭비(포스트당 LLM 1회)가 사라진다.
+    let approved = null;
+    try { approved = (opts._psheet || psheet).approvedFor(dir, cid); } catch { /* 시트 없음 */ }
+    if (approved) {
+      prompt = approved.approvedPrompt;
+      negative = approved.negative || null;
+      onLine && onLine(`[비주얼] ${cid} — 승인된 프롬프트 사용 (컴파일 생략)`);
+    } else if (pvProvider !== 'gn-html') { // gn-html은 컴파일 불필요 — 브리프가 곧 슬라이드 설계 입력
       try {
         const c = await PL.compile(dir, {
           kind: 'image', provider: pvProvider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
