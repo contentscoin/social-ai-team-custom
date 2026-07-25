@@ -45,15 +45,30 @@ const PLATFORM_DIRECTION = {
   x:
     'bold high-contrast single frame that reads instantly at thumbnail scale, one focal subject with strong graphic clarity, '
     + 'decisive crisp lighting and clean shape separation, natural skin texture with visible pores when a person is shown, immediate at small size',
+  naver_clip:
+    'vertical 9:16 first-frame that doubles as the thumbnail — one oversized subject with generous headroom kept clear for UI overlays '
+    + '(top 20% and bottom 15% are covered by app chrome), bright even lighting on hands and materials in motion, tactile close-up '
+    + 'texture, honest real-place backdrop, energy of a moment mid-action rather than a posed still',
+  kakao_channel:
+    'small-card-legible single frame — one warm inviting focal subject filling the frame with soft appetizing light, simple '
+    + 'uncluttered backdrop, friendly approachable tone, composition that still reads at message-card thumbnail size',
+  tiktok:
+    'vertical 9:16 candid energy — a real moment mid-motion with handheld liveliness, big bold subject in the safe center zone, '
+    + 'bright direct light on the face or product, playful imperfect framing instead of stiff studio staging, first frame works as a thumbnail',
 };
 // 컴파일 지시문에 넣을 플랫폼 아트 디렉션 블록(영상은 제외). 없으면 ''.
-function platformDirective(channel, kind) {
+// 채널 SOUL §9(무엇을 찍는가 — 클라이언트/스타터)가 있으면 그것을 아트 디렉션과 함께 싣는다:
+// SOUL은 피사체 선택(무엇), PLATFORM_DIRECTION은 룩(어떻게 보이나)이라 서로 보완한다.
+function platformDirective(dir, channel, kind) {
   if (kind === 'video') return '';
   const d = PLATFORM_DIRECTION[channel];
-  return d
-    ? `\n[플랫폼 아트 디렉션 — ${channel} · 최우선 축]\n${d}\n`
-      + `이 방향을 장면의 최우선 축으로 삼되 VISUAL DIRECTION·브랜드 무드와 결합하라. 이미지 안에는 텍스트/로고를 넣지 말라(앱이 따로 얹는다).\n\n`
-    : '';
+  let soul = '';
+  try { soul = require('./souls').visualBlock(dir, channel); } catch { /* soul 없음 */ }
+  if (!d && !soul) return '';
+  return `\n[플랫폼 아트 디렉션 — ${channel} · 최우선 축]\n`
+    + (soul ? `무엇을 찍는가(채널 SOUL):\n${soul}\n` : '')
+    + (d ? `어떻게 보이는가:\n${d}\n` : '')
+    + `이 방향을 장면의 최우선 축으로 삼되 VISUAL DIRECTION·브랜드 무드와 결합하라. 이미지 안에는 텍스트/로고를 넣지 말라(앱이 따로 얹는다).\n\n`;
 }
 
 /** 사진형 모델 공통 — 디테일·사실감 앵커 (프롬프트 꼬리에 합침). 일반어("ultra detailed") 대신
@@ -314,7 +329,7 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
       + `- 이상적 피부 금지 → natural skin texture, visible pores. 추상어는 구체 사물·제스처로 환원. 앞머리 [AR/SIZE] 브래킷 금지.\n`
       + `단, 이 앱의 사진형 이미지 모델용이므로: 프롬프트는 영어, 이미지 내 텍스트/로고 렌더 금지(TEXT RULE — 텍스트는 앱이 따로 얹는다), negative는 아래 JSON의 negative 필드로 분리한다. SD 퀄리티 꼬리(sharp focus 등)는 붙이지 말고 킷 문법의 재질·조명·색으로 퀄리티를 낸다.\n\n`
     : '';
-  const platformBlock = platformDirective(job.channel, job.kind);
+  const platformBlock = platformDirective(dir, job.channel, job.kind);
   // 채널 시트 — 마스터/캐릭터/지침 텍스트를 주입(락 걸리면 최우선+레퍼런스 앵커, 아니면 스타일 가이드).
   const sheetBlock = job.kind !== 'video' ? channelsheets.compileDirective(dir, job.channel) : '';
   const varietyBlock = varietyDirective(job); // 컷 변주(단조 방지)

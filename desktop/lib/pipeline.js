@@ -169,10 +169,27 @@ function runStage(dir, stage, opts = {}, onLine) {
   // 콘텐츠 단계엔 락인된 채널 지침을 프롬프트 앞에 주입 (채널별 톤·규칙 강제)
   let chBlock = '';
   if (CONTENT_STAGES.has(stage)) { try { chBlock = channelsheets.contentGuidelines(dir) || ''; } catch { /* 없음 */ } }
+  // 기획(캘린더) 단계 — 예전엔 입력이 "오늘 날짜 + 고정 문자열"뿐이라 첫 산출물이 무난한 평균값으로
+  // 나왔다. 이번 달 확정 이벤트(최우선 편성 축) + 채널 SOUL(임무·배분·금지) + 전략가 산출 요약을 잇는다.
+  let planBlock = '';
+  if (stage === 'calendar') {
+    try {
+      const souls = require('./souls');
+      const strategy = require('./strategy');
+      let events = '';
+      try { events = require('fs').readFileSync(require('path').join(dir, 'context', 'upcoming-events.md'), 'utf8').trim(); } catch { /* 없음 */ }
+      planBlock = (events ? `[이번 달 확정 이벤트 — 최우선으로 편성에 반영]\n${events.slice(0, 1200)}\n\n` : '')
+        + souls.planningBlock(dir)
+        + strategy.digest(dir);
+    } catch { /* soul 없음 — 기존 동작 */ }
+  }
+  // 카피 단계 — 채널 SOUL의 말 규약(§3·§4·§6·§7)을 채널별 라벨로 주입.
+  let soulCopyBlock = '';
+  if (stage === 'copy' || stage === 'shortform') { try { soulCopyBlock = require('./souls').copyBlock(dir) || ''; } catch { /* 없음 */ } }
   // 사실 검증 단계엔 기계 게이트(AI 상투어) 리포트를 주입 — 검출 문구를 짚어 교체를 지시한다.
   let qBlock = '';
   if (stage === 'verify') { try { qBlock = require('./qgates').verifyDirective(dir) || ''; } catch { /* 없음 */ } }
-  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + chBlock + qBlock + spec.prompt + extra;
+  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + planBlock + soulCopyBlock + chBlock + qBlock + spec.prompt + extra;
 
   // 이 단계에 적용할 엔진 — 단계별 오버라이드 우선, 없으면 전역 토글. (구간별로 엔진을
   // 나눠 돌릴 수 있어 한도를 분산한다. 예: 캘린더=Claude, 카피=Codex)

@@ -33,6 +33,8 @@ tools: Read, Write, Glob, Grep, mcp__firecrawl__firecrawl_scrape, mcp__serpapi__
 
 ## 2. 실행 절차
 
+**Step 0 — 채널 SOUL 확인.** `context/souls/<배정채널>.md`가 존재하면 먼저 읽습니다. 이 파일은 이 채널에서 누가·누구에게·무엇을 말하고 무엇을 절대 안 하는가의 정본입니다 — SKILL.md의 일반 규칙과 충돌하면 **SOUL의 문장 규약(§4)·금지(§7)가 우선**합니다. (없으면 디렉터가 프롬프트에 주입한 [채널 SOUL] 블록을 같은 우선순위로 따릅니다.)
+
 **Step 1 — 배정된 SKILL.md 읽기.** 위 표에서 배정된 스킬 파일을 읽습니다. 그 파일이 당신의 작업 지시서입니다.
 
 **Step 2 — 컨텍스트 로드.** 스킬의 Phase 0이 지정하는 파일들을 읽습니다 (`context/brand-style.md`, `context/content-calendar.md`, `context/best-performers.md`, `.claude/product-marketing-context.md` 등 — 존재하는 것만). 추가로 `context/kr-voice-profile.md`가 존재하면 반드시 읽습니다 (3절 참조). 어떤 컨텍스트가 있고 없는지 기록합니다.
