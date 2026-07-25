@@ -8,6 +8,8 @@ const board = require('./board');
 const promptlab = require('./promptlab');
 const render = require('./render');
 const channelsheets = require('./channelsheets');
+const gates = require('./gates');
+const gncards = require('./gncards');
 
 // 재사용 키 정규화 — 같은 주제를 여러 채널에 쓰면 같은 이미지로 취급
 const normTopic = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -47,6 +49,7 @@ async function renderAll(dir, opts, onLine) {
   const wantCount = (p) => Number(opts.count) > 0 ? Number(opts.count) : inferCount(p, 3);
   const targets = (b.posts || []).filter((p) =>
     !p.isReel &&
+    !gates.isTextOnlyFormat(p.format) && // text/poll 포맷은 이미지 불필요 — 게이트 증거와 같은 판정(예전엔 렌더돼 3장씩 과금됐다)
     ['copy', 'visual', 'review', 'ready'].includes(p.stage) &&
     (!onlyMissing || renderCount(p) < wantCount(p)));
   if (!targets.length) {
@@ -66,7 +69,10 @@ async function renderAll(dir, opts, onLine) {
     const cid = `${p.chId || 'etc'}-${p.n}`;
     const count = wantCount(p);
     const size = inferSize(p);
-    const dupKey = `${normTopic(p.topic)}|${size}|${count}`;
+    // 카드형 포맷(카드뉴스·비교표·인포·데이터)은 gn-html 결정론 렌더로 — 이미지 과금 0, 한글 타이포 정확.
+    // 사진형만 기존 프로바이더(ima2/gpt-image)로 간다. opts.gnhtml === false 로 끌 수 있다.
+    const pvProvider = (opts.gnhtml !== false && gncards.isCardFormat(p.format)) ? 'gn-html' : provider;
+    const dupKey = `${normTopic(p.topic)}|${size}|${count}|${pvProvider}`;
     // 재사용 — 같은 주제·사이즈·장수가 이미 이번 배치에서 렌더됐으면 파일을 복사해 쓴다(재생성 생략).
     if (reuseOn && normTopic(p.topic) && reuse.has(dupKey)) {
       const copied = [];
@@ -88,23 +94,33 @@ async function renderAll(dir, opts, onLine) {
         continue;
       }
     }
-    const brief = [p.topic, p.visual && `비주얼 디렉션: ${p.visual}`, p.angle && `앵글: ${p.angle}`, p.pillar && `필러: ${p.pillar}`].filter(Boolean).join('\n');
-    onLine && onLine(`[비주얼] ${cid} — ${count}장 (${size}) 준비`);
+    const brief = [
+      p.topic,
+      p.visual && `비주얼 디렉션: ${p.visual}`,
+      p.angle && `앵글: ${p.angle}`,
+      p.pillar && `필러: ${p.pillar}`,
+      // 사용자가 실행 시 적어준 공통 지시 — 예전엔 opts로 들어와도 조립에서 통째로 버려졌다.
+      opts.extraContext && `공통 지시(사용자): ${String(opts.extraContext).slice(0, 500)}`,
+    ].filter(Boolean).join('\n');
+    onLine && onLine(`[비주얼] ${cid} — ${count}장 (${size}) 준비${pvProvider !== provider ? ` · 카드형 → ${pvProvider}` : ''}`);
     let prompt = brief, negative = null;
-    try {
-      const c = await PL.compile(dir, {
-        kind: 'image', provider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
-        prompt: brief, size, count, style, varietySeed: cid, // 컷 변주 시드 — 포스트마다 다른 구도
-      }, onLine);
-      if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
-    } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
+    // gn-html은 컴파일 불필요 — 슬라이드 카피를 직접 설계하므로 브리프 원문이 곧 입력이다(컴파일 호출 1회 절약).
+    if (pvProvider !== 'gn-html') {
+      try {
+        const c = await PL.compile(dir, {
+          kind: 'image', provider: pvProvider, topic: p.topic, channel: p.channel, format: p.format, lane: p.lane,
+          prompt: brief, size, count, style, varietySeed: cid, // 컷 변주 시드 — 포스트마다 다른 구도
+        }, onLine);
+        if (c && c.ok && c.prompt) { prompt = c.prompt; negative = c.negative || null; }
+      } catch { /* 컴파일 실패 시 브리프 원문으로 진행 */ }
+    }
     // 채널 시트가 락인돼 있으면 그 레퍼런스 이미지를 --ref 앵커로 — 같은 캐릭터·제품 재현.
     let refs = [];
     try { refs = CS.refImages(dir, p.channel) || []; } catch { /* 없음 */ }
     if (refs.length) onLine && onLine(`[비주얼] ${cid} — 채널 레퍼런스 ${refs.length}장 앵커링`);
     let r;
     try {
-      r = await R.generate(dir, { kind: 'image', provider, prompt, negative, base: cid, size, count, refs, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
+      r = await R.generate(dir, { kind: 'image', provider: pvProvider, prompt, negative, base: cid, size, count, refs, channel: p.channel, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
       results.push({ uid: p.uid, id: cid, ok: !!r.ok, files: r.files || [], count: (r.files || []).length, error: r.error });
       onLine && onLine(r.ok ? `[비주얼] ✔ ${cid} — ${(r.files || []).length}장` : `[비주얼] ✖ ${cid} — ${r.error}`);
     } catch (e) {

@@ -1403,7 +1403,7 @@ function openApproveSheet(node, restoreRel) {
     </div>
     <div class="appr-foot">
       <button id="appr-reject">반려 — 디렉터에게 수정 지시</button>
-      <label class="small muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="appr-next" checked> 승인과 동시에 다음 단계 실행</label>
+      <label class="small muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="appr-next"> 승인과 동시에 다음 단계 실행</label>
       <div style="flex:1"></div>
       <button class="stamp-btn" id="stamp"><span class="ring"></span><svg><use href="#i-stamp"/></svg><span>길게 눌러<br>승인</span></button>
     </div>`;
@@ -1870,7 +1870,7 @@ async function openRenderPanel(p) {
         <option value="1">1장</option><option value="2">2장</option><option value="3" selected>3장</option><option value="4">4장</option><option value="5">5장</option>
       </select>
       <select id="rp-variants" class="rp-input" style="width:100px" title="대표컷 시안 수 — 시안 중 하나를 고르면 1번으로 확정하고 나머지 장수를 이어 생성합니다">
-        <option value="3" selected>시안 3안</option><option value="2">시안 2안</option><option value="0">바로 생성</option>
+        <option value="3">시안 3안</option><option value="2">시안 2안</option><option value="0" selected>바로 생성</option>
       </select>
       <select id="rp-cards" class="rp-input hidden" style="width:90px" title="카드 수 (표지+본문+엔딩)">
         <option value="5">5장</option><option value="6">6장</option><option value="7">7장</option><option value="8">8장</option>

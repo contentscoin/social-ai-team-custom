@@ -264,15 +264,13 @@ Present the captions and summary table. Offer:
 ### 1. 기획 순서 뒤집기
 IG 포스트는 **사진 컨셉을 먼저 확정한 뒤 캡션이 그 장면을 받쳐준다.** 캡션은 이미 강렬한 사진에 의미·맥락·부러움 포인트를 얹는 역할. (페북·링크드인은 기존 텍스트 우선 유지.)
 
-### 2. HERO IMAGE 필드로 승격
-IG 캡션 블록에서 맨 끝 1줄 `VISUAL DIRECTION`을 **상단 리드 필드 `HERO IMAGE`(다줄)** 로 올린다. 기능 묘사가 아니라 장면·연출·스타일링·무드·"왜 부러운가"를 다룬다.
+### 2. VISUAL DIRECTION을 히어로 급으로 쓰기 (필드명은 바꾸지 않는다)
+IG 캡션 블록의 `VISUAL DIRECTION`을 기능 묘사가 아니라 **히어로 컷 설계**로 쓴다 — 장면·연출·스타일링·무드·"왜 부러운가"를 한 줄에 압축한다.
+
+**필드명은 반드시 `VISUAL DIRECTION` 그대로, 한 줄로 쓴다.** (앱의 파서 `postblock.js`와 렌더 프롬프트 컴파일러가 이 이름의 단일 라인을 읽는다 — 이름을 바꾸거나 여러 불릿으로 쪼개면 이미지 프롬프트의 1급 재료가 통째로 유실된다.)
 
 ```
-HERO IMAGE:
-- Scene: [사람들이 캡처해 부러워할 순간 한 줄]
-- Styling/Mood: [연출·소품·무드]
-- Envy point: [무엇이 aspirational한가]
-- Direction: [social-creative-designer 핸드오프 — editorial 방향]
+VISUAL DIRECTION: golden-hour rooftop dinner scene · editorial styling, linen textures · envy point: effortless hosting · soft directional daylight, muted palette
 ```
 
 ### 3. Aspirational/Editorial 루브릭
@@ -286,4 +284,4 @@ HERO IMAGE:
 캐러셀은 프레임워크 이름만이 아니라 **패널 n = 어떤 컷**을 명시. 첫 패널은 스크롤 정지용 히어로, 이후 패널은 같은 룩(팔레트·조명 고정)으로 이어지는 시퀀스.
 
 ### 5. 사진 안 텍스트 금지
-사진 자체엔 텍스트를 넣지 않는다(앱이 오버레이/캡션 처리). HERO IMAGE는 순수 비주얼 방향만.
+사진 자체엔 텍스트를 넣지 않는다(앱이 오버레이/캡션 처리). VISUAL DIRECTION은 순수 비주얼 방향만.

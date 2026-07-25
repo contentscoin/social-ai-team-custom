@@ -10,7 +10,8 @@ const { spawnSync } = require('child_process');
 const { runCmd, isWin } = require('./proc');
 const secrets = require('./secrets');
 const config = require('./config');
-const { svgToPng, extractSvg, extractSvgAll } = require('./svg2png');
+const { svgToPng, htmlToPng, extractSvg, extractSvgAll } = require('./svg2png');
+const gncards = require('./gncards');
 const { finalizeImagePrompt, shotFraming } = require('./promptlab');
 const engine = require('./engine');
 
@@ -97,6 +98,38 @@ async function genClaudeSvg(dir, job, onLine) {
     files.push(rel);
   }
   return { ok: true, provider: 'claude-svg', rel: files[0], files };
+}
+
+// 공냥 카드(gn-html) — 카드뉴스·인포·데이터 카드를 슬라이드 계약(JSON) + 결정론 HTML 조판으로 만든다.
+// 이미지 모델 호출 0 (엔진 텍스트 1회가 전부) — 과금 없음, 한글 타이포 정확, 수치는 그린 그대로.
+// 슬라이드 계약은 <base>.cards.json 으로 보존된다 — 카피만 고쳐 재조판하는 부분 재작업 지점.
+async function genGnHtml(dir, job, onLine) {
+  const [w, h] = SIZES[job.size] || SIZES.portrait;
+  const cards = Math.min(8, Math.max(1, Number(job.cards) || Number(job.count) || 5));
+  let brandSummary = '';
+  try { const b = require('./channelsheets').getBrand(dir); brandSummary = String((b && b.brand) || '').slice(0, 400); } catch { /* 브랜드 없음 */ }
+  const stageEng = config.getEngineFor('visuals-generate');
+  onLine && onLine(`[render] 공냥 카드 — 슬라이드 계약 설계 중… (${cards}장 · ${stageEng})`);
+  const r = await engine.runText(dir, gncards.buildSlidesPrompt({ prompt: job.prompt, topic: job.topic, count: cards }, brandSummary),
+    { engine: stageEng, json: true, timeoutMs: 8 * 60_000 });
+  const slides = gncards.parseSlides(r.out, cards);
+  if (!slides) return err('gn-html', '슬라이드 계약(JSON)을 받지 못했습니다: ' + (r.tail || '').slice(-200));
+  const tokens = gncards.tokensFor(dir);
+  const htmls = gncards.renderAllHtml(slides, tokens, { w, h });
+  const files = [];
+  for (let i = 0; i < htmls.length; i++) {
+    const suffix = htmls.length > 1 ? `${job.base}_c${i + 1}` : job.base;
+    const { abs, rel } = outName(dir, 'creatives', suffix, 'png');
+    onLine && onLine(`[render] 카드 조판 → PNG (${i + 1}/${htmls.length})`);
+    await htmlToPng(htmls[i], w, h, abs);
+    try { fs.writeFileSync(abs.replace(/\.png$/, '.html'), htmls[i]); } catch { /* 소스 보존 실패는 무시 */ }
+    files.push(rel);
+  }
+  try {
+    fs.writeFileSync(path.join(dir, 'outputs', 'creatives', `${job.base}.cards.json`),
+      JSON.stringify({ slides, tokens: { bg: tokens.bg, fg: tokens.fg, accent: tokens.accent } }, null, 2));
+  } catch { /* 계약 보존 실패는 렌더를 막지 않는다 */ }
+  return { ok: true, provider: 'gn-html', rel: files[0], files };
 }
 
 // (2) OpenAI 이미지 (gpt-image-1) — "코덱스 이미지" 직결 레인. OPENAI_API_KEY 필요.
@@ -577,7 +610,7 @@ async function genIma2Video(dir, job, onLine) {
 }
 
 // ---- 디스패치 ----------------------------------------------------------------------
-const IMAGE_PROVIDERS = { 'claude-svg': genClaudeSvg, 'openai-image': genOpenAI, ima2: genIma2, comfyui: genComfy, custom: genCustom };
+const IMAGE_PROVIDERS = { 'claude-svg': genClaudeSvg, 'gn-html': genGnHtml, 'openai-image': genOpenAI, ima2: genIma2, comfyui: genComfy, custom: genCustom };
 const VIDEO_PROVIDERS = {
   ffmpeg: genFfmpeg, runway: genRunway, higgsfield: genHiggsfield, 'google-veo': genVeo,
   replicate: genReplicate, comfyui: genComfy, custom: genCustom, 'ima2-video': genIma2Video,
@@ -592,6 +625,7 @@ function availability(env) {
       'openai-image': { ok: secrets.has('openai', ['apiKey']) || !!process.env.OPENAI_API_KEY, label: 'Codex 이미지 · gpt-image-1 (기본)' },
       ima2: { ok: !!(env && env.ima2), label: 'Codex 이미지 · ima2 (ChatGPT OAuth)' },
       'claude-svg': { ok: true, label: '클로드 디자인 — 한글 타이포 카드 전용 (SVG→PNG)' },
+      'gn-html': { ok: true, label: '공냥 카드 — 카드뉴스·인포·데이터 (HTML 조판 · 과금 0)' },
       comfyui: { ok: secrets.has('comfyui', ['url', 'workflowPath']), label: 'ComfyUI (오픈소스 로컬)' },
       custom: { ok: secrets.has('custom-video', ['url']), label: '커스텀 HTTP' },
     },
@@ -621,13 +655,14 @@ async function generateOnce(dir, job, onLine) {
   const fn = table[job.provider];
   if (!fn) return err(job.provider, '알 수 없는 프로바이더');
   const count = Math.min(10, Math.max(1, Number(job.count) || 1));
-  // claude-svg는 자체 멀티카드(cards) 경로로 N장 — count를 cards로 위임 (안 하면 1장으로 붕괴)
-  if (job.kind === 'image' && count > 1 && job.provider === 'claude-svg' && !job.cards) {
+  // claude-svg·gn-html은 자체 멀티카드(cards) 경로로 N장 — count를 cards로 위임 (안 하면 1장으로 붕괴)
+  const CARD_LANES = ['claude-svg', 'gn-html'];
+  if (job.kind === 'image' && count > 1 && CARD_LANES.includes(job.provider) && !job.cards) {
     return fn(dir, { ...job, cards: count }, onLine).catch((e) => err(job.provider, e && e.message || e));
   }
   // 사진형 프로바이더는 count번 호출해 base_1..base_N 으로 저장 (보드 프리픽스 매칭 유지).
   // 이미 존재하는 슬라이드는 건너뛴다 — 중단·부분 실패 후 재실행 시 빠진 장만 채운다(top-up).
-  if (job.kind === 'image' && count > 1 && job.provider !== 'claude-svg') {
+  if (job.kind === 'image' && count > 1 && !CARD_LANES.includes(job.provider)) {
     const cdir = path.join(dir, 'outputs', 'creatives');
     const hasSlide = (i) => { try { return fs.readdirSync(cdir).some((f) => new RegExp(`^${job.base}_${i}\\.(png|jpe?g|webp)$`, 'i').test(f)); } catch { return false; } };
     const existRel = (i) => { try { const f = fs.readdirSync(cdir).find((x) => new RegExp(`^${job.base}_${i}\\.(png|jpe?g|webp)$`, 'i').test(x)); return f ? path.join('outputs', 'creatives', f) : null; } catch { return null; } };
@@ -668,7 +703,7 @@ function fallbackRank(kind, env, tried) {
   const av = availability(env || {});
   const table = kind === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS;
   return Object.entries(kind === 'video' ? av.video : av.image)
-    .filter(([k, v]) => v.ok && table[k] && !tried.includes(k) && k !== 'claude-svg')
+    .filter(([k, v]) => v.ok && table[k] && !tried.includes(k) && k !== 'claude-svg' && k !== 'gn-html') // 카드 레인은 지명 시에만 — 사진 폴백에서 제외
     .map(([k]) => k);
 }
 

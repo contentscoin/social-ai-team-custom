@@ -15,7 +15,8 @@ function boardWith(evidence = {}) {
     foundation: { brand: true },
     hasCalendar: !!evidence.calendar,
     posts: evidence.copy ? [{ stage: 'copy', isReel: false, visual: '' }] : [],
-    lanes: { creatives: [] },
+    lanes: { creatives: evidence.briefs ? [{ name: 'prompts-used.md' }] : [] },
+    verify: evidence.verified ? { pass: 1, revise: 0 } : null,
     compliance: evidence.compliance ? { pass: 1, warn: 0, block: evidence.block || 0 } : null,
     calendarHash: 'h1',
   };
@@ -56,14 +57,18 @@ test('증거가 있는 단계는 재실행하지 않는다(skip), 도장이 있�
 
 test('autoApprove — 증거가 있는 승인 게이트를 자동 통과하고 멈추지 않고 진행', async () => {
   const dir = tmpDir();
-  let hasCalendar = false, hasCopy = false;
+  // 각 스테이지가 실제 증거를 만든다 — visuals 게이트 공허참 제거 후엔 브리프·검증 리포트가
+  // 진짜로 생겨야 자동 승인이 이어진다(예전엔 VISUAL 컬럼이 비면 브리프 0건에도 통과했다).
+  let hasCalendar = false, hasCopy = false, hasVerify = false, hasBrief = false;
   const events = [];
   const r = await autopilot.run(dir, {
     autoApprove: true,
-    buildBoard: () => boardWith({ calendar: hasCalendar, copy: hasCopy }),
+    buildBoard: () => boardWith({ calendar: hasCalendar, copy: hasCopy, verified: hasVerify, briefs: hasBrief }),
     runStage: async (_d, stage) => {
       if (stage === 'calendar') hasCalendar = true;
       if (stage === 'copy') hasCopy = true;
+      if (stage === 'verify') hasVerify = true;
+      if (stage === 'visuals') hasBrief = true;
       return { ok: true };
     },
     onEvent: (ev) => events.push(ev),
@@ -71,6 +76,7 @@ test('autoApprove — 증거가 있는 승인 게이트를 자동 통과하고 �
   // calendar 도장 대기로 멈추지 않고, 자동 승인 이벤트가 나온다
   assert.ok(events.some((e) => e.state === 'auto-approve' && e.node === 'calendar'), 'calendar 자동 승인');
   assert.ok(events.some((e) => e.state === 'auto-approve' && e.node === 'copy'), 'copy 자동 승인');
+  assert.ok(events.some((e) => e.state === 'auto-approve' && e.node === 'visuals'), 'visuals 자동 승인(브리프 증거 후)');
   assert.notEqual(r.state, 'paused'); // 승인 대기로 멈추지 않는다
   // 게이트에 실제 도장이 기록됐는지 확인 (calendarHash 포함)
   const g = gates.computeGates(boardWith({ calendar: true }), gates.load(dir));

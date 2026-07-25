@@ -7,6 +7,7 @@ const path = require('path');
 const { runCmd } = require('./proc');
 const config = require('./config');
 const engine = require('./engine');
+const history = require('./history');
 const imagestyles = require('./imagestyles');
 const channelsheets = require('./channelsheets');
 const { findVisualDirection } = require('./postblock');
@@ -138,6 +139,9 @@ function packContext(kind, budget = 12000, opts = {}) {
       : /image|이미지|photo|프롬프트|prompt/i);
   const all = listPacks();
   let picked = all.filter((p) => want.test(p.name) || want.test(p.file));
+  // 이미지/svg 컴파일에 영상 팩이 끼지 않게 — "video-prompt-pack" 류가 파일명의 'prompt'로
+  // 이미지 필터에 걸려 호출당 수천 자를 낭비하던 문제. video kind가 아니면 영상 팩 제외.
+  if (kind !== 'video') picked = picked.filter((p) => !/video|영상|모션|motion/i.test(p.name + p.file));
   // 캐러셀·카드뉴스면 카드뉴스 팩도 함께 (표지 여백·시리즈 응집)
   if (opts.carousel || /carousel|카드뉴스|cardnews|슬라이드/i.test(String(opts.format || ''))) {
     const extra = all.filter((p) => /cardnews|카드뉴스/i.test(p.name + p.file));
@@ -354,7 +358,17 @@ async function claudeCompile(dir, job, brand, vd, onLine) {
     (brand.palette.length ? `브랜드 팔레트: ${brand.palette.join(' ')}\n` : '') +
     `\n[프롬프트 팩]\n${packs}`;
   // 선택 엔진으로 — '비주얼 생성' 단계 엔진을 따른다(단계별 오버라이드 존중)
-  const r = await engine.runText(dir, instr, { engine: config.getEngineFor('visuals-generate'), json: true, timeoutMs: 120_000 });
+  const compileEngine = config.getEngineFor('visuals-generate');
+  const compileStart = Date.now();
+  const r = await engine.runText(dir, instr, { engine: compileEngine, json: true, timeoutMs: 120_000 });
+  // 컴파일 호출 계측 — 배치당 포스트 수만큼 도는 가장 잦은 LLM 호출인데 지금까지 기록이 없었다.
+  try {
+    history.append({
+      dir, kind: 'compile', stage: 'prompt-compile', engine: compileEngine, model: config.getModels()[compileEngine] || '',
+      ok: !!r.ok, ms: Date.now() - compileStart, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined,
+      startedAt: compileStart, note: String(job.topic || '').slice(0, 60),
+    });
+  } catch { /* 계측 실패가 컴파일을 막으면 안 됨 */ }
   if (!r.ok) return null;
   let outer = parseJsonLoose(r.out);
   // claude json 모드는 {result: "..."} 래핑 — 내부 JSON을 다시 파싱 (codex는 원본 JSON이라 그대로)

@@ -75,6 +75,22 @@ function setBudget(usd) {
   return cfg.budgetUsd;
 }
 
+// 프로바이더별 이미지 장당 단가(USD) — 사용자가 기입해야 예산 게이지에 이미지 비용이 잡힌다.
+// 예: { "openai-image": 0.17, "ima2": 0 }  (ima2는 ChatGPT 구독 소모라 0 또는 미기입이 정직하다)
+// 미기입 프로바이더는 undefined → 비용 미집계로 기록된다($0으로 보이는 것보다 '모른다'가 낫다).
+function getImageUnitCosts() {
+  const v = load().imageUnitCosts;
+  return (v && typeof v === 'object') ? v : {};
+}
+function setImageUnitCost(provider, usd) {
+  const cfg = load();
+  cfg.imageUnitCosts = { ...(cfg.imageUnitCosts || {}) };
+  const n = Number(usd);
+  if (provider && Number.isFinite(n) && n >= 0) cfg.imageUnitCosts[String(provider)] = n;
+  save(cfg);
+  return cfg.imageUnitCosts;
+}
+
 // 이미지 생성 기본 스타일 — 렌더 프롬프트에 붙는 프리셋(imagestyles). '' = 미지정(스타일 강제 없음).
 function getImageStyle() {
   const v = load().imageStyle;
@@ -137,4 +153,4 @@ function clearSession(dir, engine) {
   return save(cfg);
 }
 
-module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getImageQuality, setImageQuality, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };
+module.exports = { load, getEngine, setEngine, getStageEngines, setStageEngine, getEngineFor, getModels, setModel, getBudget, setBudget, getImageStyle, setImageStyle, getImageQuality, setImageQuality, getImageUnitCosts, setImageUnitCost, getAutopilotAutoApprove, setAutopilotAutoApprove, getSession, setSession, clearSession };
