@@ -22,6 +22,9 @@ const NODES = [
 const STAMP_NODES = ['calendar', 'copy', 'verify', 'visuals', 'compliance'];
 function needsStamp(key) { return STAMP_NODES.includes(key); }
 
+// 텍스트 전용 포맷(이미지가 필요 없는 포스트) — 게이트 증거와 autovisual 렌더 대상 판정이 공유하는 정본.
+function isTextOnlyFormat(format) { return /^\s*(?:text|poll|텍스트|투표)\s*$/i.test(String(format || '')); }
+
 function gatesPath(dir) { return path.join(dir, 'context', 'gates.json'); }
 function load(dir) {
   const p = gatesPath(dir);
@@ -62,7 +65,7 @@ function computeGates(board, gatesData) {
   const creativeFiles = (board.lanes && board.lanes.creatives) || [];
   const hasBriefFile = creativeFiles.some((f) => !/\.(png|jpe?g|webp|gif)$/i.test(f.name || ''));
   const renderCount = (p) => (p.files || []).filter((f) => f.kind === 'render').length;
-  const isTextOnly = (p) => /^\s*(?:text|poll|텍스트|투표)\s*$/i.test(p.format || '');
+  const isTextOnly = (p) => isTextOnlyFormat(p.format);
   // 이미지가 필요한 정적 포스트 = 릴/텍스트가 아니고 카피 산출물이 있는 것. 릴 영상은 별도 레인.
   const imgPosts = posts.filter((p) => p.stage !== 'planned' && !p.isReel && !isTextOnly(p));
   const anyCopy = posts.some((p) => p.stage !== 'planned');
@@ -77,7 +80,9 @@ function computeGates(board, gatesData) {
     // 사실 검증 리포트가 존재하면 done (판정이 하나라도 기록됨). 교체 루프는 디렉터가 처리.
     verify: !!(board.verify && (board.verify.pass + board.verify.revise) > 0),
     // 비주얼 브리프(1차 호출)가 나왔으면 done — 프롬프트 로그/브리프 파일 또는 이미 렌더된 이미지가 근거.
-    visuals: hasBriefFile || at('visual') > 0 || posts.every((p) => !p.visual),
+    // 공허참은 "이미지가 필요한 포스트가 하나도 없을 때"만 — 예전엔 캘린더 VISUAL 컬럼이 비어만 있어도
+    // 브리프 0건에 done이 돼, 자동승인과 겹치면 사람 검토 0회로 수백 장 생성에 진입했다.
+    visuals: hasBriefFile || at('visual') > 0 || posts.every((p) => p.isReel || isTextOnly(p)),
     // 실제 이미지 생성(2차)이 끝났는가 = 이미지가 필요한 모든 정적 포스트에 렌더 파일이 있다.
     // 브리프만으로는 절대 done이 되지 않는다 — 오토파일럿이 생성 단계를 건너뛰고 "완료"로
     // 보고하던 버그의 핵심 원인. autovisual.renderAll의 대상 판정(renderCount)과 동일 신호를 쓴다.
@@ -103,4 +108,4 @@ function computeGates(board, gatesData) {
   return { nodes, current, approvals: gatesData.approvals || [] };
 }
 
-module.exports = { NODES, STAMP_NODES, needsStamp, load, approve, approvedSet, computeGates };
+module.exports = { NODES, STAMP_NODES, needsStamp, isTextOnlyFormat, load, approve, approvedSet, computeGates };

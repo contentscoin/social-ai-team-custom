@@ -169,7 +169,10 @@ function runStage(dir, stage, opts = {}, onLine) {
   // 콘텐츠 단계엔 락인된 채널 지침을 프롬프트 앞에 주입 (채널별 톤·규칙 강제)
   let chBlock = '';
   if (CONTENT_STAGES.has(stage)) { try { chBlock = channelsheets.contentGuidelines(dir) || ''; } catch { /* 없음 */ } }
-  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + chBlock + spec.prompt + extra;
+  // 사실 검증 단계엔 기계 게이트(AI 상투어) 리포트를 주입 — 검출 문구를 짚어 교체를 지시한다.
+  let qBlock = '';
+  if (stage === 'verify') { try { qBlock = require('./qgates').verifyDirective(dir) || ''; } catch { /* 없음 */ } }
+  const stdinText = `오늘 날짜: ${today} (${dow}요일)\n\n` + chBlock + qBlock + spec.prompt + extra;
 
   // 이 단계에 적용할 엔진 — 단계별 오버라이드 우선, 없으면 전역 토글. (구간별로 엔진을
   // 나눠 돌릴 수 있어 한도를 분산한다. 예: 캘린더=Claude, 카피=Codex)

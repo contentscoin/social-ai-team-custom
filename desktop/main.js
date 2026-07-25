@@ -20,6 +20,7 @@ const autopilot = require('./lib/autopilot');
 const proc = require('./lib/proc');
 const secrets = require('./lib/secrets');
 const render = require('./lib/render');
+const qgates = require('./lib/qgates');
 const pubdirect = require('./lib/pubdirect');
 const sessionpub = require('./lib/sessionpub');
 const opencrabBindings = require('./lib/opencrab-bindings');
@@ -198,6 +199,22 @@ function budgetNotify(dir, prevCost) {
       }
     }
   } catch { /* 알림 실패는 치명적이지 않다 */ }
+}
+// 예산 사전검사 — 예산이 설정돼 있고 이미 초과면 새 유료 작업을 시작하지 않는다.
+// (지금까지 오토파일럿에만 있었고 수동 실행·일괄 렌더는 검사 없이 지나갔다)
+function budgetState(dir) {
+  const budgetUsd = config.getBudget();
+  if (!budgetUsd) return null;
+  const monthCost = history.monthCost(dir);
+  return { over: monthCost >= budgetUsd, monthCost, budgetUsd };
+}
+// 이미지 장당 단가(프로바이더별, config에 기입 시) — 미기입이면 undefined(미집계).
+function imageCostUsd(provider, images) {
+  try {
+    const unit = config.getImageUnitCosts()[provider];
+    if (typeof unit === 'number' && unit > 0 && images > 0) return +(unit * images).toFixed(4);
+  } catch { /* 미설정 */ }
+  return undefined;
 }
 
 // ---- 렌더러 오류 수집 + 로그 파일 접근 --------------------------------------------
@@ -719,18 +736,28 @@ async function execStage(dir, stage, opts) {
       const fin = finish({ ...r, tail: (r.resultText || r.note || '') + svNote, startedAt });
       history.append({
         dir, kind: 'stage', stage, engine: r.provider || 'render', model: '',
-        ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: `${changeNote(fin.changes)} — ${r.resultText || r.note || ''}`.slice(0, 120),
+        ok: !!r.ok, ms: Date.now() - startedAt, startedAt,
+        images: r.images || 0, costUsd: imageCostUsd(r.provider, r.images || 0), // 장수는 실수(實數) — 단가 미기입 시 금액은 미집계
+        note: `${changeNote(fin.changes)} — ${r.resultText || r.note || ''}`.slice(0, 120),
       });
       if (Date.now() - startedAt > 30_000) notify(`비주얼 생성 ${r.ok ? '완료' : '실패'}`, `${changeNote(fin.changes)} — ${r.resultText || r.note || ''}`.slice(0, 140));
       return fin;
     }
     const r = await pipeline.runStage(dir, stage, opts, (line) => send('log', { source: stage, line, dir }));
     const label = (pipeline.STAGES[stage] || {}).label || stage;
+    // 카피 산출 직후 기계 게이트(AI 상투어) 스캔 — 검출분은 verify 단계 프롬프트에 자동 주입돼 교체된다.
+    if (stage === 'copy' && r.ok) {
+      try {
+        const q = qgates.report(dir);
+        send('log', { source: stage, line: q.total ? `[기계 게이트] AI 상투어 ${q.total}건 검출 (${q.files.length}개 파일) — 사실 검증 단계에서 교체 지시됩니다` : '[기계 게이트] AI 상투어 0건 — 통과', dir });
+      } catch { /* 게이트 실패가 카피 결과를 막지 않는다 */ }
+    }
     const fin = finish({ ...r, startedAt });
     const compNote = fin.compliance ? ` · PASS ${fin.compliance.pass}/WARN ${fin.compliance.warn}/BLOCK ${fin.compliance.block}` : '';
     const prevCost = history.monthCost(dir);
+    const stageEngine = config.getEngineFor(stage); // 단계별 엔진 오버라이드 반영 — 'claude' 하드코딩이면 codex 실행이 claude로 기록됐다
     history.append({
-      dir, kind: 'stage', stage, engine: 'claude', model: config.getModels().claude,
+      dir, kind: 'stage', stage, engine: stageEngine, model: config.getModels()[stageEngine] || '',
       ok: !!r.ok, ms: Date.now() - startedAt, costUsd: typeof r.costUsd === 'number' ? r.costUsd : undefined, startedAt,
       note: (changeNote(fin.changes) + compNote).slice(0, 120),
     });
@@ -748,6 +775,11 @@ async function execStage(dir, stage, opts) {
   }
 }
 ipcMain.handle('pipe:runStage', async (_e, dir, stage, opts) => {
+  const bs = budgetState(dir);
+  if (bs && bs.over) {
+    const msg = `이번 달 API 비용 $${bs.monthCost}가 예산 $${bs.budgetUsd}를 넘었습니다 — 새 단계를 시작하지 않습니다. 설정에서 예산을 조정하세요.`;
+    return { ok: false, code: -1, out: msg, tail: msg, startedAt: Date.now() };
+  }
   const lock = locks.acquire(dir, 'stage');
   if (!lock.ok) {
     const msg = locks.busyMessage(dir);
@@ -778,6 +810,8 @@ ipcMain.handle('slidevideo:render', async (_e, dir, manifestRel) => {
 ipcMain.handle('slidevideo:list', safe((_e, dir) => slidevideorender.listManifests(dir)));
 // 일괄 비주얼 렌더 — "일괄 비주얼 생성" 버튼 (오토파일럿 없이 수동으로 전 포스트 이미지 생성)
 ipcMain.handle('render:batch', async (_e, dir, opts) => {
+  const bs = budgetState(dir);
+  if (bs && bs.over) return { ok: false, error: `이번 달 API 비용 $${bs.monthCost}가 예산 $${bs.budgetUsd}를 넘었습니다 — 일괄 렌더를 시작하지 않습니다.` };
   const lock = locks.acquire(dir, 'stage');
   if (!lock.ok) return { ok: false, error: locks.busyMessage(dir) };
   armRender(dir);
@@ -786,7 +820,12 @@ ipcMain.handle('render:batch', async (_e, dir, opts) => {
   try {
     const style = (opts && opts.style != null) ? opts.style : config.getImageStyle();
     const r = await autovisual.renderAll(dir, { ...envHint(), ...(opts || {}), style, stopped: () => isRenderStopped(dir) }, (line) => send('log', { source: 'visuals-generate', line, dir }));
-    history.append({ dir, kind: 'stage', stage: 'visuals-generate', engine: r.provider || 'render', model: '', ok: !!r.ok, ms: Date.now() - startedAt, startedAt, note: r.resultText || r.note });
+    history.append({
+      dir, kind: 'stage', stage: 'visuals-generate', engine: r.provider || 'render', model: '',
+      ok: !!r.ok, ms: Date.now() - startedAt, startedAt,
+      images: r.images || 0, costUsd: imageCostUsd(r.provider, r.images || 0),
+      note: r.resultText || r.note,
+    });
     return r;
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
@@ -809,12 +848,7 @@ ipcMain.handle('auto:run', async (_e, dir) => {
       buildBoard: (d) => board.buildBoard(d),
       runStage: (d, s) => execStage(d, s, {}),
       autoApprove: config.getAutopilotAutoApprove(),
-      checkBudget: () => {
-        const budgetUsd = config.getBudget();
-        if (!budgetUsd) return null;
-        const monthCost = history.monthCost(dir);
-        return { over: monthCost >= budgetUsd, monthCost, budgetUsd };
-      },
+      checkBudget: () => budgetState(dir),
       onEvent: (ev) => {
         send('auto', ev);
         if (ev.state === 'paused') notify('오토파일럿 대기', ev.message || '승인 도장이 필요합니다.');
