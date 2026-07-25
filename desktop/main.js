@@ -581,9 +581,10 @@ const isRenderStopped = (dir) => renderStops.get(dir) === true;
 // ima2 설치 여부 힌트 — 렌더 프로바이더 기본값 선택에 필요 (동기 바이너리 확인).
 // checkEnvironment()는 async라 여기선 쓸 수 없다 — proc.resolveCmd로 동기 감지.
 function envHint() {
-  let ima2 = false;
+  let ima2 = false, codex = false;
   try { ima2 = !!proc.resolveCmd('ima2'); } catch { /* PATH 밖 */ }
-  return { ima2 };
+  try { codex = !!proc.resolveCmd('codex'); } catch { /* PATH 밖 */ }
+  return { ima2, codex };
 }
 
 // ffmpeg 인코딩 1회 — concat 스크립트/인자를 받아 mp4를 만든다.
