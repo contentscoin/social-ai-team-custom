@@ -323,7 +323,9 @@ async function warmupImageProvider(provider, env, onLine) {
           ok: false,
           reason: url
             ? `지정된 ima2 서버(${url})가 응답하지 않습니다 — 서버를 켜거나 설정에서 URL을 비우세요`
-            : 'ima2 serve가 뜨지 않습니다 — 터미널에서 `ima2 serve`로 직접 켜 오류를 확인하거나, ima2 login 상태를 점검하세요',
+            // 실전 확인된 함정: 최초 설치 후 설정 마법사(인증 방식 선택)를 안 거치면 serve가
+            // 보이지 않는 대화형 프롬프트에서 영원히 대기한다 — 터미널 1회 실행으로 완료해야 한다.
+            : 'ima2 serve가 뜨지 않습니다 — 터미널에서 `ima2 serve`를 직접 실행해 보세요. 처음이면 설정 마법사(인증 방식 선택)가 나오니 완료 후 다시 실행하고, 이미 설정했다면 ima2 login 상태를 점검하세요',
         };
       }
     } catch { /* best effort — 판단 불가면 진행 */ }
