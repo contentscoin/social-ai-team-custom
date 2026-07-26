@@ -286,12 +286,15 @@ async function ensureIma2Serve(onLine) {
     const p = spawn(cmd, ['serve'], { detached: true, stdio: 'ignore', env: envWithPath(), shell: isWin, windowsHide: true });
     p.unref();
   } catch { return false; }
-  // 고정 8초 대기 대신 ping 폴링(최대 ~12초) — 서버가 일찍 뜨면 바로 진행해 콜드스타트 지연을 줄인다.
-  for (let i = 0; i < 12; i++) {
+  // 고정 대기 대신 ping 폴링(최대 ~20초) — 서버가 일찍 뜨면 바로 진행해 콜드스타트 지연을 줄인다.
+  for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     if (await ima2Ping('')) { onLine && onLine(`[render] ima2 serve 준비됨 (${i + 1}s)`); return true; }
   }
-  return true;
+  // 예전엔 여기서도 true를 반환해 "자동 시작합니다" 후 죽은 서버로 전 배치를 진행했다 —
+  // 실전에서 37포스트 × 5회 재시도가 전부 unreachable로 낭비된 원인. 실패는 실패로 보고한다.
+  onLine && onLine('[render] ⚠ ima2 serve가 20초 안에 뜨지 않습니다 — ima2 설치·로그인(ima2 login)을 확인하세요');
+  return false;
 }
 // 설정된 ima2 서버 URL(사용자가 watchdog 등으로 직접 유지하는 서버). 있으면 앱은 자기 serve를
 // 띄우지 않고 이 주소로 붙는다(--server). 비었으면 기존처럼 자동 기동.
@@ -309,8 +312,21 @@ function ima2GenArgs(prompt, tmp, serverUrl, refs, quality) {
 // 단, 사용자가 서버 URL을 지정했으면(직접 유지 중) 앱이 자동 기동하지 않는다.
 // 이미 응답 중이면 재기동하지 않아 예열 비용이 0에 수렴한다.
 async function warmupImageProvider(provider, env, onLine) {
-  if (provider === 'ima2' && !ima2ServerUrl()) {
-    try { if (!(await ima2Ping(''))) await ensureIma2Serve(onLine); } catch { /* best effort */ }
+  if (provider === 'ima2') {
+    const url = ima2ServerUrl();
+    try {
+      if (await ima2Ping(url)) return { ok: true };
+      // URL 미지정 → 앱이 자동 기동 시도. 지정(사용자 유지 서버) → 기동 없이 상태만 보고.
+      const up = url ? false : await ensureIma2Serve(onLine);
+      if (!up) {
+        return {
+          ok: false,
+          reason: url
+            ? `지정된 ima2 서버(${url})가 응답하지 않습니다 — 서버를 켜거나 설정에서 URL을 비우세요`
+            : 'ima2 serve가 뜨지 않습니다 — 터미널에서 `ima2 serve`로 직접 켜 오류를 확인하거나, ima2 login 상태를 점검하세요',
+        };
+      }
+    } catch { /* best effort — 판단 불가면 진행 */ }
   }
   return { ok: true };
 }
@@ -334,13 +350,16 @@ async function genIma2(dir, job, onLine) {
   const run = () => runCmd('ima2', ima2GenArgs(prompt, tmp, serverUrl, refs, quality), onLine, { cwd: dir, timeoutMs: 5 * 60_000 });
   const hasImg = () => (fs.existsSync(tmp) ? fs.readdirSync(tmp) : []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f));
   let r = await run();
-  // 서버가 죽어 있으면: URL 미지정 시 자동 기동, 지정 시 사용자 서버가 뜰 때까지만 몇 번 재시도.
+  // 서버가 죽어 있으면: URL 미지정 시 자동 기동 후 재시도. 기동 자체가 실패하면 재시도 없이
+  // 즉시 실패 확정 — 죽은 서버에 5회 × 포스트마다 두드리던 낭비(실전 로그의 원인) 제거.
   if (!r.ok && !hasImg().length && IMA2_DOWN.test(r.out)) {
-    if (!serverUrl) await ensureIma2Serve(onLine);
-    for (let i = 0; i < 4 && !r.ok && IMA2_DOWN.test(r.out); i++) {
-      if (job.stopped && job.stopped()) break;
-      await new Promise((res) => setTimeout(res, 4000));
-      r = await run();
+    const revived = serverUrl ? true : await ensureIma2Serve(onLine); // 사용자 유지 서버는 잠시 후 뜰 수 있어 재시도 허용
+    if (revived) {
+      for (let i = 0; i < 2 && !r.ok && IMA2_DOWN.test(r.out); i++) {
+        if (job.stopped && job.stopped()) break;
+        await new Promise((res) => setTimeout(res, 4000));
+        r = await run();
+      }
     }
   }
   // 생성 대기 초과 → 고아 잡(requestId) 취소 + 레퍼런스 축소 후 1회 재시도.

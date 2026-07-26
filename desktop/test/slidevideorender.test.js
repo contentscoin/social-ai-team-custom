@@ -84,3 +84,20 @@ test('ffmpeg.resolve — 번들 우선, 없으면 시스템, 둘 다 없으면 n
     ffmpeg.resolve({ tryStatic: () => null, probeSystem: () => false }),
     { path: null, source: 'none' });
 });
+
+test('prepare — BOM·코드펜스·잡텍스트 오염 매니페스트도 파싱, 진짜 깨진 건 파일 머리를 사유에 표시', () => {
+  const dir = ws();
+  fs.writeFileSync(path.join(dir, 'outputs', 'creatives', 's1.png'), 'x');
+  const good = { calendarSlot: 7, slides: [{ durationSec: 2, image: { rel: 'outputs/creatives/s1.png' } }] };
+  // 에이전트가 흔히 쓰는 오염: ```json 펜스 + 앞뒤 설명 + BOM
+  const dirty = '﻿다음은 매니페스트입니다:\n```json\n' + JSON.stringify(good) + '\n```\n끝.';
+  fs.writeFileSync(path.join(dir, 'outputs', 'videos', 'acme-slidevideo-7-july-2026.json'), dirty);
+  const r = svr.prepare(dir, 'outputs/videos/acme-slidevideo-7-july-2026.json');
+  assert.equal(r.ok, true); // 파싱 통과 → 렌더 계획까지
+  // 진짜 깨진 파일 — "왜"가 보이게 파일 머리를 사유에 싣는다 (56개가 이유 없이 실패하던 문제)
+  fs.writeFileSync(path.join(dir, 'outputs', 'videos', 'acme-slidevideo-8-july-2026.json'), '# 마크다운 문서\n슬라이드 계획...');
+  const bad = svr.prepare(dir, 'outputs/videos/acme-slidevideo-8-july-2026.json');
+  assert.equal(bad.ok, false);
+  assert.match(bad.reason, /파싱 실패/);
+  assert.match(bad.reason, /마크다운 문서/); // 파일 머리 노출
+});

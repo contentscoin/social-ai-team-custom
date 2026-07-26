@@ -41,7 +41,25 @@ async function renderAll(dir, opts, onLine) {
   }
   onLine && onLine(`[비주얼] ${targets.length}개 포스트 · 프로바이더 ${provider}`);
   // 프로바이더 예열 — ima2면 serve를 미리 띄워 첫 렌더 전에 뜰 시간을 준다.
-  try { if (R.warmupImageProvider) await R.warmupImageProvider(provider, { ima2: opts.ima2 }, onLine); } catch { /* best effort */ }
+  // 예열이 "실패"로 보고되면(서버가 안 뜸) 죽은 서버로 전 배치를 두드리지 않는다:
+  // codex CLI가 있으면 그 레인으로 전환하고, 없으면 즉시 중단해 원인을 알린다.
+  let effProvider = provider;
+  try {
+    if (R.warmupImageProvider) {
+      const w = await R.warmupImageProvider(provider, { ima2: opts.ima2 }, onLine);
+      if (w && w.ok === false) {
+        if (opts.codex && provider === 'ima2') {
+          effProvider = 'codex';
+          onLine && onLine('[비주얼] ⚠ ima2 서버가 뜨지 않아 codex 레인으로 전환합니다 (주의: --ref 캐릭터 앵커는 이 배치에 적용되지 않음)');
+        } else {
+          return {
+            ok: false, provider, rendered: 0, images: 0, results: [], providerDown: true,
+            resultText: `이미지 엔진을 시작하지 못해 배치를 진행하지 않았습니다 — ${w.reason || '프로바이더 연결 실패'} (0/${targets.length})`,
+          };
+        }
+      }
+    }
+  } catch { /* 예열 판단 불가 — 기존대로 진행 */ }
   const isInfra = R._isInfraFailure || (() => false);
   const results = [];
   let okCount = 0, downStreak = 0;
@@ -54,8 +72,8 @@ async function renderAll(dir, opts, onLine) {
     const count = wantCount(p);
     const size = inferSize(p);
     // 카드형 포맷(카드뉴스·비교표·인포·데이터)은 gn-html 결정론 렌더로 — 이미지 과금 0, 한글 타이포 정확.
-    // 사진형만 기존 프로바이더(ima2/gpt-image)로 간다. opts.gnhtml === false 로 끌 수 있다.
-    const pvProvider = (opts.gnhtml !== false && gncards.isCardFormat(p.format)) ? 'gn-html' : provider;
+    // 사진형만 기존 프로바이더(ima2/gpt-image, 예열 실패 시 codex 전환분)로 간다. opts.gnhtml === false 로 끌 수 있다.
+    const pvProvider = (opts.gnhtml !== false && gncards.isCardFormat(p.format)) ? 'gn-html' : effProvider;
     const dupKey = `${normTopic(p.topic)}|${size}|${count}|${pvProvider}`;
     // 재사용 — 같은 주제·사이즈·장수가 이미 이번 배치에서 렌더됐으면 파일을 복사해 쓴다(재생성 생략).
     if (reuseOn && normTopic(p.topic) && reuse.has(dupKey)) {
@@ -104,7 +122,9 @@ async function renderAll(dir, opts, onLine) {
     if (refs.length) onLine && onLine(`[비주얼] ${cid} — 채널 레퍼런스 ${refs.length}장 앵커링`);
     let r;
     try {
-      r = await R.generate(dir, { kind: 'image', provider: pvProvider, prompt, negative, base: cid, size, count, refs, channel: p.channel, stopped: opts.stopped, env: { ima2: opts.ima2 } }, onLine);
+      // env에 codex도 전달 — ima2가 배치 중간에 죽으면 generate()의 캐스케이드가 codex 레인으로
+      // 폴백할 수 있다(예전엔 ima2만 넘겨 codex가 가용해도 폴백 후보에서 빠졌다).
+      r = await R.generate(dir, { kind: 'image', provider: pvProvider, prompt, negative, base: cid, size, count, refs, channel: p.channel, stopped: opts.stopped, env: { ima2: opts.ima2, codex: opts.codex } }, onLine);
       results.push({ uid: p.uid, id: cid, ok: !!r.ok, files: r.files || [], count: (r.files || []).length, error: r.error });
       onLine && onLine(r.ok ? `[비주얼] ✔ ${cid} — ${(r.files || []).length}장` : `[비주얼] ✖ ${cid} — ${r.error}`);
     } catch (e) {
@@ -134,7 +154,7 @@ async function renderAll(dir, opts, onLine) {
   const total = results.reduce((n, r) => n + (r.files ? r.files.length : 0), 0);
   return {
     ok: okCount > 0,
-    provider, rendered: okCount, images: total, results,
+    provider: effProvider, rendered: okCount, images: total, results,
     resultText: `${okCount}/${targets.length} 포스트 · 총 ${total}장 생성 (${provider})`,
   };
 }
