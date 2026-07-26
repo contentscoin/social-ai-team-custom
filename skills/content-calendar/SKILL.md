@@ -129,7 +129,7 @@ Before building the calendar, define the content mix for the month.
 
 ### Step 1: Set pillar ratios
 
-Based on the month goal, business type, and any available performance data, assign each pillar a percentage of the total post count. Use `references/content-mix-guide.md` for recommended ratios by business type.
+Based on the month goal, business type, and any available performance data, assign each pillar a percentage of the total post count. Use `references/content-mix-guide.md` for recommended ratios by business type. Then use the same file's **채널축 — 역할 → 필러 → 앵글 뱅크** section to assign each slot a concrete angle matched to the channel's role (from onboarding `chroles` and `context/souls/<channel>.md` §3): fill the Angle column with a specific angle template, and when the same topic runs on multiple channels, give each channel a *different* angle from the bank — never copy-paste the same angle across channels.
 
 Example mix for a service business with an engagement goal:
 

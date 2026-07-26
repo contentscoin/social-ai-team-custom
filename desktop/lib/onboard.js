@@ -39,7 +39,11 @@ const QUESTIONNAIRE = [
   },
   {
     section: 'E. 채널 · 운영', items: [
-      { id: 'channels', q: '운영할 채널 (복수 선택)', type: 'multi', options: ['Instagram', 'Threads', 'X', 'Facebook', 'LinkedIn', '네이버 블로그', 'TikTok'] },
+      // 네이버 클립·카카오톡 채널은 앱의 primary 채널인데 온보딩 선택지에 빠져 있었다(전용
+      // 라이터·발행 경로까지 있는데 온보딩으로는 브랜드 문서에 진입 불가하던 공백).
+      { id: 'channels', q: '운영할 채널 (복수 선택)', type: 'multi', options: ['Instagram', 'Threads', '네이버 블로그', '네이버 클립', '카카오톡 채널', 'X', 'Facebook', 'LinkedIn', 'TikTok'] },
+      // 채널 역할 한 문항이 SOUL·캘린더 초안을 일반론("인스타는 시각적 채널입니다")에서 건져낸다.
+      { id: 'chroles', q: '주력 채널별 역할 — "채널: 역할" 형태로 (역할: 인지·동경 / 정보·검색 / 관계·소통 / 전환·판매)', type: 'textarea', ph: '예: Instagram: 인지·동경 / 네이버 블로그: 정보·검색 / 카카오톡 채널: 전환·판매' },
       { id: 'goal', q: '이번 달 최우선 목표', type: 'choice', options: ['브랜드 인지도', '팔로워 성장', '문의·판매 전환', '단골 소통'] },
       { id: 'freq', q: '주당 발행 가능 횟수', type: 'choice', options: ['1-2회', '3-4회', '5회 이상'] },
     ],
