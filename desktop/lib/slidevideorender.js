@@ -17,8 +17,19 @@ function prepare(dir, manifestRel) {
   const manAbs = resolveInWs(dir, manifestRel);
   if (!manAbs || !fs.existsSync(manAbs)) return { ok: false, reason: '매니페스트 파일을 찾지 못했습니다: ' + manifestRel };
   let m;
-  try { m = JSON.parse(fs.readFileSync(manAbs, 'utf8')); }
-  catch { return { ok: false, reason: '매니페스트 JSON 파싱 실패' }; }
+  const raw = fs.readFileSync(manAbs, 'utf8');
+  // 에이전트가 쓴 매니페스트에 흔한 오염 내성: BOM · ```json 코드펜스 · 앞뒤 설명 텍스트.
+  // 실패 시 파일 머리를 사유에 실어 "왜"가 보이게 한다 — 56개가 전부 이유 없이 실패하던 문제.
+  const cleaned = raw.replace(/^﻿/, '').replace(/```(?:json)?/gi, '').trim();
+  try { m = JSON.parse(cleaned); }
+  catch {
+    const b = cleaned.match(/\{[\s\S]*\}/); // 잡텍스트 속 첫 JSON 오브젝트 추출
+    try { m = b ? JSON.parse(b[0]) : null; } catch { m = null; }
+    if (!m) {
+      const head = raw.slice(0, 120).replace(/\s+/g, ' ').trim();
+      return { ok: false, reason: `매니페스트 JSON 파싱 실패 — 파일 머리: "${head}${raw.length > 120 ? '…' : ''}"` };
+    }
+  }
 
   const v = sv.validateManifest(m);
   if (!v.ok) return { ok: false, reason: '매니페스트 계약 위반: ' + v.errors.join('; '), warnings: v.warnings };
