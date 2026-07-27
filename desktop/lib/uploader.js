@@ -3,9 +3,11 @@
 // (Meta의 제약). 그래서 발행 전에 이미지를 어딘가에 올려 URL을 확보해야 한다.
 //
 // 프로바이더 레인 (render.js의 이미지 엔진과 같은 패턴):
-//   s3       — S3 호환 스토리지(AWS S3 · Cloudflare R2 · Supabase · MinIO). 기본·권장.
+//   s3       — S3 호환 스토리지(Cloudflare R2 · Supabase · AWS S3 · MinIO). 기본·권장.
 //              내 버킷이라 남의 서비스 배포 상태에 발행이 묶이지 않는다. SigV4 직접 서명(무의존).
-//   imgbb    — 무료 이미지 호스트. API 키 하나로 즉시 동작(이미지 전용, 영상 불가).
+//              R2/Supabase 무료 티어로 충분(R2는 전송료 0) — 사실상 무료 경로는 여기다.
+//   imgbb    — 간편 이미지 호스트(이미지 전용, 영상 불가). 주의: API 접근·직링크가 유료 플랜
+//              기능이라 무료 계정으로는 발행에 못 쓸 수 있다(IG가 직접 가져갈 URL이 필요).
 //   qrcoding — 구버전 경로(하위호환). QR 서비스가 파일 저장소를 겸하던 결합 — 신규 권장하지 않음.
 const crypto = require('crypto');
 const fs = require('fs');
@@ -127,7 +129,12 @@ async function uploadImgbb(absPath, buf, contentType) {
   } catch (e) { return { ok: false, error: 'imgbb 연결 실패: ' + e.message }; }
   const j = await res.json().catch(() => null);
   if (!res.ok || !j || !j.success || !j.data) {
-    return { ok: false, error: (j && j.error && j.error.message) || `imgbb 업로드 실패 HTTP ${res.status}` };
+    const msg = (j && j.error && j.error.message) || `HTTP ${res.status}`;
+    // 무료 계정은 API·직링크가 막혀 있을 수 있다 — 권한 오류면 S3 경로를 안내한다.
+    const hint = (res.status === 400 || res.status === 401 || res.status === 403)
+      ? ' — imgbb는 API·직접 링크가 유료 플랜 기능일 수 있습니다. 요금제를 확인하거나 S3 호환(R2·Supabase 무료 티어)으로 바꾸세요'
+      : '';
+    return { ok: false, error: `imgbb 업로드 실패: ${msg}${hint}` };
   }
   return { ok: true, url: j.data.url || j.data.display_url, provider: 'imgbb' };
 }
