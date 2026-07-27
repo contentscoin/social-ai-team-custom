@@ -3440,7 +3440,7 @@ async function openSettings(section) {
 const CH_SECRET_FORMS = [
   { ns: 'instagram', title: 'Instagram (Graph API)', test: 'instagram', hint: '비즈니스/크리에이터 계정 전용. Meta 앱에서 instagram_business_basic + instagram_business_content_publish 권한 토큰 발급, IG User ID는 /me/accounts→instagram_business_account. **이미지는 Meta 제약상 공개 URL만 받으므로 아래 "공개 이미지 호스트"도 함께 설정해야 자동 발행됩니다.** 여러 장 선택 시 캐러셀 발행.',
     fields: [['userId', 'IG User ID'], ['token', '액세스 토큰']] },
-  { ns: 'imagehost', title: '공개 이미지 호스트 (인스타 발행 필수)', testHost: true, hint: 'Instagram·Threads는 로컬 파일 업로드를 받지 않고 공개 URL만 받습니다(Meta 제약). 아래 중 하나만 채우면 됩니다. ① S3 호환(권장) — AWS S3·Cloudflare R2·Supabase·MinIO. 내 버킷이라 외부 서비스에 묶이지 않습니다. R2는 region=auto, endpoint=https://<계정ID>.r2.cloudflarestorage.com, 공개 도메인을 publicBase에 넣으세요. ② imgbb — api.imgbb.com에서 무료 키 발급, 키 하나로 즉시 동작(이미지 전용). 버킷이 비공개면 [연결 테스트]에서 잡힙니다.',
+  { ns: 'imagehost', title: '공개 이미지 호스트 (인스타 발행 필수)', testHost: true, hint: 'Instagram·Threads는 로컬 파일 업로드를 받지 않고 공개 URL만 받습니다(Meta 제약). ① S3 호환(권장) — Cloudflare R2·Supabase·AWS S3·MinIO. R2/Supabase는 무료 티어로 충분하고(R2는 전송료 0), 내 버킷이라 외부 서비스에 묶이지 않습니다. R2 설정: region=auto, endpoint=https://<계정ID>.r2.cloudflarestorage.com, 버킷 공개 후 공개 도메인을 publicBase에. ② imgbb — 키 하나로 동작하지만 API·직링크가 유료 플랜 기능이라 요금제를 확인하세요(이미지 전용). 어느 쪽이든 저장 후 [연결 테스트]로 URL이 실제 공개인지 확인하세요 — 비공개 버킷은 여기서 잡힙니다.',
     fields: [
       ['provider', '사용할 호스트 (s3 | imgbb | qrcoding — 비우면 자동 선택)'],
       ['endpoint', 'S3 endpoint (예: https://s3.ap-northeast-2.amazonaws.com)'],
