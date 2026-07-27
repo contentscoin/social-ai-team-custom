@@ -534,6 +534,9 @@ ipcMain.handle('pub2:login', safe(async (_e, channel) => {
   return r;
 }));
 ipcMain.handle('pub2:sessionStatus', safe((_e, channel) => sessionpub.sessionStatus(channel)));
+// 클라이언트별 발행 설정 — 카카오 채널 주소 등 (context/publish-config.json)
+ipcMain.handle('pub2:getPubConfig', safe((_e, dir) => sessionpub.getPubConfig(dir)));
+ipcMain.handle('pub2:setPubConfig', safe((_e, dir, values) => sessionpub.savePubConfig(dir, values || {})));
 ipcMain.handle('pub2:logout', safe(async (_e, channel) => {
   const r = await sessionpub.logout(channel);
   channelCache = { at: 0, data: null };
