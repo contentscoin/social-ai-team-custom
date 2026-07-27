@@ -546,6 +546,12 @@ ipcMain.handle('pub2:schedule', safe((_e, dir, payload) => pubdirect.schedule(di
 ipcMain.handle('pub2:queue', safe((_e, dir) => pubdirect.listQueue(dir)));
 ipcMain.handle('pub2:cancel', safe((_e, dir, qid) => pubdirect.cancel(dir, qid)));
 ipcMain.handle('pub2:test', safe((_e, channel) => pubdirect.test(channel)));
+// 공개 이미지 호스트 연결 테스트 — 1x1 PNG 업로드 후 공개 URL 도달까지 확인
+ipcMain.handle('pub2:testImageHost', safe(async () => {
+  const r = await require('./lib/uploader').testHost();
+  channelCache = { at: 0, data: null }; // 호스트가 붙으면 인스타 배지가 즉시 자동 발행으로 바뀐다
+  return r;
+}));
 
 // ---- Channel connection check (직접 발행 토큰 + 레거시 Blotato MCP) -----------------
 let channelCache = { at: 0, data: null };

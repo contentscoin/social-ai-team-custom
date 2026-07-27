@@ -3438,8 +3438,21 @@ async function openSettings(section) {
 
 // ---- 시크릿 폼 (채널 토큰 · 렌더 키) ---------------------------------------------------------
 const CH_SECRET_FORMS = [
-  { ns: 'instagram', title: 'Instagram (Graph API)', test: 'instagram', hint: '비즈니스/크리에이터 계정 전용. Meta 앱에서 instagram_business_basic + instagram_business_content_publish 권한 토큰 발급, IG User ID는 /me/accounts→instagram_business_account. 이미지는 공개 URL이 필수라 렌더 탭의 QR Agent Studio(qrcoding) API 키로 자동 업로드됩니다. 여러 장 선택 시 캐러셀 발행.',
+  { ns: 'instagram', title: 'Instagram (Graph API)', test: 'instagram', hint: '비즈니스/크리에이터 계정 전용. Meta 앱에서 instagram_business_basic + instagram_business_content_publish 권한 토큰 발급, IG User ID는 /me/accounts→instagram_business_account. **이미지는 Meta 제약상 공개 URL만 받으므로 아래 "공개 이미지 호스트"도 함께 설정해야 자동 발행됩니다.** 여러 장 선택 시 캐러셀 발행.',
     fields: [['userId', 'IG User ID'], ['token', '액세스 토큰']] },
+  { ns: 'imagehost', title: '공개 이미지 호스트 (인스타 발행 필수)', testHost: true, hint: 'Instagram·Threads는 로컬 파일 업로드를 받지 않고 공개 URL만 받습니다(Meta 제약). 아래 중 하나만 채우면 됩니다. ① S3 호환(권장) — AWS S3·Cloudflare R2·Supabase·MinIO. 내 버킷이라 외부 서비스에 묶이지 않습니다. R2는 region=auto, endpoint=https://<계정ID>.r2.cloudflarestorage.com, 공개 도메인을 publicBase에 넣으세요. ② imgbb — api.imgbb.com에서 무료 키 발급, 키 하나로 즉시 동작(이미지 전용). 버킷이 비공개면 [연결 테스트]에서 잡힙니다.',
+    fields: [
+      ['provider', '사용할 호스트 (s3 | imgbb | qrcoding — 비우면 자동 선택)'],
+      ['endpoint', 'S3 endpoint (예: https://s3.ap-northeast-2.amazonaws.com)'],
+      ['bucket', 'S3 버킷명'],
+      ['region', 'S3 region (R2는 auto)'],
+      ['accessKeyId', 'S3 Access Key ID'],
+      ['secretAccessKey', 'S3 Secret Access Key'],
+      ['publicBase', '공개 URL 베이스 (선택 — 커스텀 도메인/R2 공개 URL)'],
+      ['prefix', '경로 프리픽스 (선택, 기본 social)'],
+      ['acl', 'ACL (선택 — ACL 허용 버킷만 public-read)'],
+      ['imgbbKey', 'imgbb API Key (S3 대신 쓸 때)'],
+    ] },
   { ns: 'x', title: 'X (Twitter)', test: 'x', hint: 'console.x.com에서 앱 생성 → Keys and tokens 4종. 텍스트+이미지 발행. 2026년부터 종량제(포스트당 $0.015)라 크레딧 충전 필요.',
     fields: [['apiKey', 'API Key'], ['apiSecret', 'API Key Secret'], ['accessToken', 'Access Token'], ['accessSecret', 'Access Token Secret']] },
   { ns: 'facebook', title: 'Facebook 페이지', test: 'facebook', hint: 'developers.facebook.com 앱(개발 모드로 내 페이지 발행 가능) → 장기 사용자 토큰 → /me/accounts의 페이지 토큰(만료 없음). 텍스트+이미지.',
@@ -3719,6 +3732,7 @@ function buildSecretForms(root, forms, isChannel) {
       <div style="display:flex;gap:8px">
         <button data-secsave="${f.ns}">저장</button>
         ${f.test ? `<button data-sectest="${f.test}">연결 테스트</button>` : ''}
+        ${f.testHost ? `<button data-sechosttest="${f.ns}">연결 테스트</button>` : ''}
         <span class="muted small" data-secmsg="${f.ns}" style="align-self:center"></span>
       </div>`;
     root.appendChild(box);
@@ -3749,6 +3763,15 @@ function buildSecretForms(root, forms, isChannel) {
       msg.textContent = '테스트 중…';
       const r = await window.api.pub2.test(f.test);
       msg.textContent = r && r.ok ? `✔ 연결됨${r.detail ? ' (' + r.detail + ')' : ''}` : `✖ ${(r && r.error) || '실패'}`;
+    };
+    // 이미지 호스트 테스트 — 1x1 PNG를 실제로 올리고 그 URL이 공개로 열리는지까지 확인.
+    const hb = f.testHost && $(`[data-sechosttest="${f.ns}"]`, box);
+    if (hb) hb.onclick = async () => {
+      const msg = $(`[data-secmsg="${f.ns}"]`, box);
+      msg.textContent = '업로드 테스트 중…';
+      const r = await window.api.pub2.testImageHost();
+      msg.textContent = r && r.ok ? `✔ ${r.label} 정상 — 공개 URL 확인됨` : `✖ ${(r && r.error) || '실패'}`;
+      if (r && r.ok) { await window.api.sec.invalidateChannels(); S.channels = await window.api.channels.check(); renderChannels(); }
     };
   }
 }
