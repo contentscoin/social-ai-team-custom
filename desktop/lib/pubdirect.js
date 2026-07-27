@@ -302,11 +302,20 @@ function status() {
     facebook: { connected: secrets.has('facebook', ['pageId', 'pageToken']), image: true },
     threads: { connected: secrets.has('threads', ['userId', 'token']), image: false, chain: true, imageNote: 'Threads API는 공개 이미지 URL만 받아 이미지 포스트는 수동 발행. 텍스트는 댓글형 체인(스토리라인) 발행 지원' },
     linkedin: { connected: secrets.has('linkedin', ['personId', 'token']), image: true },
-    instagram: {
-      connected: secrets.has('instagram', ['userId', 'token']) && secrets.has('qrcoding', ['apiKey']),
-      image: true, imageRequired: true,
-      imageNote: '이미지 필수 — 공개 URL은 qrcoding 업로드로 자동 처리됩니다 (렌더 탭의 QR Agent Studio API 키 필요). 여러 장 선택 시 캐러셀로 발행',
-    },
+    // IG는 Meta 제약상 공개 이미지 URL만 받는다 — 토큰 + "공개 이미지 호스트 아무거나"가 조건.
+    // (예전엔 qrcoding 키를 특정해 요구했다. QR 서비스가 저장소를 겸하던 결합을 끊고 호스트를 교체 가능하게.)
+    instagram: (() => {
+      const host = require('./uploader').hostStatus();
+      const igKeys = secrets.has('instagram', ['userId', 'token']);
+      return {
+        connected: igKeys && host.ready,
+        image: true, imageRequired: true,
+        imageHost: host.provider || null,
+        imageNote: host.ready
+          ? `이미지 필수 — 공개 URL은 ${host.label}로 자동 업로드됩니다. 여러 장 선택 시 캐러셀로 발행`
+          : '이미지 필수 — 공개 이미지 호스트가 없어 수동 발행 상태입니다. 설정 → 발행에서 S3 호환 스토리지(권장) 또는 imgbb를 설정하면 자동 발행됩니다',
+      };
+    })(),
     // 네이버·카카오채널은 공개 API가 없어 세션 브라우저 발행(browser)을 쓴다. 로그인 상태(connected)는
     // main.js의 channels:check가 sessionpub.sessionStatus로 실시간 덮어쓴다.
     naver: { connected: false, browser: true, image: true, note: '네이버 블로그는 공개 API 미제공 — 1회 로그인 후 앱 창에서 자동 작성' },
