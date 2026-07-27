@@ -55,3 +55,25 @@ test('composeInjector — 제목을 담은 JS 문자열을 만들고, throw 하�
   assert.match(js, /헤드라인/); // 제목이 JSON.stringify로 안전하게 삽입
   assert.doesNotMatch(js, /\n\s*throw /);
 });
+
+test('kakaoWriteUrl — 공개 주소·프로필 ID·관리자 URL 정규화, 카카오 밖 도메인 거부', () => {
+  const f = sessionpub.kakaoWriteUrl;
+  assert.equal(f('https://pf.kakao.com/_abc123'), 'https://center-pf.kakao.com/profiles/_abc123/posts');
+  assert.equal(f('pf.kakao.com/_abc123'), null); // 스킴 없는 건 ID 규칙에도 안 맞음 — 거부
+  assert.equal(f('_abc123'), 'https://center-pf.kakao.com/profiles/_abc123/posts');
+  assert.equal(f('@_abc123'), 'https://center-pf.kakao.com/profiles/_abc123/posts');
+  assert.equal(f('https://center-pf.kakao.com/profiles/_abc123/posts'), 'https://center-pf.kakao.com/profiles/_abc123/posts');
+  assert.equal(f('https://evil.example.com/phish'), null); // 카카오 밖 도메인 — 세션 창 오픈 금지
+  assert.equal(f(''), null);
+});
+
+test('publish-config — 클라이언트별 카카오 채널 주소 저장·되읽기', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spubcfg-'));
+  assert.deepEqual(sessionpub.getPubConfig(dir), {});
+  const r = sessionpub.savePubConfig(dir, { kakaoChannel: 'https://pf.kakao.com/_golfpay' });
+  assert.equal(r.ok, true);
+  assert.equal(sessionpub.getPubConfig(dir).kakaoChannel, 'https://pf.kakao.com/_golfpay');
+  // 부분 갱신 — 다른 키 보존 구조(현재는 kakaoChannel 하나지만 병합 규약 확인)
+  sessionpub.savePubConfig(dir, {});
+  assert.equal(sessionpub.getPubConfig(dir).kakaoChannel, 'https://pf.kakao.com/_golfpay');
+});

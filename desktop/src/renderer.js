@@ -3640,7 +3640,7 @@ async function renderPackSection(root) {
 // 세션 브라우저 발행 채널(네이버·카카오) — 1회 로그인 후 세션 저장. 비밀번호는 앱에 저장하지 않는다.
 const BROWSER_CHANNELS = [
   { ch: 'naver', label: '네이버 블로그', hint: '네이버 계정으로 로그인하면 세션이 저장됩니다. 발행은 카드의 「발행 검토」에서 [로그인 창에서 자동 작성]으로 — 본문이 클립보드에 복사되고 이미지 폴더가 열립니다.' },
-  { ch: 'kakao_channel', label: '카카오톡 채널', hint: '카카오 계정으로 관리자센터에 로그인합니다. 채널 소식 게시는 공개 API가 없어 관리자센터 창에서 작성합니다.' },
+  { ch: 'kakao_channel', label: '카카오톡 채널', hint: '카카오 계정으로 관리자센터에 로그인합니다. 채널 주소를 저장하면 발행 시 그 채널의 소식 화면으로 바로 이동합니다 (클라이언트별 저장). 발행 시 로그인이 안 돼 있으면 로그인 창이 자동으로 열립니다.' },
 ];
 async function renderBrowserChannels(root) {
   if (!root) return;
@@ -3655,7 +3655,25 @@ async function renderBrowserChannels(root) {
         </span>
       </div>
       <p class="muted small" style="margin:6px 0 0;line-height:1.5">${esc(c.hint)}</p>
+      ${c.ch === 'kakao_channel' ? `
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input class="bch-addr" placeholder="${S.client ? '채널 주소 — 예: pf.kakao.com/_abc123 (이 클라이언트 전용)' : '클라이언트를 먼저 선택하세요'}" ${S.client ? '' : 'disabled'}
+          style="flex:1;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 9px;color:var(--text);font-size:12px">
+        <button type="button" class="small bch-addr-save" ${S.client ? '' : 'disabled'}>주소 저장</button>
+      </div>` : ''}
     </div>`).join('');
+  // 카카오 채널 주소 — 클라이언트별 로드/저장 (context/publish-config.json)
+  if (S.client) {
+    const kEl = root.querySelector('[data-bch="kakao_channel"] .bch-addr');
+    const kBtn = root.querySelector('[data-bch="kakao_channel"] .bch-addr-save');
+    if (kEl) {
+      try { kEl.value = ((await window.api.pub2.getPubConfig(S.client.dir)) || {}).kakaoChannel || ''; } catch { /* 없음 */ }
+    }
+    if (kBtn) kBtn.onclick = async () => {
+      const r = await window.api.pub2.setPubConfig(S.client.dir, { kakaoChannel: kEl ? kEl.value : '' }).catch(() => null);
+      toast(r && r.ok ? '카카오 채널 주소 저장됨 — 발행 시 소식 화면으로 바로 이동합니다' : '저장 실패');
+    };
+  }
   const paint = async (el, ch) => {
     const st = await window.api.pub2.sessionStatus(ch).catch(() => ({ connected: false }));
     const badge = $('.bch-status', el); const inBtn = $('.bch-login', el); const outBtn = $('.bch-logout', el);
